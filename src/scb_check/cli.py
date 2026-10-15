@@ -9,6 +9,7 @@ import typer
 
 from scb_check.commands.check import CHECK_COMMAND_CLASS
 from scb_check.commands.check import check
+from scb_check.commands.diff import diff
 from scb_check.commands.rule import rule
 
 main = typer.Typer(add_completion=False)
@@ -36,3 +37,4 @@ def callback(
 
 main.command("check", cls=CHECK_COMMAND_CLASS)(check)
 main.command("rule")(rule)
+main.command("diff")(diff)

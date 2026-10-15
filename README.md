@@ -1,6 +1,6 @@
 # scb-check
 
-Python CLI that reports SCBench verbosity and erosion composites for supported source codebases.
+Python CLI that reports SCBench verbosity and erosion composites for supported source codebases, and SLOC churn between source trees.
 
 - [Paper](https://arxiv.org/abs/2603.24755)
 - [Source](https://github.com/gabeorlanski/scb-check)
@@ -9,6 +9,7 @@ Python CLI that reports SCBench verbosity and erosion composites for supported s
 - **Verbosity**: fraction of SLOC flagged by clone detection, ast-grep slop rules, or structural rules. Non-Python languages currently contribute clone lines only.
 - **Erosion**: share of function "mass" (`complexity * sqrt(sloc)`) concentrated in high-complexity functions (cyclomatic complexity > 10).
 - **Cognitive erosion**: same mass-share calculation using cognitive complexity > 10.
+- **Churn**: added plus deleted SLOC between two source trees, with touched-file counts and normalized change-dispersion entropy.
 
 ## Install
 
@@ -57,19 +58,39 @@ scb-check check PATH --include-all      # include gitignored files plus ignored,
 scb-check check PATH --disable-sg  # skip ast-grep subprocess findings
 scb-check check PATH --min-duplicate-lines N  # show duplicate groups with at least N SLOC lines
 scb-check rule RULE_ID                  # print YAML or metadata for a specific rule
+scb-check diff TREE_A TREE_B            # human-readable SLOC churn summary
+scb-check diff TREE_A TREE_B --output-format json  # flat JSON churn report
 ```
 
 `PATH` may be a file or directory. Directories are walked for supported source files: Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). Directory discovery respects `.gitignore` globs by default; use `--include-all` to scan gitignored supported files too.
 
-### JSON report fields
+### Check JSON report fields
 
 `verbosity`, `erosion`, `cog_erosion`, `files_scanned`, `total_loc`, `verbosity_flagged_loc`, `clone_loc`, `ast_grep_flagged_loc`, `structural_rule_loc`, `structural_rule_findings`, `total_functions`, `high_cc_functions`, `high_cog_functions`, `total_mass`, `high_cc_mass`, `total_cog_mass`, `high_cog_mass`, `syntax_tree_count`, `syntax_node_count`, and `syntax_by_language`.
 
 `syntax_by_language` is keyed by language value and reports `tree_count` plus total Tree-sitter `node_count` for parsed files in that language.
 
+### Comparing source trees
+
+`scb-check diff TREE_A TREE_B` compares an earlier and later directory, including plain directories outside any git repository. Relative paths identify files: a rename counts as deletion plus addition. Unchanged files remain in the union. Each file is filtered to its parser-defined SLOC lines **before** diffing; non-SLOC text cannot influence matching. Added lines come from `TREE_B`'s SLOC sequence; deleted lines from `TREE_A`'s. Comments, blanks, CRLF/LF changes, and a differing final newline do not add churn. Indentation, whitespace, and inline comments on retained SLOC lines remain significant, so changing a code line's inline comment counts as a replacement.
+
+Each tree uses the same source-discovery policy as `check`, with its own `.gitignore` files. One config discovered from the current directory applies to both trees; tree-local configs are not loaded separately. `--include-all` bypasses gitignore filtering on both sides but retains configured excludes and default excluded directories. `-v` / `--verbosity` and `-vv` control logging as with `check`. No `--report` alias or threshold option is available.
+
+JSON output contains these flat fields:
+
+- `tree_a`, `tree_b`: resolved directory paths.
+- `eligible_file_union_count`: union of relative eligible paths, excluding files that fail to read or parse on either side.
+- `churn_added_sloc`, `churn_deleted_sloc`, `churn_total`: added SLOC, deleted SLOC, and their sum.
+- `churn_touched_files`: files with positive SLOC churn, not comment-only edits.
+- `churn_normalized_entropy`: churn-share entropy normalized by union size; `0.0` for zero churn or unions of at most one file. See [Architecture](docs/architecture.md#churn).
+
+Parse failures warn on stderr and skip the whole relative path. One empty tree is valid; an empty union after discovery and parse skips is an error. Python callers use `scb_check.pipeline.analyze_diff(tree_a, tree_b, config)`, the change-analysis sibling of `analyze(path, config)`. Per-file status and original source line numbers are available through this [library seam](docs/architecture.md#tree-diff-library-seam), not the CLI output. Status reflects SLOC changes: edits confined to non-SLOC lines are `unchanged`. Diffing invokes no external binary.
+
 ### Exit codes
 
 `scb-check check` exits `0` when no findings are reported, `1` when any finding is present (clones, ast-grep hits, structural findings, or high-complexity functions), and `2` for usage errors (bad path, missing config, invalid directives).
+
+`scb-check diff` exits `0` on success, regardless of churn, and `2` for invalid paths/config, invalid options, or an empty eligible union. It never exits `1`.
 
 Clone detection only emits duplicated syntax blocks with at least two executable body statements. Function signatures, comments, blanks, and Python docstrings do not satisfy that threshold; displayed clone line counts and `--min-duplicate-lines` still use duplicated `SLOC` in the clone span.
 

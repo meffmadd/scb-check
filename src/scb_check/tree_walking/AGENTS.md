@@ -6,7 +6,7 @@ Supported source languages are Python, Rust, JavaScript, TypeScript, Zig, Haskel
 
 ## Invariants
 
-- Language parsers accept already-read source text. File IO stays in boundaries such as `pipeline.py`.
+- Language parsers accept already-read source text. File IO stays in the shared `analysis/source.py` boundary used by check and diff.
 - `ModuleIR`, `SymbolIR`, `OperationIR`, `ValueIR`, `EffectIR`, and `RuleFinding` must not store raw tree-sitter nodes.
 - Parser-native data may live only on `ParsedFile` for clone detection.
 - SLOC excludes comments and blank lines. Python also excludes standalone non-f-string/non-bytes string statements; generic parsers also exclude punctuation-only delimiter lines.

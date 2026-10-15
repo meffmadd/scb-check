@@ -1,6 +1,6 @@
 # `reporting/` — findings → output
 
-Takes a `Flags` object (sorted findings) and produces either a JSON [`Report`](../models.py) or human-readable flag text. Consumed by [`../commands/check.py`](../commands/check.py).
+Takes `Flags` (sorted findings) for JSON [`Report`](../models.py) or human-readable flag text, and `TreeDiff` for a flat churn payload or human summary. Consumed by the check and diff command boundaries. [`churn.py`](churn.py) owns diff aggregation/rendering; it does not walk or parse trees.
 
 ## Scoring invariants
 
@@ -9,6 +9,8 @@ Takes a `Flags` object (sorted findings) and produces either a JSON [`Report`](.
 - **Cognitive erosion** uses the same calculation with `cog_complexity > 10` and cognitive mass.
 - **Mass** = `complexity * sqrt(sloc)`.
 - **`total_loc == 0`** zeroes verbosity and all flagged-LOC counts; **zero total mass** zeroes the corresponding erosion score. Guard both.
+- **Churn** sums added plus deleted SLOC; touched files have positive churn. Entropy normalizes by the full `TreeDiff.files` union, including unchanged/zero-churn files. Zero churn or union size at most one yields `0.0`.
+- **Diff JSON stays flat.** Context fields are unprefixed; new metric fields use their metric prefix. Per-file status/line sets stay in the library seam, not CLI output.
 
 ## Rendering
 
