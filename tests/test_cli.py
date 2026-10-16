@@ -453,6 +453,23 @@ def test_check_report_skips_bad_files(
     assert payload["files_scanned"] == 1
 
 
+def test_check_reads_invalid_utf8_with_replacement(tmp_path: Path) -> None:
+    """Invalid UTF-8 warns without excluding otherwise parseable source."""
+    source = tmp_path / "sample.py"
+    source.write_bytes(b"# notes: \xff\nvalue = 1\n")
+
+    result = CliRunner().invoke(
+        main, ["check", "--report", "--disable-sg", str(source)],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["files_scanned"] == 1
+    assert payload["total_loc"] == 1
+    assert "not valid UTF-8" in result.stderr
+    assert "sample.py" in result.stderr
+
+
 def test_check_empty_directory(tmp_path: Path) -> None:
     """Directories without supported source files are rejected."""
     source_dir = tmp_path / "empty"

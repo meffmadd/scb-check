@@ -1,4 +1,4 @@
-"""Coordinate check and diff workflows through shared source collection."""
+"""Coordinate full snapshot analysis for check and metric comparison."""
 
 from __future__ import annotations
 
@@ -14,17 +14,14 @@ from tree_sitter import Tree
 from scb_check.analysis.astgrep import run_sg
 from scb_check.analysis.clones import detect_clones
 from scb_check.analysis.source import read_and_parse_source
-from scb_check.analysis.tree_diff import compare_file
 from scb_check.config import Config
 from scb_check.models import AstGrepHit
 from scb_check.models import CloneBlock
-from scb_check.models import FileDiff
 from scb_check.models import FileLineSet
 from scb_check.models import FindingGroups
 from scb_check.models import Flags
 from scb_check.models import LanguageSyntaxSummary
 from scb_check.models import LineGroups
-from scb_check.models import TreeDiff
 from scb_check.resources import RuleSeverity
 from scb_check.resources import load_rule_severities
 from scb_check.resources import load_thresholds
@@ -46,7 +43,7 @@ from scb_check.tree_walking.models import SymbolKind
 from scb_check.tree_walking.semantic import build_project
 from scb_check.walker import walk_source_files
 
-__all__ = ["AnalysisResult", "IgnoreDirectiveError", "analyze", "analyze_diff", "analyze_files"]
+__all__ = ["AnalysisResult", "IgnoreDirectiveError", "analyze", "analyze_files"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,51 +100,6 @@ def analyze(
     )
 
 
-def analyze_diff(
-    tree_a: Path,
-    tree_b: Path,
-    config: Config,
-    *,
-    include_all: bool = False,
-) -> TreeDiff:
-    """Analyze SLOC changes between directory roots using one `config`.
-
-    Relative paths identify files; renames are deletion plus addition. A read
-    or parse failure on either side excludes the whole relative path. Retain
-    unchanged and zero-SLOC files with original 1-indexed change positions.
-    Empty library results are valid; the CLI rejects them. Check-only indexes,
-    rules, directives, and clone detection are not part of this workflow.
-    """
-    for tree in (tree_a, tree_b):
-        if not tree.exists():
-            raise FileNotFoundError(f"path does not exist: {tree}")
-        if not tree.is_dir():
-            raise ValueError(f"not a directory: {tree}")
-    tree_a, tree_b = tree_a.resolve(), tree_b.resolve()
-    files_a = _walk_relative_files(tree_a, config, include_all=include_all)
-    files_b = _walk_relative_files(tree_b, config, include_all=include_all)
-    files: list[FileDiff] = []
-    for path in sorted(files_a.keys() | files_b.keys()):
-        paths = (files_a.get(path), files_b.get(path))
-        before, after = _collect_sources(paths)
-        if any(
-            file_path is not None and parsed is None
-            for file_path, parsed in zip(paths, (before, after), strict=True)
-        ):
-            continue
-        files.append(compare_file(path, before, after))
-    return TreeDiff(tree_a=tree_a, tree_b=tree_b, files=tuple(files))
-
-
-def _walk_relative_files(
-    tree: Path, config: Config, *, include_all: bool,
-) -> dict[Path, Path]:
-    return {
-        file.relative_to(tree): file
-        for file in walk_source_files(tree, config, include_ignored=include_all)
-    }
-
-
 def analyze_files(
     files: tuple[Path, ...],
     *,
@@ -179,7 +131,9 @@ def _collect_findings(
     low_use_short_function: LowUseShortFunctionSettings,
 ) -> Findings:
     sources = _index_check_sources(tuple(
-        parsed for parsed in _collect_sources(files) if parsed is not None
+        parsed
+        for file in files
+        if (parsed := read_and_parse_source(file)) is not None
     ))
     project = build_project(tuple(parsed.module for parsed in sources.parsed_files))
     functions = _function_symbols(tuple(project.symbols_by_qualified_name.values()))
@@ -203,14 +157,6 @@ def _collect_findings(
         sloc_lines_by_file=sources.sloc_lines_by_file,
         source_lines_by_file=sources.source_lines_by_file,
         syntax_by_language=sources.syntax_by_language,
-    )
-
-
-def _collect_sources(files: tuple[Path | None, ...]) -> tuple[ParsedFile | None, ...]:
-    """Preserve input slots; present paths returning `None` failed to load."""
-    return tuple(
-        read_and_parse_source(file) if file is not None else None
-        for file in files
     )
 
 

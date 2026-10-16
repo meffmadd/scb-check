@@ -8,24 +8,55 @@ from typing import Annotated, Literal
 
 import typer
 
+from scb_check.commands.validation import ensure_files_parsed
 from scb_check.config import load_config
 from scb_check.logging import configure_logging
-from scb_check.pipeline import analyze_diff
-from scb_check.reporting.churn import compute_diff_report
-from scb_check.reporting.churn import render_diff_report
+from scb_check.pipeline import analyze
+from scb_check.reporting.comparison import compare_reports
+from scb_check.reporting.comparison import render_comparison
+from scb_check.reporting.score import compute_report
 
 
-def diff(
-    tree_a: Annotated[Path, typer.Argument(help="Earlier source tree directory.")],
-    tree_b: Annotated[Path, typer.Argument(help="Later source tree directory.")],
+def diff(  # noqa: PLR0913
+    tree_a: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            resolve_path=True,
+            help="Earlier source tree directory.",
+        ),
+    ],
+    tree_b: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            resolve_path=True,
+            help="Later source tree directory.",
+        ),
+    ],
     *,
     output_format: Annotated[
         Literal["human", "json"],
         typer.Option("--output-format", help="Choose human or JSON output."),
     ] = "human",
+    config_path: Annotated[
+        Path | None,
+        typer.Option("--config", help="Explicit shared config path."),
+    ] = None,
     include_all: Annotated[
         bool,
-        typer.Option("--include-all", help="Include gitignored files in both trees."),
+        typer.Option(
+            "--include-all",
+            help="Include gitignored files, ignored rule findings, lower-severity ast-grep findings, and boundary-suppressed ast-grep findings in both trees.",
+        ),
+    ] = False,
+    disable_sg: Annotated[
+        bool,
+        typer.Option(
+            "--disable-sg", help="Disable ast-grep analysis in both trees."
+        ),
     ] = False,
     verbosity: Annotated[
         int,
@@ -37,23 +68,38 @@ def diff(
         ),
     ] = 0,
 ) -> None:
-    """Compare two source trees and report SLOC churn."""
+    """Compare full snapshot metrics; deltas are later minus earlier, not churn."""
     configure_logging(verbosity)
     try:
-        config = load_config(None, Path.cwd())
-        tree_diff = analyze_diff(tree_a, tree_b, config, include_all=include_all)
+        config = load_config(config_path, Path.cwd())
+        reports = []
+        for tree in (tree_a, tree_b):
+            result = analyze(
+                tree, config, include_all=include_all, disable_sg=disable_sg
+            )
+            ensure_files_parsed(result, tree)
+            reports.append(compute_report(result.flags))
     except (OSError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
-    if not tree_diff.files:
-        typer.echo(
-            f"no supported source files could be parsed in either tree: {tree_a}, {tree_b}",
-            err=True,
-        )
-        raise typer.Exit(code=2)
 
-    report = compute_diff_report(tree_diff)
+    before, after = reports
+    delta = compare_reports(before, after)
+    context = {"tree_a": str(tree_a), "tree_b": str(tree_b)}
     if output_format == "json":
-        typer.echo(json.dumps(report, allow_nan=False))
+        typer.echo(
+            json.dumps(
+                {
+                    **context,
+                    "before": before.to_dict(),
+                    "after": after.to_dict(),
+                    "delta": delta,
+                },
+                allow_nan=False,
+            )
+        )
     else:
-        typer.echo(render_diff_report(report))
+        typer.echo(
+            "\n".join(f"{name}: {value}" for name, value in context.items())
+        )
+        typer.echo(render_comparison(before, after, delta))

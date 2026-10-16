@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`scb-check` is a Python CLI that reports **verbosity** (clone + slop-pattern LOC share) and **erosion** (high-complexity function mass share) for supported source codebases, plus **churn** (added + deleted SLOC) between source trees. Entrypoints: `scb-check check PATH` and `scb-check diff TREE_A TREE_B` → [`src/scb_check/cli.py`](src/scb_check/cli.py).
+`scb-check` is a Python CLI that reports **verbosity** (clone + slop-pattern LOC share) and **erosion** (high-complexity function mass share) for supported source codebases, and compares snapshot metrics between source trees. Entrypoints: `scb-check check PATH` and `scb-check diff TREE_A TREE_B` → [`src/scb_check/cli.py`](src/scb_check/cli.py).
 
 See [README.md](README.md) for user-facing usage.
 
@@ -17,7 +17,7 @@ Keep these docs up to date. When behavior, scoring, CLI contracts, source direct
 - **`ty` is the type checker, not mypy.** Run `uv run ty check .`.
 - **ast-grep subprocess**: `run_sg` tries a global `sg` binary first, then falls back to package-managed ast-grep executables next to Python if global `sg` is missing or fails. Tests monkeypatch `scb_check.pipeline.run_sg` (where it's imported) to avoid this — follow that pattern instead of invoking `sg` in tests. Python ast-grep rules run only on Python files.
 - **Verbosity is a union**, not a sum. Clone lines ∪ ast-grep lines per file, intersected with SLOC lines. Don't double-count. Non-Python languages currently contribute clone LOC only.
-- **Diff matches only each side's parser SLOC.** `pipeline.analyze_diff` is the change-analysis sibling of `analyze`; both share private source collection. Filter before matching text, then map changes to original source line numbers; non-SLOC edits are `unchanged`. Walker eligibility and relative paths define the comparison; unchanged files remain in the union, while read/parse failures skip the whole relative path. CLI behavioral coverage lives in `tests/test_diff_cli.py`; churn scoring lives in reporting.
+- **Diff compares full check reports.** The command runs `analyze` / `compute_report` independently for each tree with one config and equal options, then calls pure `reporting.comparison.compare_reports`. Deltas are signed later minus earlier, not churn. Each side needs successfully parsed eligible files; failures skip independently, and zero-SLOC files remain valid. CLI acceptance coverage in `tests/test_diff_cli.py` uses standalone check JSON parity plus known deltas. Keep CLI coverage current when report fields change; see the [report-comparison interface](docs/architecture.md#report-comparison-interface).
 - **Dataclasses are `frozen=True, slots=True`** (see [`src/scb_check/models.py`](src/scb_check/models.py)). Pass tuples across module boundaries, not lists.
 
 ## Workflow (every change)
@@ -42,7 +42,7 @@ Single test: `uv run pytest tests/test_cli.py::test_name`.
 The package splits into three layers. Before editing in one, read its `AGENTS.md` — those rules win over anything inferred from surrounding code.
 
 - [`src/scb_check/`](src/scb_check/AGENTS.md): Main module for the codebase.
-- [`src/scb_check/analysis/`](src/scb_check/analysis/AGENTS.md): source → findings/tree diff (clones, astgrep, shared source IO, SLOC-only matching)
+- [`src/scb_check/analysis/`](src/scb_check/analysis/AGENTS.md): source → findings (clones, astgrep, shared source IO)
 - [`src/scb_check/reporting/`](src/scb_check/reporting/AGENTS.md): findings → output (score, render)
 - [`src/scb_check/commands`](src/scb_check/commands/AGENTS.md): the command implementations for the CLI.
 - [`docs/`](docs/AGENTS.md): maintainer guides for architecture, tree walking, development status, and change approaches.

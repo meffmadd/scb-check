@@ -1,6 +1,6 @@
 # scb-check
 
-Python CLI that reports SCBench verbosity and erosion composites for supported source codebases, and SLOC churn between source trees.
+Python CLI that reports SCBench verbosity and erosion composites for supported source codebases, and compares snapshot metrics between source trees.
 
 - [Paper](https://arxiv.org/abs/2603.24755)
 - [Source](https://github.com/gabeorlanski/scb-check)
@@ -9,7 +9,7 @@ Python CLI that reports SCBench verbosity and erosion composites for supported s
 - **Verbosity**: fraction of SLOC flagged by clone detection, ast-grep slop rules, or structural rules. Non-Python languages currently contribute clone lines only.
 - **Erosion**: share of function "mass" (`complexity * sqrt(sloc)`) concentrated in high-complexity functions (cyclomatic complexity > 10).
 - **Cognitive erosion**: same mass-share calculation using cognitive complexity > 10.
-- **Churn**: added plus deleted SLOC between two source trees, with touched-file counts and normalized change-dispersion entropy.
+- **Metric deltas**: signed later-minus-earlier differences in scores, counts, and complexity masses from two full analyses.
 
 ## Install
 
@@ -58,8 +58,9 @@ scb-check check PATH --include-all      # include gitignored files plus ignored,
 scb-check check PATH --disable-sg  # skip ast-grep subprocess findings
 scb-check check PATH --min-duplicate-lines N  # show duplicate groups with at least N SLOC lines
 scb-check rule RULE_ID                  # print YAML or metadata for a specific rule
-scb-check diff TREE_A TREE_B            # human-readable SLOC churn summary
-scb-check diff TREE_A TREE_B --output-format json  # flat JSON churn report
+scb-check diff TREE_A TREE_B            # before / after / signed metric deltas
+scb-check diff TREE_A TREE_B --output-format json  # structured metric comparison
+scb-check diff TREE_A TREE_B --config FILE --disable-sg  # shared options for both analyses
 ```
 
 `PATH` may be a file or directory. Directories are walked for supported source files: Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). Directory discovery respects `.gitignore` globs by default; use `--include-all` to scan gitignored supported files too.
@@ -72,25 +73,27 @@ scb-check diff TREE_A TREE_B --output-format json  # flat JSON churn report
 
 ### Comparing source trees
 
-`scb-check diff TREE_A TREE_B` compares an earlier and later directory, including plain directories outside any git repository. Relative paths identify files: a rename counts as deletion plus addition. Unchanged files remain in the union. Each file is filtered to its parser-defined SLOC lines **before** diffing; non-SLOC text cannot influence matching. Added lines come from `TREE_B`'s SLOC sequence; deleted lines from `TREE_A`'s. Comments, blanks, CRLF/LF changes, and a differing final newline do not add churn. Indentation, whitespace, and inline comments on retained SLOC lines remain significant, so changing a code line's inline comment counts as a replacement.
+`scb-check diff TREE_A TREE_B` runs a full check analysis of each directory, including plain directories outside any git repository. `TREE_A` is the earlier snapshot; `TREE_B` is the later snapshot. Every delta is **after minus before**, including negative and zero values. The default human summary shows both resolved roots and before/after/delta columns for all scores, underlying counts, complexity masses, and syntax counts.
 
-Each tree uses the same source-discovery policy as `check`, with its own `.gitignore` files. One config discovered from the current directory applies to both trees; tree-local configs are not loaded separately. `--include-all` bypasses gitignore filtering on both sides but retains configured excludes and default excluded directories. `-v` / `--verbosity` and `-vv` control logging as with `check`. No `--report` alias or threshold option is available.
+One configuration applies to both analyses: discovered from the current working directory, or selected with `--config FILE`. Tree-local configs are not loaded separately. Discovery uses each tree's applicable `.gitignore` files and the ordinary check exclusion semantics. `--include-all` has its full check meaning on both sides: include gitignored files plus ignored, informational, and boundary-suppressed findings; configured excludes and default excluded directories still apply. `--disable-sg` disables ast-grep on both sides. Otherwise each analysis can run the ordinary ast-grep subprocesses. Logging uses `-v` / `--verbosity` and `-vv` as with `check`. There is no `--report` alias, duplicate-display option, or threshold gate.
 
-JSON output contains these flat fields:
+#### Diff JSON fields
 
-- `tree_a`, `tree_b`: resolved directory paths.
-- `eligible_file_union_count`: union of relative eligible paths, excluding files that fail to read or parse on either side.
-- `churn_added_sloc`, `churn_deleted_sloc`, `churn_total`: added SLOC, deleted SLOC, and their sum.
-- `churn_touched_files`: files with positive SLOC churn, not comment-only edits.
-- `churn_normalized_entropy`: churn-share entropy normalized by union size; `0.0` for zero churn or unions of at most one file. See [Architecture](docs/architecture.md#churn).
+- `tree_a`, `tree_b`: resolved directory paths, separate from measurements.
+- `before`, `after`: each preserves the complete [check JSON report structure](#check-json-report-fields).
+- `delta`: the same metric fields with signed differences. `syntax_by_language` contains the sorted union of languages; a missing language contributes zero counts for subtraction only. The snapshot mappings remain unchanged.
 
-Parse failures warn on stderr and skip the whole relative path. One empty tree is valid; an empty union after discovery and parse skips is an error. Python callers use `scb_check.pipeline.analyze_diff(tree_a, tree_b, config)`, the change-analysis sibling of `analyze(path, config)`. Per-file status and original source line numbers are available through this [library seam](docs/architecture.md#tree-diff-library-seam), not the CLI output. Status reflects SLOC changes: edits confined to non-SLOC lines are `unchanged`. Diffing invokes no external binary.
+Scores and score deltas use fractional units in JSON. A score changing from `0.20` to `0.15` has delta `-0.05`. Human output displays scores as percentages and their differences as percentage points (`-5.00 percentage points`), not relative percentage changes. Counts and masses retain their existing units.
+
+Individual read/parse failures warn and skip within their own analysis, without dropping the readable counterpart in the other tree. Each side must have at least one successfully parsed eligible file; zero-SLOC files are valid. Invalid directives retain check's error behavior. Optional ast-grep failures degrade as in check.
+
+This measures snapshot changes, **not code churn**: literal edits or renames that preserve ordinary reports yield zero deltas. Zero aggregate deltas do not prove unchanged code or rule out offsetting local changes. A positive delta means a larger measurement, not necessarily a regression. See [Architecture](docs/architecture.md#snapshot-comparison) for interpretation and the pure Python report-comparison interface.
 
 ### Exit codes
 
 `scb-check check` exits `0` when no findings are reported, `1` when any finding is present (clones, ast-grep hits, structural findings, or high-complexity functions), and `2` for usage errors (bad path, missing config, invalid directives).
 
-`scb-check diff` exits `0` on success, regardless of churn, and `2` for invalid paths/config, invalid options, or an empty eligible union. It never exits `1`.
+`scb-check diff` exits `0` on success regardless of findings or delta signs, and `2` for invalid paths/config/options/directives or a side with no successfully parsed eligible files. Failures print to stderr without a partial comparison on stdout. It never exits `1`.
 
 Clone detection only emits duplicated syntax blocks with at least two executable body statements. Function signatures, comments, blanks, and Python docstrings do not satisfy that threshold; displayed clone line counts and `--min-duplicate-lines` still use duplicated `SLOC` in the clone span.
 

@@ -4,7 +4,7 @@ Tree walking turns already-read supported source into language-agnostic facts th
 
 ## Boundaries
 
-`tree_walking/` does not discover files or read from disk. The sibling `pipeline.analyze()` and `pipeline.analyze_diff()` workflows use private `_collect_sources()` to load source through `analysis/source.read_and_parse_source()`, which reads newline-normalized text and calls `parse_source_file(path, source)`. Collection preserves input slots so a failed read remains distinct from an absent diff side. Only check builds source indexes for rendering, syntax counts, and Python directives; diff sends parsed file pairs to `analysis/tree_diff.compare_file()` for SLOC-only matching.
+`tree_walking/` does not discover files or read from disk. `pipeline.analyze()` calls `analysis.source.read_and_parse_source()` directly, which reads newline-normalized text and calls `parse_source_file(path, source)`. Both commands use this full analysis workflow: once for check, independently for each diff snapshot. Successful files feed source indexes for rendering, syntax counts, and Python directives; read/parse failures warn and skip within their own analysis.
 
 `ParsedFile` intentionally has two sides:
 
@@ -16,7 +16,7 @@ Do not put raw tree-sitter nodes into `ModuleIR`, `SymbolIR`, `OperationIR`, `Va
 ## Parse flow
 
 ```text
-`pipeline._collect_sources()` (check and diff)
+`pipeline.analyze()`
     │
     ▼
 `analysis.source.read_and_parse_source()`
@@ -43,7 +43,7 @@ The default dispatch table knows Python (`.py`, `.pyw`), Rust (`.rs`), JavaScrip
 
 ## `SLOC`
 
-`SLOC` is computed once by the parser and then reused everywhere else, including churn's pre-match SLOC filtering.
+`SLOC` is computed once by the parser and reused for scoring, clone line counts, and rule spans. Snapshot comparisons use the resulting ordinary report measurements.
 
 The Python parser:
 
@@ -118,7 +118,7 @@ Source directives are part of tree walking, but they are parsed separately from 
 - `# scbc ignore[rule-id]`, which applies to the same line when it follows code, or to the next non-blank, non-comment code line when standalone,
 - `# scbc boundary`, which records the directive line.
 
-The check workflow in `pipeline.py` validates ignore rule IDs against the combined `ast-grep` and structural rule ID namespace. It maps boundary directives to containing function spans before filtering `ast-grep` findings. `analyze_diff()` does not scan or validate directives.
+The full analysis workflow in `pipeline.py` validates ignore rule IDs against the combined `ast-grep` and structural rule ID namespace. It maps boundary directives to containing function spans before filtering `ast-grep` findings. Both diff snapshots receive ordinary check directive handling, including `--include-all` suppression bypasses.
 
 ## Semantic context
 

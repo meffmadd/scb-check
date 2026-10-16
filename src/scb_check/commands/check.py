@@ -12,6 +12,7 @@ import click
 import typer
 from typer.core import TyperCommand
 
+from scb_check.commands.validation import ensure_files_parsed
 from scb_check.config import Config
 from scb_check.config import ConfigError
 from scb_check.config import load_config
@@ -186,7 +187,7 @@ def check(
     output_format = _resolve_output_or_exit(ctx)
     configure_logging(verbosity)
     config, result = _load_and_analyze(ctx, path, config_path, include_all=include_all)
-    _ensure_files_parsed(result, path)
+    ensure_files_parsed(result, path)
 
     flags = result.flags
     if output_format == "json":
@@ -225,12 +226,6 @@ def _load_and_analyze(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
     return config, result
-
-
-def _ensure_files_parsed(result: AnalysisResult, path: Path) -> None:
-    if not result.flags.lines.total_loc_by_file:
-        typer.echo(f"no supported source files could be parsed at {path}", err=True)
-        raise typer.Exit(code=2)
 
 
 def _emit_json(flags: Flags) -> None:

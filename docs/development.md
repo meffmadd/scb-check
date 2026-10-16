@@ -8,15 +8,15 @@ This guide summarizes the current implementation status and the preferred approa
 
 - `scb-check check PATH` reports human-readable flags or JSON scores.
 - `scb-check rule RULE_ID` prints bundled `ast-grep` YAML or structural rule metadata.
-- `scb-check diff TREE_A TREE_B` reports SLOC churn and normalized dispersion between directories.
+- `scb-check diff TREE_A TREE_B` reports before/after/signed metric deltas between directories.
 
 Implemented analysis paths:
 
 - Source discovery for supported Python, Rust, JavaScript, TypeScript, Zig, Haskell, and C++ suffixes.
 - Tree-sitter parsing into language-agnostic IR.
-- `SLOC` accounting shared by verbosity, clone line counts, rule spans, and churn.
-- Sibling `pipeline.analyze()` and `pipeline.analyze_diff()` workflows with shared private source collection and check-only indexing.
-- Deterministic tree comparison with relative-path identity and per-side SLOC filtering before matching; changed lines retain original source positions.
+- Parser `SLOC` accounting shared by verbosity, clone line counts, and rule spans.
+- One full `pipeline.analyze()` workflow using the shared source reader and source indexes for both commands.
+- Pure reporting-owned comparison of every numeric check measurement, including per-language syntax counts.
 - Duplicate-structure detection by normalized AST hashing for all supported languages.
 - Bundled Python `ast-grep` slop patterns, plus optional local rules from `SCB_CHECK_EXTRA_SLOP_RULES`.
 - Structural rules over `ProjectIR`; the current bundled Python rules are `trivial-wrapper` and opt-in `low-use-short-function`.
@@ -26,9 +26,9 @@ Implemented analysis paths:
 
 ## Runtime contracts
 
-- `check` exits `0` without findings and `1` with findings; `diff` exits `0` on success regardless of churn.
+- `check` exits `0` without findings and `1` with findings; `diff` exits `0` on success regardless of findings or delta signs.
 - Exit `2` is for user-facing failures such as bad config, bad paths, unknown rules, invalid directives, or an empty eligible/parseable source set.
-- Individual read/parse failures warn and skip the file instead of aborting the run. In `diff`, a failure on either side skips the entire relative path; one empty tree is valid.
+- Individual read/parse failures warn and skip within their own analysis. In `diff`, each side must have at least one successfully parsed eligible file; parsed zero-SLOC files remain valid. A failure produces no partial comparison payload.
 - Non-Python files skip Python ast-grep rules, structural rules, and source directives until language-specific rules exist.
 - Config discovery and source-directive behavior are user-facing; keep README examples synchronized when they change.
 
@@ -42,9 +42,8 @@ Implemented analysis paths:
 | Language parser configs | `src/scb_check/tree_walking/languages/` |
 | Clone detection | `src/scb_check/analysis/clones.py` |
 | Shared source IO and parse warnings | `src/scb_check/analysis/source.py` |
-| Workflow orchestration, shared collection, diff pairing/failure exclusion | `src/scb_check/pipeline.py` |
-| Parsed-file comparison and diff line sets | `src/scb_check/analysis/tree_diff.py` |
-| Churn aggregation and summary rendering | `src/scb_check/reporting/churn.py` |
+| Full snapshot analysis and source indexing | `src/scb_check/pipeline.py` |
+| Report comparison and summary rendering | `src/scb_check/reporting/comparison.py` |
 | `ast-grep` integration | `src/scb_check/analysis/astgrep.py` and `src/scb_check/resources/slop_rules/` |
 | Structural rule behavior | `src/scb_check/rules/` |
 | JSON scores or human rendering | `src/scb_check/reporting/` |
@@ -88,11 +87,13 @@ Pay special attention to:
 - mass formulas for `erosion` and `cog_erosion`,
 - line spans used by clone, `ast-grep`, and structural findings.
 
-## Adding a diff metric
+## Extending snapshot comparisons
 
-Consume `pipeline.analyze_diff` rather than duplicating discovery or diffing; see the [library seam](architecture.md#tree-diff-library-seam). Keep `_collect_sources` private and build check-only indexes only in the check workflow. Compare parsed files in `analysis/tree_diff.py`; keep aggregation in reporting and add flat, prefixed JSON fields. Do not add a source-only mode, public collection type, registry, checkpoint pairing, or CLI thresholds to the churn path.
+1. Add the measurement to the ordinary check analysis/report contract.
+2. Scalar numeric fields in `Report.to_dict()` compare automatically. Update comparison explicitly for new nested or nonnumeric measurements. See the [report-comparison interface](architecture.md#report-comparison-interface).
+3. Add acceptance coverage through the Typer CLI in `tests/test_diff_cli.py`: compare each snapshot payload with its standalone check JSON and assert independently known deltas, exits, and stderr.
 
-Diff behavioral tests live at the Typer CLI boundary in `tests/test_diff_cli.py`. Build two temporary directories and assert counts, output fields, exits, and stderr; no external diff binary is needed. Per-file statuses remain library data, not CLI output.
+Keep comparison pure and reporting-owned. The command orchestrates two full `analyze()` / `compute_report()` calls with one configuration and equal options. Preserve walker exclusion semantics without comparison-specific rebasing. Monkeypatch `scb_check.pipeline.run_sg` for controlled tooling output. Compare reports rather than matching source lines, pairing files, or introducing a separate analysis path.
 
 ## Verification
 

@@ -14,31 +14,6 @@ from scb_check.tree_walking.models import SymbolIR
 
 type AstGrepSeverity = Literal["info", "warning", "critical"]
 type ReportValue = int | float | dict[str, dict[str, int]]
-type FileDiffStatus = Literal["added", "deleted", "modified", "unchanged"]
-
-
-@dataclass(frozen=True, slots=True)
-class FileDiff:
-    """SLOC-only changes for a relative `path`, at original 1-indexed positions.
-
-    `status` reflects presence and SLOC text changes, so edits confined to
-    non-SLOC lines are `unchanged` even when source line positions shift.
-    """
-
-    path: Path
-    status: FileDiffStatus
-    added_sloc_lines: frozenset[int]
-    deleted_sloc_lines: frozenset[int]
-
-
-@dataclass(frozen=True, slots=True)
-class TreeDiff:
-    """Sorted file changes between resolved roots, excluding parse failures."""
-
-    tree_a: Path
-    tree_b: Path
-    files: tuple[FileDiff, ...]
-
 
 @dataclass(frozen=True, slots=True)
 class CloneBlock:
