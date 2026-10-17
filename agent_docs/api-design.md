@@ -19,7 +19,7 @@
 <!-- rule:6 -->
 - Preserve CLI contracts unless a change explicitly calls for migration — Command names, option names, JSON field names, and exit codes are user-facing API.
 <!-- rule:7 -->
-- Keep scoring-sensitive invariants centralized — Verbosity is a union over SLOC lines, erosion is high-complexity mass share, and both belong in reporting/pipeline logic rather than CLI wiring.
+- Keep scoring-sensitive invariants centralized — Verbosity is a union over SLOC lines, erosion is high-complexity mass share, and both belong in metric implementations over extracted facts rather than CLI wiring.
 <!-- rule:8 -->
 - Sparingly define new exception types. If you must keep them broad and ensure they are not just wrappers with pass.
 <!-- rule:9 -->

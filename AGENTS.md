@@ -17,7 +17,7 @@ Keep these docs up to date. When behavior, scoring, CLI contracts, source direct
 - **`ty` is the type checker, not mypy.** Run `uv run ty check .`.
 - **ast-grep subprocess**: `run_sg` tries a global `sg` binary first, then falls back to package-managed ast-grep executables next to Python if global `sg` is missing or fails. Tests monkeypatch `scb_check.pipeline.run_sg` (where it's imported) to avoid this — follow that pattern instead of invoking `sg` in tests. Python ast-grep rules run only on Python files.
 - **Verbosity is a union**, not a sum. Clone lines ∪ ast-grep lines per file, intersected with SLOC lines. Don't double-count. Non-Python languages currently contribute clone LOC only.
-- **Reports are read-only data.** `AnalysisResult` is the pipeline output; `Report` and `MetricResult` are mapping aliases with flat `int | float | None` values. Metric classes own calculations, fields, and units; reporting explicitly composes them. See the [report-comparison interface](docs/architecture.md#report-comparison-interface) when changing reporting contracts and the [README schema](README.md#check-json-report-fields) for canonical fields.
+- **Reports are read-only data.** `AnalysisResult` is the pipeline output; `Report` and `MetricResult` are mapping aliases with flat `int | float | None` values. Metric classes in `metrics/` subclass `Metric` and own calculations, fields, and units; reporting explicitly composes them. See the [report-comparison interface](docs/architecture.md#report-comparison-interface) when changing reporting contracts and the [README schema](README.md#check-json-report-fields) for canonical fields.
 - **Diff compares full check reports.** Commands run independent `analyze` calls with one config and equal options; `compute_diff_report` composes `before` / `after` / `diff` reports. Deltas are signed later minus earlier, not churn. Only absent dotted per-language syntax fields zero-fill; explicit `None` propagates and missing required fields are errors. Each side needs successfully parsed eligible files; failures skip independently, and zero-SLOC files remain valid. Keep standalone-check parity and known-delta CLI coverage current in `tests/test_diff_cli.py`.
 - **Dataclasses are `frozen=True, slots=True`** (see [`src/scb_check/models.py`](src/scb_check/models.py)). Pass tuples across module boundaries, not lists.
 
@@ -40,17 +40,18 @@ Single test: `uv run pytest tests/test_cli.py::test_name`.
 
 ## Layout
 
-The package splits into three layers. Before editing in one, read its `AGENTS.md` — those rules win over anything inferred from surrounding code.
+The package separates these responsibilities. Before editing in one, read its `AGENTS.md` — those rules win over anything inferred from surrounding code.
 
 - [`src/scb_check/`](src/scb_check/AGENTS.md): Main module for the codebase.
 - [`src/scb_check/analysis/`](src/scb_check/analysis/AGENTS.md): source → findings (clones, astgrep, shared source IO)
-- [`src/scb_check/reporting/`](src/scb_check/reporting/AGENTS.md): findings → output (score, render)
+- [`src/scb_check/metrics/`](src/scb_check/metrics/AGENTS.md): extracted facts → measurements and units
+- [`src/scb_check/reporting/`](src/scb_check/reporting/AGENTS.md): report composition, comparison, serialization, and rendering
 - [`src/scb_check/commands`](src/scb_check/commands/AGENTS.md): the command implementations for the CLI.
 - [`docs/`](docs/AGENTS.md): maintainer guides for architecture, tree walking, development status, and change approaches.
 
 - Top level (boundaries): [`cli.py`](src/scb_check/cli.py), [`pipeline.py`](src/scb_check/pipeline.py), [`config.py`](src/scb_check/config.py), [`walker.py`](src/scb_check/walker.py), [`logging.py`](src/scb_check/logging.py); shared dataclasses in [`models.py`](src/scb_check/models.py).
 
-Tests mirror this layout: [`tests/analysis/`](tests/analysis/), [`tests/reporting/`](tests/reporting/), and boundary tests at `tests/` root.
+Tests mirror this layout: [`tests/analysis/`](tests/analysis/), [`tests/metrics/`](tests/metrics/), [`tests/reporting/`](tests/reporting/), and boundary tests at `tests/` root.
 
 # Philosophy
 

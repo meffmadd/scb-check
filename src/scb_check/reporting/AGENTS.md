@@ -4,15 +4,15 @@ Consumes shared `AnalysisResult` for metric reports and `Flags` for location-lev
 
 ## Ownership
 
-- `Verbosity`, `Erosion`, `CognitiveErosion`, and `Syntax` live in their own modules. Each instance `compute()` accepts narrow extracted facts and returns a flat read-only `MetricResult`; each class owns its fields and units.
+- `Verbosity`, `Erosion`, `CognitiveErosion`, and `Syntax` live in the sibling [`metrics/`](../metrics/AGENTS.md) package. Their `Metric` base declares the calculation contract; concrete classes own their narrow inputs, calculations, result fields, and units.
 - `compute_report(AnalysisResult)` owns explicit group composition. `Report` is a mapping alias, with read-only outer and inner mappings, not a runtime class. Keep units outside nullable numerical values.
-- Private `_mass.py` shares erosion arithmetic. Complexity extraction stays in tree walking; mass calculations belong here.
+- Keep calculations and shared erosion arithmetic in `metrics/`. Complexity extraction stays in tree walking.
 - `serialize_report` validates contracts and creates fresh plain outer and inner dictionaries. Keep required-field and finite-value validation at the reporting boundary; reject booleans and nonnumeric/nested results.
-- Extend explicit composition for real metrics; keep the interface free of registries, superclasses, dynamic discovery, and unused configuration.
+- Extend explicit composition for real metrics; keep the interface free of registries, dynamic discovery, and unused configuration.
 
 ## Scoring invariants
 
-- **Verbosity** is the **union** of clone SLOC lines, ast-grep SLOC lines, and structural rule SLOC lines per file, divided by total SLOC. See [`verbosity.py`](verbosity.py). It is not a sum — lines flagged by multiple sources count once.
+- **Verbosity** is the **union** of clone SLOC lines, ast-grep SLOC lines, and structural rule SLOC lines per file, divided by total SLOC. See [`metrics/verbosity.py`](../metrics/verbosity.py). It is not a sum — lines flagged by multiple sources count once.
 - **Erosion** denominator is the cyclomatic mass of **all** function-like symbols; numerator is the mass of symbols with `cyc_complexity > 10`. Symbols with `sloc <= 0` contribute mass 0.
 - **Cognitive erosion** uses the same calculation with `cog_complexity > 10` and cognitive mass.
 - **Mass** = `complexity * sqrt(sloc)`.

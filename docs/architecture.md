@@ -86,7 +86,9 @@ Each side must have successfully parsed eligible source; zero-SLOC files are val
 
 `models.py` defines `ReportValue = int | float | None`, `MetricResult = Mapping[str, ReportValue]`, and `Report = Mapping[str, MetricResult]`. These are data contracts, not runtime report classes. Computed reports expose read-only outer and inner mappings over privately owned dictionaries. Metric results are flat: booleans, strings, sequences, nested mappings, and non-finite numbers are not report values. The canonical groups and fields are in the [README schema reference](../README.md#check-json-report-fields).
 
-`score.compute_report(analysis: AnalysisResult)` explicitly composes `Verbosity`, `Erosion`, `CognitiveErosion`, and `Syntax` instances from their respective modules. Each metric's `compute()` receives narrowly scoped extracted facts and owns its field names, supporting counts, calculations, and units. The builder owns group names. Private `_mass.py` shares erosion arithmetic; tree walking owns complexity extraction, not mass calculations. No metric registry, superclass, or dynamic discovery is involved.
+`reporting.score.compute_report(analysis: AnalysisResult)` explicitly composes `Verbosity`, `Erosion`, `CognitiveErosion`, and `Syntax` instances from the sibling `metrics/` package. Each metric's `compute()` receives narrowly scoped extracted facts and owns its field names, supporting counts, calculations, and units. The builder owns group names. Private `metrics/_mass.py` shares erosion arithmetic; tree walking owns complexity extraction, not mass calculations.
+
+`metrics.base.Metric` is an abstract base with an abstract `compute()` method and class-declared `units`. Its parameter specification preserves each concrete metric's distinct input signature; it does not require a common analysis context or introduce a registry or dynamic discovery. Metrics do not import reporting.
 
 `comparison.compute_diff_report(earlier_analysis, later_analysis)` returns an ordinary dictionary with exactly `before`, `after`, and `diff`, each a `Report`. It uses the standalone snapshot builder and pure `compare_reports(before, after) -> Report`. The latter has no source access, parsing, analysis execution, or terminal output. It subtracts later minus earlier, retaining zero differences. Required groups and fields must be present; only absent dotted per-language syntax counts are zero-filled over the sorted language union. Explicit `None` on either side produces `None`, even when both sides are null. Snapshots are never mutated.
 
@@ -101,7 +103,8 @@ The two-analysis builder leaves room for a future pairwise measurement without d
 - Pipeline: `pipeline.py` owns full snapshot analysis, source indexing, and finding construction for both check and diff.
 - Analysis: `analysis/` owns `ast-grep` subprocess execution, clone hashing, and shared source IO/parse warnings.
 - Rules: `rules/` owns structural rule classes, their registry, metadata, and the runner.
-- Reporting: `reporting/` calculates metrics from `AnalysisResult`, composes and compares data-only reports, serializes JSON-compatible mappings, and renders metrics or location-level `Flags`.
+- Metrics: `metrics/` owns metric classes, the `Metric` abstract base, calculation helpers, and units. It consumes extracted facts without source IO or reporting dependencies.
+- Reporting: `reporting/` selects facts from `AnalysisResult`, explicitly composes metric results, compares data-only reports, serializes JSON-compatible mappings, and renders metrics or location-level `Flags`.
 - Shared models: `models.py` contains frozen analysis/finding dataclasses, including `AnalysisResult` and `Flags`, plus the report mapping aliases. Reporting does not import pipeline orchestration for its data model. Tree-walking IR models live in `tree_walking/models.py`.
 
 ## Vocabulary
@@ -158,7 +161,7 @@ Change these only with tests and documentation updates because they move user-vi
 - `CLONE_NODE_TYPES`, language clone configs, and clone normalization in `analysis/clones.py` plus `tree_walking/languages/*`,
 - cyclomatic and cognitive complexity node sets in `tree_walking/languages/python.py` and `tree_walking/languages/*`,
 - structural rule span selection and filtering in `rules/` and `pipeline.py`,
-- verbosity union in `reporting/verbosity.py` and complexity mass-share logic in `reporting/erosion.py`, `reporting/cog_erosion.py`, and private `reporting/_mass.py`,
+- verbosity union in `metrics/verbosity.py` and complexity mass-share logic in `metrics/erosion.py`, `metrics/cog_erosion.py`, and private `metrics/_mass.py`,
 - field coverage and later-minus-earlier arithmetic in `reporting/comparison.py`.
 
 ## Extension points
@@ -166,4 +169,4 @@ Change these only with tests and documentation updates because they move user-vi
 - Extra `ast-grep` rules: set `SCB_CHECK_EXTRA_SLOP_RULES` to a `:`-separated list of YAML files.
 - Structural rules: add a rule class in `rules/`, register it in `rules/registry.py`, and keep it on IR plus `RuleContext`.
 - New CLI commands: add command wiring under `commands/` and register from `cli.py`.
-- Snapshot metrics: add a metric-owned flat result and units, explicitly compose it in reporting, and extend comparison contracts and CLI acceptance coverage; see [Development](development.md#adding-or-extending-a-metric).
+- Snapshot metrics: subclass `metrics.base.Metric` with a metric-owned flat result and units, explicitly compose it in reporting, and extend comparison contracts and CLI acceptance coverage; see [Development](development.md#adding-or-extending-a-metric).

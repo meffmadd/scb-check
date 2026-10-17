@@ -4,14 +4,14 @@ from collections.abc import Mapping
 from math import isfinite
 from types import MappingProxyType
 
+from scb_check.metrics.cog_erosion import CognitiveErosion
+from scb_check.metrics.erosion import Erosion
+from scb_check.metrics.syntax import Syntax
+from scb_check.metrics.units import Unit
+from scb_check.metrics.verbosity import Verbosity
 from scb_check.models import AnalysisResult
 from scb_check.models import Report
 from scb_check.models import ReportValue
-from scb_check.reporting.cog_erosion import CognitiveErosion
-from scb_check.reporting.erosion import Erosion
-from scb_check.reporting.syntax import Syntax
-from scb_check.reporting.units import Unit
-from scb_check.reporting.verbosity import Verbosity
 
 # Explicit presentation/schema composition, not a metric dispatcher.
 REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(

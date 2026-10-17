@@ -5,7 +5,8 @@ Layers:
 - [`tree_walking/`](tree_walking/AGENTS.md) — source text → language-agnostic IR, SLOC, source directives, semantic project context
 - [`rules/`](rules/AGENTS.md) — structural rules over tree-walking IR
 - [`analysis/`](analysis/AGENTS.md) — ast-grep integration, clone detection, and shared source IO
-- [`reporting/`](reporting/AGENTS.md) — findings → output
+- [`metrics/`](metrics/AGENTS.md) — extracted facts → measurements and units, using the `Metric` abstract base
+- [`reporting/`](reporting/AGENTS.md) — report composition, comparison, serialization, and rendering
 - [`commands/`](commands/AGENTS.md) — CLI subcommand wiring
 - This level — boundaries and shared types
 

@@ -44,8 +44,9 @@ Implemented analysis paths:
 | Shared source IO and parse warnings | `src/scb_check/analysis/source.py` |
 | Full snapshot analysis and source indexing | `src/scb_check/pipeline.py` |
 | Snapshot composition and serialization | `src/scb_check/reporting/score.py` |
-| Metric calculations, fields, and units | `src/scb_check/reporting/verbosity.py`, `erosion.py`, `cog_erosion.py`, `syntax.py` |
-| Shared erosion arithmetic | `src/scb_check/reporting/_mass.py` |
+| Metric contract | `src/scb_check/metrics/base.py` (`Metric`) |
+| Metric calculations, fields, and units | `src/scb_check/metrics/verbosity.py`, `erosion.py`, `cog_erosion.py`, `syntax.py`, `units.py` |
+| Shared erosion arithmetic | `src/scb_check/metrics/_mass.py` |
 | Report comparison and summary rendering | `src/scb_check/reporting/comparison.py` |
 | `ast-grep` integration | `src/scb_check/analysis/astgrep.py` and `src/scb_check/resources/slop_rules/` |
 | Structural rule behavior | `src/scb_check/rules/` |
@@ -93,12 +94,12 @@ Pay special attention to:
 ## Adding or extending a metric
 
 1. Add behavioral acceptance expectations through the Typer CLI for known scores and supporting values. Keep the [README schema reference](../README.md#check-json-report-fields) synchronized.
-2. Put a small metric class in its own `reporting/` module with an instance `compute()` method. Pass only the extracted facts it needs; keep parser traversal and complexity extraction in tree walking. Reuse private arithmetic such as `_mass.py` for the erosion variants.
+2. Put a small metric class in its own `metrics/` module, subclassing `metrics.base.Metric` with its `compute()` input types (for example, `Syntax` uses `Metric[[tuple[LanguageSyntaxSummary, ...]]]`). Implement instance `compute()` and declare class-level `units`. Pass only the extracted facts it needs; keep parser traversal and complexity extraction in tree walking. Reuse private `metrics/_mass.py` arithmetic for the erosion variants.
 3. Return a read-only flat `MetricResult` of `int | float | None`. Own field names and units in the metric, including dynamic syntax fields. Return defined-but-unavailable fields as `None`; preserve existing zero-denominator results and let calculation errors surface.
-4. Explicitly compose the metric in `score.compute_report(AnalysisResult)` and associate its group with metric-owned units. Keep both mapping levels read-only. Use `serialize_report` for contract validation and fresh plain dictionaries; keep metadata outside numerical results.
+4. Explicitly compose the metric in `reporting.score.compute_report(AnalysisResult)` and associate its group with metric-owned units. Keep both mapping levels read-only. Use `serialize_report` for contract validation and fresh plain dictionaries; keep metadata outside numerical results.
 5. Update required-field/group validation and comparison coverage for the schema. Use flat numerical fields, not nested result objects. Add no registry, report class, or placeholder configuration; constructors are for real configuration requirements.
 
-See the [reporting ownership and interface explanation](architecture.md#report-comparison-interface).
+Keep `metrics/` independent of reporting and source IO. See the [ownership and interface explanation](architecture.md#report-comparison-interface).
 
 ## Extending snapshot comparisons
 

@@ -5,13 +5,14 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import ClassVar
 
+from scb_check.metrics.base import Metric
+from scb_check.metrics.units import Unit
 from scb_check.models import LineGroups
 from scb_check.models import MetricResult
-from scb_check.reporting.units import Unit
 from scb_check.tree_walking.models import RuleFinding
 
 
-class Verbosity:
+class Verbosity(Metric[[LineGroups, tuple[RuleFinding, ...]]]):
     """Calculate the flagged-line union and its contributing measurements."""
 
     units: ClassVar[dict[str, Unit]] = {

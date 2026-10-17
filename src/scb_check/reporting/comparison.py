@@ -2,6 +2,7 @@
 
 from types import MappingProxyType
 
+from scb_check.metrics.units import Unit
 from scb_check.models import AnalysisResult
 from scb_check.models import MetricResult
 from scb_check.models import Report
@@ -9,7 +10,6 @@ from scb_check.models import ReportValue
 from scb_check.reporting.score import REPORT_UNITS
 from scb_check.reporting.score import compute_report
 from scb_check.reporting.score import validate_report
-from scb_check.reporting.units import Unit
 
 
 def compute_diff_report(
