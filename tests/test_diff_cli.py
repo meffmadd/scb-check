@@ -63,38 +63,48 @@ def test_diff_compares_full_check_reports(trees: tuple[Path, Path]) -> None:
 
     payload = _json_diff(trees)
 
-    assert payload.keys() == {"tree_a", "tree_b", "before", "after", "delta"}
+    assert payload.keys() == {"tree_a", "tree_b", "before", "after", "diff"}
     assert payload["tree_a"] == str(tree_a.resolve())
     assert payload["tree_b"] == str(tree_b.resolve())
     assert payload["before"] == _json_check(tree_a)
     assert payload["after"] == _json_check(tree_b)
-    assert payload["delta"] == {
-        "verbosity": 0.0,
-        "erosion": 0.0,
-        "cog_erosion": 0.0,
-        "files_scanned": 0,
-        "total_loc": 1,
-        "verbosity_flagged_loc": 0,
-        "clone_loc": 0,
-        "ast_grep_flagged_loc": 0,
-        "structural_rule_loc": 0,
-        "structural_rule_findings": 0,
-        "total_functions": 0,
-        "high_cc_functions": 0,
-        "high_cog_functions": 0,
-        "total_mass": 0.0,
-        "high_cc_mass": 0.0,
-        "total_cog_mass": 0.0,
-        "high_cog_mass": 0.0,
-        "syntax_tree_count": 0,
-        "syntax_node_count": 5,
-        "syntax_by_language": {"python": {"tree_count": 0, "node_count": 5}},
+    assert payload["diff"] == {
+        "verbosity": {
+            "score": 0.0,
+            "files_scanned": 0,
+            "total_loc": 1,
+            "flagged_loc": 0,
+            "clone_loc": 0,
+            "ast_grep_flagged_loc": 0,
+            "structural_rule_loc": 0,
+            "structural_rule_findings": 0,
+        },
+        "erosion": {
+            "score": 0.0,
+            "total_functions": 0,
+            "high_cc_functions": 0,
+            "total_mass": 0.0,
+            "high_cc_mass": 0.0,
+        },
+        "cog_erosion": {
+            "score": 0.0,
+            "total_functions": 0,
+            "high_cog_functions": 0,
+            "total_cog_mass": 0.0,
+            "high_cog_mass": 0.0,
+        },
+        "syntax": {
+            "tree_count": 0,
+            "node_count": 5,
+            "python.tree_count": 0,
+            "python.node_count": 5,
+        },
     }
     reverse = _json_diff((tree_b, tree_a))
     assert reverse["before"] == payload["after"]
     assert reverse["after"] == payload["before"]
-    assert reverse["delta"]["total_loc"] == -1
-    assert reverse["delta"]["syntax_node_count"] == -5
+    assert reverse["diff"]["verbosity"]["total_loc"] == -1
+    assert reverse["diff"]["syntax"]["node_count"] == -5
 
 
 def test_diff_shows_ratio_decrease_despite_growing_flagged_count(
@@ -128,13 +138,13 @@ def test_diff_shows_ratio_decrease_despite_growing_flagged_count(
 
     assert payload["before"] == _json_check(tree_a)
     assert payload["after"] == _json_check(tree_b)
-    assert payload["before"]["verbosity"] == 0.5
-    assert payload["after"]["verbosity"] == 0.25
-    assert payload["delta"]["verbosity"] == pytest.approx(-0.25)
-    assert payload["delta"]["verbosity_flagged_loc"] == 1
-    assert payload["delta"]["ast_grep_flagged_loc"] == 1
+    assert payload["before"]["verbosity"]["score"] == 0.5
+    assert payload["after"]["verbosity"]["score"] == 0.25
+    assert payload["diff"]["verbosity"]["score"] == pytest.approx(-0.25)
+    assert payload["diff"]["verbosity"]["flagged_loc"] == 1
+    assert payload["diff"]["verbosity"]["ast_grep_flagged_loc"] == 1
     reverse = _json_diff((tree_b, tree_a))
-    assert reverse["delta"]["verbosity"] == pytest.approx(0.25)
+    assert reverse["diff"]["verbosity"]["score"] == pytest.approx(0.25)
     result = _invoke_diff(trees, "-vv")
     assert result.exit_code == 0, result.output
     assert str(tree_a) in result.stdout
@@ -144,8 +154,8 @@ def test_diff_shows_ratio_decrease_despite_growing_flagged_count(
         for label in (
             "before",
             "after",
-            "delta",
-            "verbosity",
+            "diff",
+            "verbosity.score",
             "total_loc",
             "total_mass",
         )
@@ -176,22 +186,24 @@ def test_diff_compares_complexity_counts_and_masses(
 
     assert payload["before"] == _json_check(tree_a)
     assert payload["after"] == _json_check(tree_b)
-    delta = payload["delta"]
-    assert delta["total_loc"] == 24
-    assert delta["total_functions"] == 1
-    assert delta["high_cc_functions"] == delta["high_cog_functions"] == 1
-    assert delta["high_cc_mass"] == pytest.approx(12 * math.sqrt(24))
-    assert delta["total_mass"] == pytest.approx(12 * math.sqrt(24))
-    assert delta["high_cog_mass"] == pytest.approx(11 * math.sqrt(24))
-    assert delta["total_cog_mass"] == pytest.approx(11 * math.sqrt(24))
-    assert delta["erosion"] == pytest.approx(
-        12 * math.sqrt(24) / (12 * math.sqrt(24) + math.sqrt(2))
-    )
-    assert delta["cog_erosion"] == 1.0
+    difference = payload["diff"]
+    assert difference["verbosity"]["total_loc"] == 24
+    assert difference["erosion"]["total_functions"] == difference["cog_erosion"]["total_functions"] == 1
+    assert difference["erosion"]["high_cc_functions"] == difference["cog_erosion"]["high_cog_functions"] == 1
+    assert difference["erosion"]["high_cc_mass"] == pytest.approx(58.78775382679627)
+    assert difference["erosion"]["total_mass"] == pytest.approx(58.78775382679627)
+    assert difference["cog_erosion"]["high_cog_mass"] == pytest.approx(53.88877434122992)
+    assert difference["cog_erosion"]["total_cog_mass"] == pytest.approx(53.88877434122992)
+    assert difference["erosion"]["score"] == pytest.approx(0.976508474)
+    assert difference["cog_erosion"]["score"] == 1.0
     reverse = _json_diff((tree_b, tree_a))
-    for name, value in delta.items():
-        if name != "syntax_by_language":
-            assert reverse["delta"][name] == pytest.approx(-value)
+    for group, result in difference.items():
+        for name, value in result.items():
+            assert reverse["diff"][group][name] == pytest.approx(-value)
+    human = _invoke_diff(trees)
+    mass_rows = [row for row in human.stdout.splitlines() if "mass" in row]
+    assert mass_rows
+    assert all("%" not in row and "percentage" not in row for row in mass_rows)
 
 
 def test_diff_keeps_full_tree_clone_context_and_source_directives(
@@ -224,19 +236,72 @@ def test_diff_keeps_full_tree_clone_context_and_source_directives(
 
     assert payload["before"] == _json_check(tree_a)
     assert payload["after"] == _json_check(tree_b)
-    assert (
-        payload["before"]["clone_loc"] == 0
-    )  # The trees must not form one project.
-    assert payload["after"]["clone_loc"] == 10
-    assert payload["delta"]["files_scanned"] == 1
-    assert payload["delta"]["clone_loc"] == 10
-    assert payload["delta"]["structural_rule_loc"] == -2
-    assert payload["delta"]["structural_rule_findings"] == -1
-    assert (
-        payload["after"]["verbosity_flagged_loc"] == 10
-    )  # Clone/ast overlap is a union.
-    assert payload["delta"]["verbosity_flagged_loc"] == 7
-    assert payload["delta"]["ast_grep_flagged_loc"] == 0
+    assert payload["before"]["verbosity"]["clone_loc"] == 0  # Independent projects.
+    assert payload["after"]["verbosity"]["clone_loc"] == 10
+    assert payload["diff"]["verbosity"]["files_scanned"] == 1
+    assert payload["diff"]["verbosity"]["clone_loc"] == 10
+    assert payload["diff"]["verbosity"]["structural_rule_loc"] == -2
+    assert payload["diff"]["verbosity"]["structural_rule_findings"] == -1
+    assert payload["after"]["verbosity"]["flagged_loc"] == 10  # Clone/ast union.
+    assert payload["diff"]["verbosity"]["flagged_loc"] == 7
+    assert payload["diff"]["verbosity"]["ast_grep_flagged_loc"] == 0
+
+
+def test_diff_preserves_three_way_verbosity_union(
+    trees: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Clone, ast-grep, and structural overlap counts once, excluding non-SLOC."""
+    config = trees[0].parent / "scb-check.toml"
+    config.write_text("[low-use-short-function]\nenabled = true\n", encoding="utf-8")
+    source = (
+        'def first(value):\n    """Docs."""\n    # notes\n    cleaned = value.strip()\n\n    return cleaned\n\n'
+        'def second(value):\n    """Docs."""\n    cleaned = value.strip()\n\n    return cleaned\n\n'
+        "def route(value):\n    return first(value) + second(value)\n"
+    )
+    for tree in trees:
+        (tree / "sample.py").write_text(source, encoding="utf-8")
+
+    def hits(files: tuple[Path, ...], _rules_path: Path) -> tuple[AstGrepHit, ...]:
+        return tuple(
+            AstGrepHit(file, start, end, 0, 1, "json-loads-read", "cleaned")
+            for file in files
+            for start, end in ((2, 4), (9, 10))
+        )
+
+    monkeypatch.setattr("scb_check.pipeline.run_sg", hits)
+    payload = _json_diff(trees)
+
+    assert payload["before"] == payload["after"] == _json_check(trees[0]) == _json_check(trees[1])
+    assert payload["before"]["verbosity"] == {
+        "score": 0.75,
+        "files_scanned": 1,
+        "total_loc": 8,
+        "flagged_loc": 6,
+        "clone_loc": 6,
+        "ast_grep_flagged_loc": 2,
+        "structural_rule_loc": 6,
+        "structural_rule_findings": 2,
+    }
+    assert all(value == 0 for value in payload["diff"]["verbosity"].values())
+
+
+@pytest.mark.parametrize(("branches", "high_cc", "high_cog"), [(9, 0, 0), (10, 1, 0), (11, 1, 1)])
+def test_diff_uses_strict_complexity_thresholds(
+    trees: tuple[Path, Path], branches: int, high_cc: int, high_cog: int,
+) -> None:
+    """Cyclomatic and cognitive thresholds are independently strictly above ten."""
+    (trees[0] / "sample.py").write_text("", encoding="utf-8")
+    body = "".join(f"    if value == {index}:\n        return {index}\n" for index in range(branches))
+    (trees[1] / "sample.py").write_text(f"def route(value):\n{body}    return -1\n", encoding="utf-8")
+
+    payload = _json_diff(trees)
+
+    assert payload["before"] == _json_check(trees[0])
+    assert payload["after"] == _json_check(trees[1])
+    for group, count_field, expected in (("erosion", "high_cc_functions", high_cc), ("cog_erosion", "high_cog_functions", high_cog)):
+        assert payload["after"][group][count_field] == payload["diff"][group][count_field] == expected
+        assert payload["after"][group]["score"] == payload["diff"][group]["score"] == expected
+        assert payload["after"][group]["total_functions"] == 1
 
 
 @pytest.mark.parametrize("change", ["identical", "literal", "rename"])
@@ -260,19 +325,14 @@ def test_diff_zero_deltas_measure_metrics_not_edit_volume(
         == _json_check(tree_a)
         == _json_check(tree_b)
     )
-    assert payload["delta"].keys() == payload["before"].keys()
-    assert all(
-        value == 0
-        for name, value in payload["delta"].items()
-        if name != "syntax_by_language"
-    )
-    assert payload["delta"]["syntax_by_language"] == {
-        "python": {"tree_count": 0, "node_count": 0}
-    }
+    assert payload["diff"].keys() == payload["before"].keys()
+    for group, result in payload["diff"].items():
+        assert result.keys() == payload["before"][group].keys()
+        assert all(value == 0 for value in result.values())
     result = _invoke_diff(trees)
     assert result.exit_code == 0
     assert "+0.00 percentage points" in result.stdout
-    assert "syntax_by_language.python.node_count" in result.stdout
+    assert "syntax.python.node_count" in result.stdout
 
 
 def test_diff_compares_language_union_without_changing_snapshot_maps(
@@ -296,44 +356,30 @@ def test_diff_compares_language_union_without_changing_snapshot_maps(
 
     assert payload["before"] == _json_check(tree_a)
     assert payload["after"] == _json_check(tree_b)
-    assert set(payload["before"]["syntax_by_language"]) == {"python"}
-    assert set(payload["after"]["syntax_by_language"]) == {
-        "cpp",
-        "haskell",
-        "javascript",
-        "rust",
-        "typescript",
-        "zig",
+    assert set(payload["before"]["syntax"]) == {
+        "tree_count", "node_count", "python.tree_count", "python.node_count",
     }
-    languages = payload["delta"]["syntax_by_language"]
-    assert list(languages) == [
-        "cpp",
-        "haskell",
-        "javascript",
-        "python",
-        "rust",
-        "typescript",
-        "zig",
+    syntax = payload["diff"]["syntax"]
+    assert list(syntax) == [
+        "tree_count", "node_count",
+        "cpp.tree_count", "cpp.node_count",
+        "haskell.tree_count", "haskell.node_count",
+        "javascript.tree_count", "javascript.node_count",
+        "python.tree_count", "python.node_count",
+        "rust.tree_count", "rust.node_count",
+        "typescript.tree_count", "typescript.node_count",
+        "zig.tree_count", "zig.node_count",
     ]
-    assert languages["python"] == {"tree_count": -1, "node_count": -6}
-    for language in payload["after"]["syntax_by_language"]:
-        assert (
-            languages[language]
-            == payload["after"]["syntax_by_language"][language]
-        )
-        assert languages[language]["tree_count"] == 1
-        assert languages[language]["node_count"] > 0
-    assert payload["delta"]["total_loc"] == 11
-    assert (
-        payload["delta"]["files_scanned"]
-        == payload["delta"]["syntax_tree_count"]
-        == 5
-    )
+    assert syntax["python.tree_count"] == -1
+    assert syntax["python.node_count"] == -6
+    for language in ("cpp", "haskell", "javascript", "rust", "typescript", "zig"):
+        assert payload["after"]["syntax"][f"{language}.tree_count"] == syntax[f"{language}.tree_count"] == 1
+        assert payload["after"]["syntax"][f"{language}.node_count"] == syntax[f"{language}.node_count"] > 0
+    assert "python.tree_count" not in payload["after"]["syntax"]
+    assert payload["diff"]["verbosity"]["total_loc"] == 11
+    assert payload["diff"]["verbosity"]["files_scanned"] == syntax["tree_count"] == 5
     reverse = _json_diff((tree_b, tree_a))
-    for language, counts in languages.items():
-        assert reverse["delta"]["syntax_by_language"][language] == {
-            name: -value for name, value in counts.items()
-        }
+    assert reverse["diff"]["syntax"] == {name: -value for name, value in syntax.items()}
 
 
 def test_diff_compares_shared_added_and_removed_languages(
@@ -352,13 +398,16 @@ def test_diff_compares_shared_added_and_removed_languages(
 
     assert payload["before"] == _json_check(tree_a)
     assert payload["after"] == _json_check(tree_b)
-    assert payload["delta"]["syntax_by_language"] == {
-        "javascript": {"tree_count": -1, "node_count": -1},
-        "python": {"tree_count": 0, "node_count": 5},
-        "rust": {"tree_count": 1, "node_count": 1},
+    assert payload["diff"]["syntax"] == {
+        "tree_count": 0,
+        "node_count": 5,
+        "javascript.tree_count": -1,
+        "javascript.node_count": -1,
+        "python.tree_count": 0,
+        "python.node_count": 5,
+        "rust.tree_count": 1,
+        "rust.node_count": 1,
     }
-    assert payload["delta"]["syntax_tree_count"] == 0
-    assert payload["delta"]["syntax_node_count"] == 5
 
 
 def test_diff_is_deterministic_finite_and_resolves_tree_context(
@@ -376,11 +425,11 @@ def test_diff_is_deterministic_finite_and_resolves_tree_context(
     payload = json.loads(first.stdout)
     assert payload["tree_a"] == str(trees[0])
     assert payload["tree_b"] == str(trees[1])
-    for group in ("before", "after", "delta"):
+    for name in ("before", "after", "diff"):
         assert all(
             math.isfinite(value)
-            for name, value in payload[group].items()
-            if name != "syntax_by_language"
+            for result in payload[name].values()
+            for value in result.values()
         )
 
 
@@ -438,16 +487,14 @@ def test_diff_shared_config_preserves_check_exclusions_and_rule_settings(
 
     assert payload["before"] == _json_check(tree_a, *options)
     assert payload["after"] == _json_check(tree_b, *options)
-    assert payload["before"]["files_scanned"] == (5 if include_all else 2)
-    assert payload["after"]["files_scanned"] == (6 if include_all else 3)
+    assert payload["before"]["verbosity"]["files_scanned"] == (5 if include_all else 2)
+    assert payload["after"]["verbosity"]["files_scanned"] == (6 if include_all else 3)
     assert (
-        payload["before"]["structural_rule_findings"]
-        == payload["after"]["structural_rule_findings"]
+        payload["before"]["verbosity"]["structural_rule_findings"]
+        == payload["after"]["verbosity"]["structural_rule_findings"]
         == 1
     )
-    assert (
-        payload["delta"]["files_scanned"] == payload["delta"]["total_loc"] == 1
-    )
+    assert payload["diff"]["verbosity"]["files_scanned"] == payload["diff"]["verbosity"]["total_loc"] == 1
 
 
 @pytest.mark.parametrize("include_all", [False, True])
@@ -488,16 +535,10 @@ def test_diff_include_all_has_full_check_suppression_semantics(
 
     for group, tree in zip(("before", "after"), trees, strict=True):
         assert payload[group] == _json_check(tree, *options)
-        assert payload[group]["files_scanned"] == (2 if include_all else 1)
-        assert payload[group]["ast_grep_flagged_loc"] == (
-            3 if include_all else 0
-        )
-        assert payload[group]["structural_rule_findings"] == (
-            1 if include_all else 0
-        )
-        assert payload[group]["verbosity_flagged_loc"] == (
-            5 if include_all else 0
-        )
+        assert payload[group]["verbosity"]["files_scanned"] == (2 if include_all else 1)
+        assert payload[group]["verbosity"]["ast_grep_flagged_loc"] == (3 if include_all else 0)
+        assert payload[group]["verbosity"]["structural_rule_findings"] == (1 if include_all else 0)
+        assert payload[group]["verbosity"]["flagged_loc"] == (5 if include_all else 0)
 
 
 @pytest.mark.parametrize("tooling", ["disabled", "unavailable"])
@@ -528,9 +569,10 @@ def test_diff_without_ast_grep_retains_other_measurements(
     payload = json.loads(result.stdout)
     for group, tree in zip(("before", "after"), trees, strict=True):
         assert payload[group] == _json_check(tree, *options)
-        assert payload[group]["ast_grep_flagged_loc"] == 0
-        assert payload[group]["structural_rule_findings"] == 1
-        assert payload[group]["total_functions"] == 1
+        assert payload[group]["verbosity"]["ast_grep_flagged_loc"] == 0
+        assert payload[group]["verbosity"]["structural_rule_findings"] == 1
+        assert payload[group]["erosion"]["total_functions"] == 1
+        assert payload[group]["cog_erosion"]["total_functions"] == 1
     if tooling == "unavailable":
         assert "ast-grep binary not found" in result.stderr
 
@@ -573,11 +615,9 @@ def test_diff_warns_and_skips_failures_independently(
     payload = json.loads(result.stdout)
     for side, group in enumerate(("before", "after")):
         assert payload[group] == _json_check(trees[side])
-        assert payload[group]["files_scanned"] == (
-            1 if side == failed_side else 2
-        )
-    assert payload["delta"]["files_scanned"] == (1 if failed_side == 0 else -1)
-    assert payload["delta"]["total_loc"] == (1 if failed_side == 0 else -1)
+        assert payload[group]["verbosity"]["files_scanned"] == (1 if side == failed_side else 2)
+    assert payload["diff"]["verbosity"]["files_scanned"] == (1 if failed_side == 0 else -1)
+    assert payload["diff"]["verbosity"]["total_loc"] == (1 if failed_side == 0 else -1)
 
 
 @pytest.mark.parametrize("invalid_side", [0, 1])
@@ -595,12 +635,8 @@ def test_diff_preserves_utf8_replacement_behavior(
     payload = json.loads(result.stdout)
     assert payload["before"] == _json_check(trees[0])
     assert payload["after"] == _json_check(trees[1])
-    assert (
-        payload["before"]["files_scanned"]
-        == payload["after"]["files_scanned"]
-        == 1
-    )
-    assert payload["delta"]["total_loc"] == 0
+    assert payload["before"]["verbosity"]["files_scanned"] == payload["after"]["verbosity"]["files_scanned"] == 1
+    assert payload["diff"]["verbosity"]["total_loc"] == 0
 
 
 @pytest.mark.parametrize("invalid_side", [0, 1])
@@ -677,17 +713,10 @@ def test_diff_accepts_parsed_zero_sloc_files(
     payload = _json_diff(trees)
 
     assert payload["before"] == payload["after"] == _json_check(trees[0])
-    assert payload["before"]["files_scanned"] == 1
-    assert payload["before"]["total_loc"] == 0
-    assert (
-        payload["before"]["verbosity"]
-        == payload["before"]["erosion"]
-        == payload["before"]["cog_erosion"]
-        == 0
-    )
-    assert (
-        payload["delta"]["files_scanned"] == payload["delta"]["total_loc"] == 0
-    )
+    assert payload["before"]["verbosity"]["files_scanned"] == 1
+    assert payload["before"]["verbosity"]["total_loc"] == 0
+    assert all(payload["before"][group]["score"] == 0 for group in ("verbosity", "erosion", "cog_erosion"))
+    assert payload["diff"]["verbosity"]["files_scanned"] == payload["diff"]["verbosity"]["total_loc"] == 0
 
 
 @pytest.mark.parametrize("invalid_side", [0, 1])

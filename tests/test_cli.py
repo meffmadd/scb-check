@@ -24,23 +24,7 @@ _REPORT_KEYS = {
     "verbosity",
     "erosion",
     "cog_erosion",
-    "files_scanned",
-    "total_loc",
-    "verbosity_flagged_loc",
-    "clone_loc",
-    "ast_grep_flagged_loc",
-    "structural_rule_loc",
-    "structural_rule_findings",
-    "total_functions",
-    "high_cc_functions",
-    "high_cog_functions",
-    "total_mass",
-    "high_cc_mass",
-    "total_cog_mass",
-    "high_cog_mass",
-    "syntax_tree_count",
-    "syntax_node_count",
-    "syntax_by_language",
+    "syntax",
 }
 
 
@@ -95,8 +79,9 @@ def test_check_output_format_json(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """The check --output-format json option emits a JSON summary."""
-    corpus = Path(__file__).parent / "fixtures" / "corpus"
+    """Check JSON contains only flat numerical results grouped by metric."""
+    corpus = tmp_path / "sample.py"
+    corpus.write_text("value = 1\n", encoding="utf-8")
     config_override = tmp_path / "scb-check.toml"
     config_override.write_text("", encoding="utf-8")
     monkeypatch.setattr(
@@ -116,10 +101,40 @@ def test_check_output_format_json(
         ],
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
-    assert payload.keys() == _REPORT_KEYS
-
+    assert payload == {
+        "verbosity": {
+            "score": 0.0,
+            "files_scanned": 1,
+            "total_loc": 1,
+            "flagged_loc": 0,
+            "clone_loc": 0,
+            "ast_grep_flagged_loc": 0,
+            "structural_rule_loc": 0,
+            "structural_rule_findings": 0,
+        },
+        "erosion": {
+            "score": 0.0,
+            "total_functions": 0,
+            "high_cc_functions": 0,
+            "total_mass": 0.0,
+            "high_cc_mass": 0.0,
+        },
+        "cog_erosion": {
+            "score": 0.0,
+            "total_functions": 0,
+            "high_cog_functions": 0,
+            "total_cog_mass": 0.0,
+            "high_cog_mass": 0.0,
+        },
+        "syntax": {
+            "tree_count": 1,
+            "node_count": 6,
+            "python.tree_count": 1,
+            "python.node_count": 6,
+        },
+    }
 
 
 def test_check_human_findings(
@@ -202,8 +217,9 @@ def test_check_report_accepts_supported_non_python_file(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["files_scanned"] == 1
-    assert payload["total_functions"] == 1
+    assert payload["verbosity"]["files_scanned"] == 1
+    assert payload["erosion"]["total_functions"] == 1
+    assert payload["cog_erosion"]["total_functions"] == 1
 
 
 def test_check_report_counts_syntax_by_language(tmp_path: Path) -> None:
@@ -221,16 +237,16 @@ def test_check_report_counts_syntax_by_language(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    syntax_by_language = payload["syntax_by_language"]
-    assert set(syntax_by_language) == {"python", "rust"}
-    assert syntax_by_language["python"]["tree_count"] == 1
-    assert syntax_by_language["python"]["node_count"] > 0
-    assert syntax_by_language["rust"]["tree_count"] == 1
-    assert syntax_by_language["rust"]["node_count"] > 0
-    assert payload["syntax_tree_count"] == 2
-    assert payload["syntax_node_count"] == sum(
-        summary["node_count"] for summary in syntax_by_language.values()
-    )
+    syntax = payload["syntax"]
+    assert list(syntax) == [
+        "tree_count", "node_count", "python.tree_count", "python.node_count",
+        "rust.tree_count", "rust.node_count",
+    ]
+    assert syntax["python.tree_count"] == syntax["rust.tree_count"] == 1
+    assert syntax["python.node_count"] == 6
+    assert syntax["rust.node_count"] > 0
+    assert syntax["tree_count"] == 2
+    assert syntax["node_count"] == syntax["python.node_count"] + syntax["rust.node_count"]
 
 
 def test_check_report_allows_disable_sg(
@@ -254,7 +270,7 @@ def test_check_report_allows_disable_sg(
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["ast_grep_flagged_loc"] == 0
+    assert payload["verbosity"]["ast_grep_flagged_loc"] == 0
 
 
 def test_check_filters_duplicates_by_line_count(
@@ -450,7 +466,7 @@ def test_check_report_skips_bad_files(
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["files_scanned"] == 1
+    assert payload["verbosity"]["files_scanned"] == 1
 
 
 def test_check_reads_invalid_utf8_with_replacement(tmp_path: Path) -> None:
@@ -464,8 +480,8 @@ def test_check_reads_invalid_utf8_with_replacement(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
-    assert payload["files_scanned"] == 1
-    assert payload["total_loc"] == 1
+    assert payload["verbosity"]["files_scanned"] == 1
+    assert payload["verbosity"]["total_loc"] == 1
     assert "not valid UTF-8" in result.stderr
     assert "sample.py" in result.stderr
 

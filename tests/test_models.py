@@ -5,7 +5,6 @@ from pathlib import Path
 
 from scb_check.models import FileLineSet
 from scb_check.models import Flags
-from scb_check.reporting.score import compute_report
 from scb_check.tree_walking.models import RuleFinding
 from scb_check.tree_walking.models import Severity
 from scb_check.tree_walking.models import SourceSpan
@@ -52,14 +51,6 @@ def test_flags_do_not_expose_flat_compat_properties() -> None:
 
     assert "clones" not in dir(flags)
     assert "total_loc_by_file" not in dir(flags)
-
-
-def test_report_does_not_expose_flat_compat_properties() -> None:
-    """Reports expose grouped summaries, not legacy flat shortcuts."""
-    report = compute_report(Flags())
-
-    assert "verbosity" not in dir(report)
-    assert "total_loc" not in dir(report)
 
 
 def test_rule_finding_exposes_file_and_lines() -> None:

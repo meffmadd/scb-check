@@ -1,61 +1,92 @@
-"""Compare independently computed snapshot reports without source access."""
+"""Compose and present comparisons without source access or analysis execution."""
 
-from __future__ import annotations
+from types import MappingProxyType
 
+from scb_check.models import AnalysisResult
+from scb_check.models import MetricResult
 from scb_check.models import Report
 from scb_check.models import ReportValue
+from scb_check.reporting.score import REPORT_UNITS
+from scb_check.reporting.score import compute_report
+from scb_check.reporting.score import validate_report
+from scb_check.reporting.units import Unit
 
 
-def compare_reports(before: Report, after: Report) -> dict[str, ReportValue]:
-    """Return signed later-minus-earlier measurements in the check JSON structure."""
-    after_values = after.to_dict()
-    delta: dict[str, ReportValue] = {}
-    for name, earlier in before.to_dict().items():
-        later = after_values[name]
-        if isinstance(earlier, dict) and isinstance(later, dict):
-            delta[name] = {
-                language: {
-                    count: later.get(language, {}).get(count, 0)
-                    - earlier.get(language, {}).get(count, 0)
-                    for count in ("tree_count", "node_count")
-                }
-                for language in sorted(earlier.keys() | later.keys())
-            }
-        elif not isinstance(earlier, dict) and not isinstance(later, dict):
-            delta[name] = later - earlier
-    return delta
+def compute_diff_report(
+    before: AnalysisResult, after: AnalysisResult
+) -> dict[str, Report]:
+    """Compose snapshots and their signed later-minus-earlier differences."""
+    earlier, later = compute_report(before), compute_report(after)
+    return {
+        "before": earlier,
+        "after": later,
+        "diff": compare_reports(earlier, later),
+    }
 
 
-def render_comparison(
-    before: Report, after: Report, delta: dict[str, ReportValue]
-) -> str:
-    """Render before, after, and signed delta values, including zero deltas."""
-    before_values = _display_measurements(before.to_dict())
-    after_values = _display_measurements(after.to_dict())
-    rows = ["metric | before | after | delta (after - before)"]
-    for name, difference in _display_measurements(delta).items():
-        earlier, later = before_values.get(name, 0), after_values.get(name, 0)
-        rows.append(
-            f"{name} | {earlier:.2%} | {later:.2%} | {difference * 100:+.2f} percentage points"
-            if name in {"verbosity", "erosion", "cog_erosion"}
-            else f"{name} | {earlier} | {later} | {difference:+}"
-        )
+def compare_reports(before: Report, after: Report) -> Report:
+    """Subtract corresponding flat results, zero-filling only absent language counts."""
+    validate_report(before)
+    validate_report(after)
+    if before.keys() != after.keys():
+        raise ValueError("missing corresponding metric groups")
+    difference: dict[str, MetricResult] = {}
+    for group, earlier in before.items():
+        later = after[group]
+        all_fields = earlier.keys() | later.keys()
+        language_fields = {
+            field
+            for field in all_fields
+            if group == "syntax"
+            and field.partition(".")[0]
+            and field.partition(".")[2] in REPORT_UNITS["syntax"]
+        }
+        if (earlier.keys() ^ later.keys()) - language_fields:
+            raise ValueError(f"missing corresponding fields in {group!r}")
+        languages = sorted({field.split(".")[0] for field in language_fields})
+        fields = [
+            *(field for field in earlier if field not in language_fields),
+            *(
+                f"{language}.{count}"
+                for language in languages
+                for count in REPORT_UNITS["syntax"]
+                if f"{language}.{count}" in language_fields
+            ),
+        ]
+        values: dict[str, ReportValue] = {}
+        for field in fields:
+            # Only language fields can be missing after contract validation.
+            first, second = earlier.get(field, 0), later.get(field, 0)
+            values[field] = (
+                None if first is None or second is None else second - first
+            )
+        difference[group] = MappingProxyType(values)
+    validate_report(difference)
+    return MappingProxyType(difference)
+
+
+def render_comparison(before: Report, after: Report, diff: Report) -> str:
+    """Format units supplied by metrics, keeping unknowns and zero differences visible."""
+    rows = ["metric | before | after | diff (after - before)"]
+    for group, result in diff.items():
+        for field, difference in result.items():
+            unit = REPORT_UNITS[group][
+                field.rsplit(".", 1)[-1] if group == "syntax" else field
+            ]
+            earlier, later = before[group].get(field), after[group].get(field)
+            rows.append(
+                f"{group}.{field} | {_format(earlier, unit)} | {_format(later, unit)} | {_format(difference, unit, difference=True)}"
+            )
     return "\n".join(rows)
 
 
-def _display_measurements(
-    report: dict[str, ReportValue],
-) -> dict[str, int | float]:
-    measurements = {
-        name: value
-        for name, value in report.items()
-        if not isinstance(value, dict)
-    }
-    syntax = report["syntax_by_language"]
-    if isinstance(syntax, dict):
-        for language, counts in syntax.items():
-            measurements.update(
-                (f"syntax_by_language.{language}.{name}", value)
-                for name, value in counts.items()
-            )
-    return measurements
+def _format(value: ReportValue, unit: Unit, *, difference: bool = False) -> str:
+    if value is None:
+        return "unavailable"
+    if unit == "fraction":
+        return (
+            f"{value * 100:+.2f} percentage points"
+            if difference
+            else f"{value:.2%}"
+        )
+    return f"{value:+} {unit}" if difference else f"{value} {unit}"

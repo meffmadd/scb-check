@@ -67,13 +67,22 @@ scb-check diff TREE_A TREE_B --config FILE --disable-sg  # shared options for bo
 
 ### Check JSON report fields
 
-`verbosity`, `erosion`, `cog_erosion`, `files_scanned`, `total_loc`, `verbosity_flagged_loc`, `clone_loc`, `ast_grep_flagged_loc`, `structural_rule_loc`, `structural_rule_findings`, `total_functions`, `high_cc_functions`, `high_cog_functions`, `total_mass`, `high_cc_mass`, `total_cog_mass`, `high_cog_mass`, `syntax_tree_count`, `syntax_node_count`, and `syntax_by_language`.
+Check JSON is a report object with four metric groups. Each group is a flat object of numerical values or `null`, with no `data` wrapper or flat compatibility aliases.
 
-`syntax_by_language` is keyed by language value and reports `tree_count` plus total Tree-sitter `node_count` for parsed files in that language.
+| Metric group | Result fields |
+| --- | --- |
+| `verbosity` | `score`, `files_scanned`, `total_loc`, `flagged_loc`, `clone_loc`, `ast_grep_flagged_loc`, `structural_rule_loc`, `structural_rule_findings` |
+| `erosion` | `score`, `total_functions`, `high_cc_functions`, `total_mass`, `high_cc_mass` |
+| `cog_erosion` | `score`, `total_functions`, `high_cog_functions`, `total_cog_mass`, `high_cog_mass` |
+| `syntax` | `tree_count`, `node_count`, plus `<language>.tree_count` and `<language>.node_count` |
+
+Syntax counts cover parsed Tree-sitter trees and their nodes. Dotted per-language names such as `python.node_count` are single flat keys, not nested objects. Only languages present in that snapshot appear. Group, field, and language ordering is deterministic.
+
+Scores use fractional units. Counts and complexity masses retain their numerical units. Values are finite numbers or `null`; `null` means unavailable or undefined, not zero. Existing zero-denominator scores remain zero, including zero-SLOC verbosity and zero-mass erosion. Human check output remains location-level findings with source context.
 
 ### Comparing source trees
 
-`scb-check diff TREE_A TREE_B` runs a full check analysis of each directory, including plain directories outside any git repository. `TREE_A` is the earlier snapshot; `TREE_B` is the later snapshot. Every delta is **after minus before**, including negative and zero values. The default human summary shows both resolved roots and before/after/delta columns for all scores, underlying counts, complexity masses, and syntax counts.
+`scb-check diff TREE_A TREE_B` runs a full check analysis of each directory, including plain directories outside any git repository. `TREE_A` is the earlier snapshot; `TREE_B` is the later snapshot. Every delta is **after minus before**, including negative and zero values. The default human summary shows both resolved roots and before/after/diff columns for all scores, underlying counts, complexity masses, and syntax counts.
 
 One configuration applies to both analyses: discovered from the current working directory, or selected with `--config FILE`. Tree-local configs are not loaded separately. Discovery uses each tree's applicable `.gitignore` files and the ordinary check exclusion semantics. `--include-all` has its full check meaning on both sides: include gitignored files plus ignored, informational, and boundary-suppressed findings; configured excludes and default excluded directories still apply. `--disable-sg` disables ast-grep on both sides. Otherwise each analysis can run the ordinary ast-grep subprocesses. Logging uses `-v` / `--verbosity` and `-vv` as with `check`. There is no `--report` alias, duplicate-display option, or threshold gate.
 
@@ -81,9 +90,11 @@ One configuration applies to both analyses: discovered from the current working 
 
 - `tree_a`, `tree_b`: resolved directory paths, separate from measurements.
 - `before`, `after`: each preserves the complete [check JSON report structure](#check-json-report-fields).
-- `delta`: the same metric fields with signed differences. `syntax_by_language` contains the sorted union of languages; a missing language contributes zero counts for subtraction only. The snapshot mappings remain unchanged.
+- `diff`: the same metric groups and fields with signed differences, including zeros, without per-field delta suffixes. Dotted syntax fields cover the sorted language union; only absent per-language counts contribute zero for subtraction. The snapshots remain unchanged and equal standalone check JSON with identical settings.
 
-Scores and score deltas use fractional units in JSON. A score changing from `0.20` to `0.15` has delta `-0.05`. Human output displays scores as percentages and their differences as percentage points (`-5.00 percentage points`), not relative percentage changes. Counts and masses retain their existing units.
+If either operand is `null`, its difference is `null`, including two null operands. Missing required groups or fields are report-contract errors, not zeros. The comparison key is `diff`; there is no `delta` alias.
+
+Scores and score deltas use fractional units in JSON. A score changing from `0.20` to `0.15` has delta `-0.05`. Human output displays scores as percentages and their differences as percentage points (`-5.00 percentage points`), not relative percentage changes. Counts and masses retain their existing units. Human output labels unavailable values explicitly rather than displaying them as zero.
 
 Individual read/parse failures warn and skip within their own analysis, without dropping the readable counterpart in the other tree. Each side must have at least one successfully parsed eligible file; zero-SLOC files are valid. Invalid directives retain check's error behavior. Optional ast-grep failures degrade as in check.
 

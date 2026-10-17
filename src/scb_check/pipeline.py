@@ -15,6 +15,7 @@ from scb_check.analysis.astgrep import run_sg
 from scb_check.analysis.clones import detect_clones
 from scb_check.analysis.source import read_and_parse_source
 from scb_check.config import Config
+from scb_check.models import AnalysisResult
 from scb_check.models import AstGrepHit
 from scb_check.models import CloneBlock
 from scb_check.models import FileLineSet
@@ -44,14 +45,6 @@ from scb_check.tree_walking.semantic import build_project
 from scb_check.walker import walk_source_files
 
 __all__ = ["AnalysisResult", "IgnoreDirectiveError", "analyze", "analyze_files"]
-
-
-@dataclass(frozen=True, slots=True)
-class AnalysisResult:
-    """Complete analysis output for CLI reporting."""
-
-    flags: Flags
-    source_lines_by_file: dict[Path, tuple[str, ...]]
 
 
 @dataclass(frozen=True, slots=True)

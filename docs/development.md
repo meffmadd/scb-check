@@ -16,7 +16,7 @@ Implemented analysis paths:
 - Tree-sitter parsing into language-agnostic IR.
 - Parser `SLOC` accounting shared by verbosity, clone line counts, and rule spans.
 - One full `pipeline.analyze()` workflow using the shared source reader and source indexes for both commands.
-- Pure reporting-owned comparison of every numeric check measurement, including per-language syntax counts.
+- Data-only grouped reports, metric-owned calculations and units, and pure nullable snapshot comparison including dotted per-language syntax counts.
 - Duplicate-structure detection by normalized AST hashing for all supported languages.
 - Bundled Python `ast-grep` slop patterns, plus optional local rules from `SCB_CHECK_EXTRA_SLOP_RULES`.
 - Structural rules over `ProjectIR`; the current bundled Python rules are `trivial-wrapper` and opt-in `low-use-short-function`.
@@ -43,11 +43,14 @@ Implemented analysis paths:
 | Clone detection | `src/scb_check/analysis/clones.py` |
 | Shared source IO and parse warnings | `src/scb_check/analysis/source.py` |
 | Full snapshot analysis and source indexing | `src/scb_check/pipeline.py` |
+| Snapshot composition and serialization | `src/scb_check/reporting/score.py` |
+| Metric calculations, fields, and units | `src/scb_check/reporting/verbosity.py`, `erosion.py`, `cog_erosion.py`, `syntax.py` |
+| Shared erosion arithmetic | `src/scb_check/reporting/_mass.py` |
 | Report comparison and summary rendering | `src/scb_check/reporting/comparison.py` |
 | `ast-grep` integration | `src/scb_check/analysis/astgrep.py` and `src/scb_check/resources/slop_rules/` |
 | Structural rule behavior | `src/scb_check/rules/` |
 | JSON scores or human rendering | `src/scb_check/reporting/` |
-| Shared analysis/reporting records | `src/scb_check/models.py` |
+| Shared `AnalysisResult`, finding records, and report mapping aliases | `src/scb_check/models.py` |
 
 ## Adding an `ast-grep` rule
 
@@ -87,13 +90,25 @@ Pay special attention to:
 - mass formulas for `erosion` and `cog_erosion`,
 - line spans used by clone, `ast-grep`, and structural findings.
 
+## Adding or extending a metric
+
+1. Add behavioral acceptance expectations through the Typer CLI for known scores and supporting values. Keep the [README schema reference](../README.md#check-json-report-fields) synchronized.
+2. Put a small metric class in its own `reporting/` module with an instance `compute()` method. Pass only the extracted facts it needs; keep parser traversal and complexity extraction in tree walking. Reuse private arithmetic such as `_mass.py` for the erosion variants.
+3. Return a read-only flat `MetricResult` of `int | float | None`. Own field names and units in the metric, including dynamic syntax fields. Return defined-but-unavailable fields as `None`; preserve existing zero-denominator results and let calculation errors surface.
+4. Explicitly compose the metric in `score.compute_report(AnalysisResult)` and associate its group with metric-owned units. Keep both mapping levels read-only. Use `serialize_report` for contract validation and fresh plain dictionaries; keep metadata outside numerical results.
+5. Update required-field/group validation and comparison coverage for the schema. Use flat numerical fields, not nested result objects. Add no registry, report class, or placeholder configuration; constructors are for real configuration requirements.
+
+See the [reporting ownership and interface explanation](architecture.md#report-comparison-interface).
+
 ## Extending snapshot comparisons
 
-1. Add the measurement to the ordinary check analysis/report contract.
-2. Scalar numeric fields in `Report.to_dict()` compare automatically. Update comparison explicitly for new nested or nonnumeric measurements. See the [report-comparison interface](architecture.md#report-comparison-interface).
-3. Add acceptance coverage through the Typer CLI in `tests/test_diff_cli.py`: compare each snapshot payload with its standalone check JSON and assert independently known deltas, exits, and stderr.
+1. Extend the snapshot metric contract through the steps above.
+2. Keep `compare_reports(before, after)` pure and returning a read-only `Report`. Require defined groups and fields; zero-fill only absent dotted per-language syntax fields, without changing snapshots. Propagate explicit `None` rather than treating it as zero.
+3. Keep `compute_diff_report(earlier_analysis, later_analysis)` returning an ordinary `before` / `after` / `diff` dictionary. Use the standalone snapshot builder on both analyses. Tree paths belong in command output, not metric results.
+4. Add CLI coverage in `tests/test_diff_cli.py`: standalone-check parity plus independently known positive, negative, and zero differences, argument reversal, language additions/removals, exits, and stderr. Cover read-only behavior, fresh serialization, null propagation, and malformed report contracts at the public reporting seam where real-source CLI fixtures cannot produce them.
+5. Check observable unit formatting: fractional JSON scores and differences, human percentages and percentage points, count/mass units, explicit unavailable values, and visible zero differences. Retain location-level human check findings.
 
-Keep comparison pure and reporting-owned. The command orchestrates two full `analyze()` / `compute_report()` calls with one configuration and equal options. Preserve walker exclusion semantics without comparison-specific rebasing. Monkeypatch `scb_check.pipeline.run_sg` for controlled tooling output. Compare reports rather than matching source lines, pairing files, or introducing a separate analysis path.
+Commands still run two independent full analyses with one configuration and equal options. Preserve walker exclusions and independent parse-failure handling, without file pairing or source rereading. Monkeypatch `scb_check.pipeline.run_sg` for controlled tooling output. This reporting contract does not implement churn or a quality gate.
 
 ## Verification
 

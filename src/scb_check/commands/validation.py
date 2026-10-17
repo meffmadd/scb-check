@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typer
 
-from scb_check.pipeline import AnalysisResult
+from scb_check.models import AnalysisResult
 
 
 def ensure_files_parsed(result: AnalysisResult, path: Path) -> None:

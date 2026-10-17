@@ -12,9 +12,9 @@ from scb_check.commands.validation import ensure_files_parsed
 from scb_check.config import load_config
 from scb_check.logging import configure_logging
 from scb_check.pipeline import analyze
-from scb_check.reporting.comparison import compare_reports
+from scb_check.reporting.comparison import compute_diff_report
 from scb_check.reporting.comparison import render_comparison
-from scb_check.reporting.score import compute_report
+from scb_check.reporting.score import serialize_report
 
 
 def diff(  # noqa: PLR0913
@@ -72,28 +72,25 @@ def diff(  # noqa: PLR0913
     configure_logging(verbosity)
     try:
         config = load_config(config_path, Path.cwd())
-        reports = []
+        analyses = []
         for tree in (tree_a, tree_b):
             result = analyze(
                 tree, config, include_all=include_all, disable_sg=disable_sg
             )
             ensure_files_parsed(result, tree)
-            reports.append(compute_report(result.flags))
+            analyses.append(result)
     except (OSError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
-    before, after = reports
-    delta = compare_reports(before, after)
+    reports = compute_diff_report(*analyses)
     context = {"tree_a": str(tree_a), "tree_b": str(tree_b)}
     if output_format == "json":
         typer.echo(
             json.dumps(
                 {
                     **context,
-                    "before": before.to_dict(),
-                    "after": after.to_dict(),
-                    "delta": delta,
+                    **{name: serialize_report(report) for name, report in reports.items()},
                 },
                 allow_nan=False,
             )
@@ -102,4 +99,4 @@ def diff(  # noqa: PLR0913
         typer.echo(
             "\n".join(f"{name}: {value}" for name, value in context.items())
         )
-        typer.echo(render_comparison(before, after, delta))
+        typer.echo(render_comparison(reports["before"], reports["after"], reports["diff"]))

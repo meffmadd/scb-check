@@ -10,5 +10,6 @@ Supported source languages are Python, Rust, JavaScript, TypeScript, Zig, Haskel
 - `ModuleIR`, `SymbolIR`, `OperationIR`, `ValueIR`, `EffectIR`, and `RuleFinding` must not store raw tree-sitter nodes.
 - Parser-native data may live only on `ParsedFile` for clone detection.
 - SLOC excludes comments and blank lines. Python also excludes standalone non-f-string/non-bytes string statements; generic parsers also exclude punctuation-only delimiter lines.
+- Extract per-function SLOC and cyclomatic/cognitive complexity facts here. Metric classes in `reporting/` own mass arithmetic, aggregate scores, result fields, and units; keep those calculations out of `SymbolIR`.
 - Source directives are Python comment-token based; do not raw-search source text.
 - Rules ask `RuleContext` for semantic keep reasons and effects instead of inspecting Python syntax.

@@ -17,12 +17,13 @@ from scb_check.config import Config
 from scb_check.config import ConfigError
 from scb_check.config import load_config
 from scb_check.logging import configure_logging
+from scb_check.models import AnalysisResult
 from scb_check.models import Flags
-from scb_check.pipeline import AnalysisResult
 from scb_check.pipeline import IgnoreDirectiveError
 from scb_check.pipeline import analyze
 from scb_check.reporting.render import render_flags
 from scb_check.reporting.score import compute_report
+from scb_check.reporting.score import serialize_report
 
 OUTPUT_FORMAT_KEY = "scb_check_output_format"
 REPORT_KEY = "scb_check_report"
@@ -191,7 +192,7 @@ def check(
 
     flags = result.flags
     if output_format == "json":
-        _emit_json(flags)
+        json.dump(serialize_report(compute_report(result)), sys.stdout, allow_nan=False)
     else:
         _emit_human(flags, result.source_lines_by_file, config, _min_duplicate_lines(ctx))
 
@@ -226,11 +227,6 @@ def _load_and_analyze(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
     return config, result
-
-
-def _emit_json(flags: Flags) -> None:
-    report_payload = compute_report(flags)
-    json.dump(report_payload.to_dict(), sys.stdout)
 
 
 def _emit_human(
