@@ -16,7 +16,7 @@ Layers:
 - [`pipeline.py`](pipeline.py) — `analyze(path, config) -> AnalysisResult` and explicit-file `analyze_files(files)` perform full snapshot analysis through `analysis.source.read_and_parse_source`, source indexes, semantic context, rules, clones, and flags. Check uses one analysis; diff orchestrates two independent analyses in its command boundary and passes both `AnalysisResult` values to reporting's `compute_diff_report`.
 - [`config.py`](config.py), [`walker.py`](walker.py) — IO boundaries. `load_config` walks upward to find `scb_check.toml` or `[tool.scb-check]`, stopping at a `.git` dir. `walk_source_files` discovers supported source suffixes; `walk_python_files` is retained for Python-only callers. Both apply `DEFAULT_EXCLUDED_DIRS`, `.gitignore` globs, and user `exclude` globs (supports `**`).
 - [`logging.py`](logging.py) — structlog setup. `configure_logging(verbosity)` runs once from the CLI; modules elsewhere just call `get_logger(__name__)`.
-- [`models.py`](models.py) — shared frozen analysis/finding dataclasses, including `AnalysisResult` and `Flags`, plus `ReportValue = int | float | None`, `MetricResult`, and `Report` mapping aliases. Reports have read-only outer and inner mappings, not a runtime report class. Tree-walking IR models live in [`tree_walking/models.py`](tree_walking/models.py).
+- [`models.py`](models.py) — shared frozen analysis/finding dataclasses, including `AnalysisResult` (retained `ProjectIR`, sorted `Flags`, read-only source context) and `Flags`, plus `ReportValue = int | float | None`, `MetricResult`, and `Report` mapping aliases. Reports have read-only outer and inner mappings, not a runtime report class. Tree-walking IR models live in [`tree_walking/models.py`](tree_walking/models.py).
 
 ## Rules
 

@@ -36,6 +36,7 @@ from scb_check.tree_walking.languages._node_helpers import (
     qualified_name as _qualified_name,
 )
 from scb_check.tree_walking.languages._node_helpers import text as _text
+from scb_check.tree_walking.models import FactCoverage
 from scb_check.tree_walking.models import ImportIR
 from scb_check.tree_walking.models import Language
 from scb_check.tree_walking.models import ModuleIR
@@ -83,6 +84,11 @@ _COG_FLOW_BREAK_TYPES = frozenset(
 )
 _COG_JUMP_TYPES = frozenset({"break_statement", "continue_statement"})
 _SCOPE_NODE_TYPES = frozenset({"function_definition", "class_definition"})
+_DECLARATION_CONTAINER_TYPES = frozenset({
+    "block", "if_statement", "elif_clause", "else_clause", "try_statement",
+    "except_clause", "finally_clause", "for_statement", "while_statement",
+    "with_statement", "match_statement", "case_clause",
+})
 _STATEMENT_SUFFIX = "_statement"
 _LITERAL_TYPES = frozenset(
     {
@@ -173,6 +179,7 @@ class VisitContext:
     """Current ownership and decorator context during tree walking."""
 
     owner_qualified_name: str | None = None
+    owner_id: str | None = None
     class_context: ClassContext | None = None
     decorators: tuple[str, ...] = ()
 
@@ -215,7 +222,6 @@ class PythonWalker:
         """Initialize the walker with source and precomputed SLOC lines."""
         self._file_path = file_path
         self._source = source
-        self._source_lines = source.splitlines()
         self._tree = tree
         self._sloc_lines = sloc_lines
         self._module_name = _module_name_for_path(file_path)
@@ -232,7 +238,18 @@ class PythonWalker:
             language=Language.PYTHON,
             file=self._file_path,
             module_name=self._module_name,
-            span=_module_span(self._file_path, self._source_lines),
+            span=_module_span(self._file_path, self._source),
+            coverage=FactCoverage(
+                entities="complete",
+                signatures="partial",
+                complexity="complete",
+                sloc="complete",
+                imports="partial",
+                references="partial",
+                operations="partial",
+                roles="partial",
+                effects="partial",
+            ),
             imports=self._imports,
             symbols=tuple(self._symbols),
             references=tuple(
@@ -257,7 +274,8 @@ class PythonWalker:
                 self._handle_class(child, context)
             case "function_definition":
                 self._handle_function(child, context)
-            case "block":
+            case wrapper if wrapper in _DECLARATION_CONTAINER_TYPES:
+                # Control-flow wrappers do not introduce lexical declaration owners.
                 self._visit_children(child, context)
 
     def _visit_decorated_definition(
@@ -280,6 +298,7 @@ class PythonWalker:
             return
         decorated_context = VisitContext(
             owner_qualified_name=context.owner_qualified_name,
+            owner_id=context.owner_id,
             class_context=context.class_context,
             decorators=decorators,
         )
@@ -306,6 +325,7 @@ class PythonWalker:
             language=Language.PYTHON,
             roles=frozenset(),
             owner_qualified_name=context.owner_qualified_name,
+            owner_id=context.owner_id,
             base_names=base_names,
             sloc=_count_sloc_in_span(node, self._sloc_lines),
         )
@@ -318,6 +338,7 @@ class PythonWalker:
             node,
             VisitContext(
                 owner_qualified_name=qualified_name,
+                owner_id=class_symbol.id,
                 class_context=class_context,
             ),
         )
@@ -351,6 +372,7 @@ class PythonWalker:
                 self._imports_by_name,
             ),
             owner_qualified_name=context.owner_qualified_name,
+            owner_id=context.owner_id,
             base_names=(
                 context.class_context.base_names
                 if context.class_context is not None
@@ -371,7 +393,7 @@ class PythonWalker:
         self._symbols.append(symbol)
         self._visit_children(
             node,
-            VisitContext(owner_qualified_name=qualified_name),
+            VisitContext(owner_qualified_name=qualified_name, owner_id=symbol.id),
         )
 
 

@@ -107,6 +107,34 @@ def test_diff_compares_full_check_reports(trees: tuple[Path, Path]) -> None:
     assert reverse["diff"]["syntax"]["node_count"] == -5
 
 
+def test_diff_preserves_check_parity_for_entity_discovery_corrections(
+    trees: tuple[Path, Path],
+) -> None:
+    """Conditional declarations and duplicate basenames affect both commands equally."""
+    tree_a, tree_b = trees
+    (tree_a / "sample.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
+    (tree_b / "api").mkdir()
+    (tree_b / "jobs").mkdir()
+    (tree_b / "api" / "sample.py").write_text(
+        "if enabled:\n    def helper(value):\n        return value\n", encoding="utf-8",
+    )
+    (tree_b / "jobs" / "sample.py").write_text(
+        "def helper():\n    return 1\n", encoding="utf-8",
+    )
+
+    payload = _json_diff(trees)
+
+    assert payload["before"] == _json_check(tree_a)
+    assert payload["after"] == _json_check(tree_b)
+    assert payload["before"]["erosion"]["total_functions"] == 1
+    assert payload["after"]["erosion"]["total_functions"] == 2
+    assert payload["diff"]["erosion"]["total_functions"] == 1
+    assert payload["diff"]["erosion"]["total_mass"] == pytest.approx(math.sqrt(2))
+    assert payload["diff"]["cog_erosion"]["total_functions"] == 1
+    assert payload["diff"]["verbosity"]["structural_rule_loc"] == 2
+    assert payload["diff"]["verbosity"]["score"] == pytest.approx(0.4)
+
+
 def test_diff_shows_ratio_decrease_despite_growing_flagged_count(
     trees: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,

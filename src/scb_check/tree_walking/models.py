@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
+from os.path import abspath
 from pathlib import Path
-from typing import Literal
+from types import MappingProxyType
+from typing import Literal, Self
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import PrivateAttr
+from pydantic import field_validator
+from pydantic import model_validator
 
 HIGH_COMPLEXITY_THRESHOLD = 10
 
@@ -113,7 +119,7 @@ class EffectKind(StrEnum):
 
 
 class SourceSpan(IRModel):
-    """A source range with 1-indexed lines and 0-indexed columns."""
+    """A range with one-based lines, zero-based UTF-8 byte columns, exclusive ends."""
 
     file: Path
     start_line: int = Field(ge=1)
@@ -121,13 +127,44 @@ class SourceSpan(IRModel):
     end_line: int = Field(ge=1)
     end_col: int = Field(ge=0)
 
+    _file_id: str = PrivateAttr()
+
+    def model_post_init(self, _context: object) -> None:
+        """Capture physical-file identity before the process cwd can change."""
+        # `Path.resolve()` would introduce filesystem IO into the pure IR.
+        normalized = abspath(self.file)  # noqa: PTH100
+        self._file_id = f"file:{Path(normalized).as_posix()}"
+
+    @property
+    def file_id(self) -> str:
+        """Return normalized absolute physical-file identity without source IO."""
+        return self._file_id
+
+    def entity_id(self, kind: SymbolKind) -> str:
+        """Identify a declaration by physical file, kind, and declaration span."""
+        return (
+            f"{self.file_id}:{kind.value}:"
+            f"{self.start_line}:{self.start_col}-{self.end_line}:{self.end_col}"
+        )
+
+
+type SignatureAnnotations = Mapping[str, str | None]
+
 
 class SignatureIR(IRModel):
     """Normalized callable signature facts."""
 
     parameters: tuple[str, ...] = ()
-    annotations: dict[str, str | None] = Field(default_factory=dict)
+    annotations: SignatureAnnotations = Field(
+        default_factory=lambda: MappingProxyType({})
+    )
     returns: str | None = None
+
+    @field_validator("annotations")
+    @classmethod
+    def _freeze_annotations(cls, annotations: SignatureAnnotations) -> SignatureAnnotations:
+        """Own a read-only copy of signature annotations."""
+        return MappingProxyType(dict(annotations))
 
 
 class ImportIR(IRModel):
@@ -191,11 +228,23 @@ class SymbolIR(IRModel):
     body: tuple[OperationIR, ...] = ()
     references: tuple[ReferenceIR, ...] = ()
     owner_qualified_name: str | None = None
+    owner_id: str | None = None
+    module_id: str | None = None
     base_names: tuple[str, ...] = ()
     sloc: int = 0
     cyc_complexity: int = 1
     cog_complexity: int = 0
     max_nesting: int = 0
+
+    @property
+    def id(self) -> str:
+        """Return snapshot-local declaration identity, independent of its name."""
+        return self.span.entity_id(self.kind)
+
+    @property
+    def file_id(self) -> str:
+        """Return physical-file membership."""
+        return self.span.file_id
 
     @property
     def file(self) -> Path:
@@ -230,6 +279,23 @@ class SymbolIR(IRModel):
         return self.cog_complexity > HIGH_COMPLEXITY_THRESHOLD
 
 
+type CoverageStatus = Literal["complete", "partial", "unavailable"]
+
+
+class FactCoverage(IRModel):
+    """Parser-declared support for documented fact subsets, not fact counts."""
+
+    entities: CoverageStatus = "unavailable"
+    signatures: CoverageStatus = "unavailable"
+    complexity: CoverageStatus = "unavailable"
+    sloc: CoverageStatus = "unavailable"
+    imports: CoverageStatus = "unavailable"
+    references: CoverageStatus = "unavailable"
+    operations: CoverageStatus = "unavailable"
+    roles: CoverageStatus = "unavailable"
+    effects: CoverageStatus = "unavailable"
+
+
 class ModuleIR(IRModel):
     """A parsed source module with generic code facts."""
 
@@ -237,20 +303,140 @@ class ModuleIR(IRModel):
     file: Path
     module_name: str
     span: SourceSpan
+    coverage: FactCoverage = Field(default_factory=FactCoverage)
     imports: tuple[ImportIR, ...] = ()
     symbols: tuple[SymbolIR, ...] = ()
     operations: tuple[OperationIR, ...] = ()
     references: tuple[ReferenceIR, ...] = ()
     sloc_lines: frozenset[int] = frozenset()
 
+    @property
+    def id(self) -> str:
+        """Return logical-module identity, distinct from physical-file identity."""
+        return self.span.entity_id(SymbolKind.MODULE)
+
+    @property
+    def file_id(self) -> str:
+        """Return physical-file membership."""
+        return self.span.file_id
+
+    @property
+    def kind(self) -> SymbolKind:
+        """Return the logical entity kind."""
+        return SymbolKind.MODULE
+
+    @property
+    def name(self) -> str:
+        """Return the parser's descriptive module name."""
+        return self.module_name
+
+    @property
+    def qualified_name(self) -> str:
+        """Return searchable module metadata, not unique identity."""
+        return self.module_name
+
+    @model_validator(mode="after")
+    def _attach_membership(self) -> Self:
+        """Bind declarations to this module without inferring unknown owners."""
+        symbols = tuple(
+            symbol.model_copy(
+                update={
+                    "module_id": self.id,
+                    "owner_id": (
+                        self.id
+                        if symbol.owner_qualified_name is None
+                        else symbol.owner_id
+                    ),
+                }
+            )
+            for symbol in self.symbols
+        )
+        object.__setattr__(self, "symbols", symbols)
+        return self
+
+
+type ModuleLookup = Mapping[str, ModuleIR]
+type ModulesByFile = Mapping[Path, ModuleIR]
+type PhysicalFiles = Mapping[str, Path]
+type SymbolLookup = Mapping[str, SymbolIR]
+type SymbolsByFile = Mapping[Path, tuple[SymbolIR, ...]]
+type SymbolEffects = Mapping[str, tuple[EffectIR, ...]]
+
 
 class ProjectIR(IRModel):
-    """Project-level semantic indexes built from parsed modules."""
+    """Retained module inventory with derived, read-only lookup indexes."""
 
-    modules: tuple[ModuleIR, ...]
-    symbols_by_qualified_name: dict[str, SymbolIR]
-    symbols_by_file: dict[Path, tuple[SymbolIR, ...]]
-    effects_by_symbol: dict[str, tuple[EffectIR, ...]] = Field(default_factory=dict)
+    modules: tuple[ModuleIR, ...] = ()
+    effects_by_symbol: SymbolEffects = Field(
+        default_factory=lambda: MappingProxyType({}),
+    )
+
+    @field_validator("effects_by_symbol")
+    @classmethod
+    def _freeze_effects(cls, effects: SymbolEffects) -> SymbolEffects:
+        """Own a read-only copy of derived effects."""
+        return MappingProxyType(dict(effects))
+
+    _modules_by_id: ModuleLookup = PrivateAttr()
+    _modules_by_file: ModulesByFile = PrivateAttr()
+    _files_by_id: PhysicalFiles = PrivateAttr()
+    _symbols_by_id: SymbolLookup = PrivateAttr()
+    _symbols_by_qualified_name: SymbolLookup = PrivateAttr()
+    _symbols_by_file: SymbolsByFile = PrivateAttr()
+
+    def model_post_init(self, _context: object) -> None:
+        """Derive privately owned lookup views from the sole module inventory."""
+        symbols = tuple(
+            symbol for module in self.modules for symbol in module.symbols
+        )
+        self._modules_by_id = MappingProxyType(
+            {module.id: module for module in self.modules}
+        )
+        self._modules_by_file = MappingProxyType(
+            {module.file: module for module in self.modules}
+        )
+        self._files_by_id = MappingProxyType(
+            {module.file_id: module.file for module in self.modules}
+        )
+        self._symbols_by_id = MappingProxyType(
+            {symbol.id: symbol for symbol in symbols}
+        )
+        self._symbols_by_qualified_name = MappingProxyType(
+            {symbol.qualified_name: symbol for symbol in symbols}
+        )
+        self._symbols_by_file = MappingProxyType(
+            {module.file: module.symbols for module in self.modules}
+        )
+
+    @property
+    def modules_by_id(self) -> ModuleLookup:
+        """Look up logical modules by identity."""
+        return self._modules_by_id
+
+    @property
+    def modules_by_file(self) -> ModulesByFile:
+        """Look up the one logical module per successfully parsed file."""
+        return self._modules_by_file
+
+    @property
+    def files_by_id(self) -> PhysicalFiles:
+        """Look up physical source paths independently of logical-module IDs."""
+        return self._files_by_id
+
+    @property
+    def symbols_by_id(self) -> SymbolLookup:
+        """Look up every retained declaration, including repeated names."""
+        return self._symbols_by_id
+
+    @property
+    def symbols_by_qualified_name(self) -> SymbolLookup:
+        """Provide the existing last-declaration name selection for semantic queries."""
+        return self._symbols_by_qualified_name
+
+    @property
+    def symbols_by_file(self) -> SymbolsByFile:
+        """Look up all declarations in each physical file."""
+        return self._symbols_by_file
 
 
 class RuleFinding(IRModel):

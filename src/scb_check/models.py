@@ -7,9 +7,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
+from types import MappingProxyType
 from typing import Literal
 
 from scb_check.tree_walking.models import Language
+from scb_check.tree_walking.models import ProjectIR
 from scb_check.tree_walking.models import RuleFinding
 from scb_check.tree_walking.models import SymbolIR
 
@@ -17,6 +19,7 @@ type AstGrepSeverity = Literal["info", "warning", "critical"]
 type ReportValue = int | float | None
 type MetricResult = Mapping[str, ReportValue]
 type Report = Mapping[str, MetricResult]
+type SourceLines = Mapping[Path, tuple[str, ...]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,4 +108,13 @@ class AnalysisResult:
     """Extracted analysis facts and source lines for reporting."""
 
     flags: Flags
-    source_lines_by_file: dict[Path, tuple[str, ...]]
+    source_lines_by_file: SourceLines
+    project: ProjectIR = field(default_factory=ProjectIR)
+
+    def __post_init__(self) -> None:
+        """Expose privately owned, read-only source context."""
+        object.__setattr__(
+            self,
+            "source_lines_by_file",
+            MappingProxyType(dict(self.source_lines_by_file)),
+        )

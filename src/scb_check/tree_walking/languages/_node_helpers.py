@@ -12,16 +12,9 @@ if TYPE_CHECKING:
     from tree_sitter import Node
 
 
-def module_span(file_path: Path, source_lines: list[str]) -> SourceSpan:
-    """Return a `SourceSpan` covering an entire module's source text."""
-    if not source_lines:
-        return SourceSpan(
-            file=file_path,
-            start_line=1,
-            start_col=0,
-            end_line=1,
-            end_col=0,
-        )
+def module_span(file_path: Path, source: str) -> SourceSpan:
+    """Cover all source bytes, including a trailing newline when present."""
+    source_lines = source.encode("utf-8").split(b"\n")
     return SourceSpan(
         file=file_path,
         start_line=1,
