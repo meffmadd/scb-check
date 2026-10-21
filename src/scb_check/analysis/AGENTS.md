@@ -1,16 +1,18 @@
-# `analysis/` — external and parser-native finding helpers
+# `analysis/` — finding helpers and source IO
 
 This layer keeps analysis that is intentionally separate from generic tree walking:
 
 - [`astgrep.py`](astgrep.py) shells out to the `sg` binary and returns ast-grep hits.
 - [`clones.py`](clones.py) uses parser-native tree-sitter data preserved on parsed file artifacts to hash duplicate syntax blocks across supported languages.
+- [`source.py`](source.py) is the shared source IO/dispatch boundary for check and diff, with UTF-8 replacement fallback and warn-and-skip failures.
 
 Source directives, SLOC accounting, parser dispatch, symbol extraction, string-literal helpers, semantic context, and structural rules live under [`../tree_walking/`](../tree_walking/) and [`../rules/`](../rules/), not here.
 
 ## Invariants
 
 - **Line numbers are 1-indexed at the module boundary.** Tree-sitter exposes 0-indexed `.start_point[0]`; clone findings emit `+ 1`.
-- **Clone line counts use `ParsedFile.module.sloc_lines`.** Do not reintroduce a second SLOC implementation in this layer.
+- **Clone line counts use `ParsedFile.module.sloc_lines`.** Reuse parser SLOC rather than introducing a second implementation.
+- **Snapshot comparisons reuse full analysis.** Each side receives ordinary source loading and findings independently; pure report comparison belongs in reporting.
 - **Most findings are frozen dataclasses** from [`../models.py`](../models.py); emit tuples across module boundaries, never lists.
 
 ## Scoring-sensitive surfaces

@@ -10,6 +10,7 @@ from token import ENDMARKER
 from token import INDENT
 from token import NEWLINE
 from token import NL
+from tokenize import TokenError
 from tokenize import generate_tokens
 from typing import TYPE_CHECKING
 
@@ -184,7 +185,14 @@ class PythonParser:
     def parse(self, file_path: Path, source: str) -> ParsedFile:
         """Parse already-read Python `source`."""
         tree = _parse_tree(source)
-        sloc_lines = _sloc_line_numbers(source, tree)
+        try:
+            sloc_lines = _sloc_line_numbers(source, tree)
+        except (IndentationError, TokenError) as exc:
+            raise LanguageParseError(
+                f"failed to tokenize Python source: {exc}",
+                language=self.language,
+                file_path=file_path,
+            ) from exc
         walker = PythonWalker(file_path, source, tree, sloc_lines)
         return ParsedFile(
             file=file_path,

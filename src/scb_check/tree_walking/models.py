@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -221,14 +220,6 @@ class SymbolIR(IRModel):
             for operation in self.body
             if operation.kind is OperationKind.RETURN
         )
-
-    def cc_mass(self) -> float:
-        """Return the cyclomatic complexity mass."""
-        return self.cyc_complexity * math.sqrt(self.sloc)
-
-    def cog_mass(self) -> float:
-        """Return the cognitive complexity mass."""
-        return self.cog_complexity * math.sqrt(self.sloc)
 
     def is_high_cc(self) -> bool:
         """Return True if the symbol exceeds the cyclomatic cutoff."""

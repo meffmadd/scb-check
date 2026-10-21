@@ -7,11 +7,15 @@ errors to exit codes.
 ## Modules in this layer
 
 - [`check.py`](check.py) — wiring for `scb-check check`.
+- [`validation.py`](validation.py) — shared usable-analysis validation for check and diff; accepts parsed zero-SLOC files.
+- [`diff.py`](diff.py) — wiring for `scb-check diff TREE_A TREE_B`; orchestrates two full `analyze` calls, passes both analyses to reporting's `compute_diff_report`, and adds tree context to human/JSON output.
 - [`rule.py`](rule.py) — wiring for `scb-check rule <rule-id>` for ast-grep YAML and structural rule metadata.
 
 ## Rules
 
-- **Keep logic at the boundary.** Commands may call [`../config.py`](../config.py), [`../walker.py`](../walker.py), [`../pipeline.py`](../pipeline.py), and [`../reporting/`](../reporting/) but should not reimplement analysis/scoring logic.
+- **Keep logic at the boundary.** Commands may call [`../config.py`](../config.py), [`../walker.py`](../walker.py), [`../pipeline.py`](../pipeline.py), [`../analysis/`](../analysis/AGENTS.md), and [`../reporting/`](../reporting/) but should not reimplement analysis/scoring logic.
 - **Keep command callbacks explicit.** Prefer module-level command functions registered from `../cli.py`; use a small registration helper only when a command needs dynamic naming or subcommand grouping.
 - **Exit codes stay consistent.** `check` exits `0` when no findings, `1` when any finding (clones, ast-grep hits, structural findings, high-cc/cog functions) is present, and `2` for user-facing config/path/lookup failures printed to stderr.
-- **No hidden behavior changes.** Keep command names/options/output contracts stable unless explicitly requested.
+- **Diff exits only `0` or `2`.** Success is `0` regardless of findings or deltas. Invalid directories/config/options/directives or either side lacking successfully parsed eligible files exit `2` with stderr and no partial payload. Zero-SLOC files remain valid. Use Typer argument constraints to validate and resolve both roots before analysis. Load one config from cwd or `--config` for both trees; apply `--include-all` and `--disable-sg` equally with ordinary check semantics.
+- **Reporting owns output conversion.** Use `compute_report(AnalysisResult)` for check and `compute_diff_report(earlier_analysis, later_analysis)` for diff. Serialize each read-only report through `serialize_report`; JSON contains grouped measurements with `before` / `after` / `diff` for comparisons. Add resolved tree paths outside numerical reports. Keep human check findings location-level.
+- **No hidden behavior changes.** Keep command names/options and analysis/exit semantics stable. For report fields and schema changes, follow the [README reference](../../../README.md#check-json-report-fields) and retain standalone-check parity plus known-difference CLI tests.

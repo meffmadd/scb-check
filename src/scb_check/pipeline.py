@@ -1,4 +1,4 @@
-"""Coordinate file walking, analysis, filtering, and flag building."""
+"""Coordinate full snapshot analysis for check and metric comparison."""
 
 from __future__ import annotations
 
@@ -13,8 +13,9 @@ from tree_sitter import Tree
 
 from scb_check.analysis.astgrep import run_sg
 from scb_check.analysis.clones import detect_clones
+from scb_check.analysis.source import read_and_parse_source
 from scb_check.config import Config
-from scb_check.logging import get_logger
+from scb_check.models import AnalysisResult
 from scb_check.models import AstGrepHit
 from scb_check.models import CloneBlock
 from scb_check.models import FileLineSet
@@ -36,10 +37,6 @@ from scb_check.tree_walking.directives import load_ast_grep_rule_ids
 from scb_check.tree_walking.directives import parse_boundary_directives
 from scb_check.tree_walking.directives import parse_ignore_directives
 from scb_check.tree_walking.dispatch import ParsedFile
-from scb_check.tree_walking.dispatch import ProjectParseError
-from scb_check.tree_walking.dispatch import (
-    parse_source_file as dispatch_parse_source_file,
-)
 from scb_check.tree_walking.models import Language
 from scb_check.tree_walking.models import RuleFinding
 from scb_check.tree_walking.models import SymbolIR
@@ -47,22 +44,12 @@ from scb_check.tree_walking.models import SymbolKind
 from scb_check.tree_walking.semantic import build_project
 from scb_check.walker import walk_source_files
 
-logger = get_logger(__name__)
-
 __all__ = ["AnalysisResult", "IgnoreDirectiveError", "analyze", "analyze_files"]
 
 
 @dataclass(frozen=True, slots=True)
-class AnalysisResult:
-    """Complete analysis output for CLI reporting."""
-
-    flags: Flags
-    source_lines_by_file: dict[Path, tuple[str, ...]]
-
-
-@dataclass(frozen=True, slots=True)
 class ParsedSources:
-    """Parsed files and source indexes collected from input paths."""
+    """Check-only source indexes derived from collected parsed files."""
 
     parsed_files: tuple[ParsedFile, ...]
     total_loc_by_file: tuple[tuple[Path, int], ...]
@@ -136,7 +123,11 @@ def _collect_findings(
     disable_sg: bool,
     low_use_short_function: LowUseShortFunctionSettings,
 ) -> Findings:
-    sources = _parse_sources(files)
+    sources = _index_check_sources(tuple(
+        parsed
+        for file in files
+        if (parsed := read_and_parse_source(file)) is not None
+    ))
     project = build_project(tuple(parsed.module for parsed in sources.parsed_files))
     functions = _function_symbols(tuple(project.symbols_by_qualified_name.values()))
     structural_findings = run_rules(
@@ -162,8 +153,7 @@ def _collect_findings(
     )
 
 
-def _parse_sources(files: tuple[Path, ...]) -> ParsedSources:
-    parsed_files: list[ParsedFile] = []
+def _index_check_sources(parsed_files: tuple[ParsedFile, ...]) -> ParsedSources:
     total_loc_by_file: list[tuple[Path, int]] = []
     sloc_lines_by_file: dict[Path, frozenset[int]] = {}
     source_by_file: dict[Path, str] = {}
@@ -172,12 +162,10 @@ def _parse_sources(files: tuple[Path, ...]) -> ParsedSources:
     tree_counts: Counter[Language] = Counter()
     node_counts: Counter[Language] = Counter()
 
-    for file_path in files:
-        if (parsed_source := _parse_source_file(file_path)) is None:
-            continue
-        source, parsed = parsed_source
+    for parsed in parsed_files:
+        file_path = parsed.module.file
+        source = parsed.source
         language = parsed.module.language
-        parsed_files.append(parsed)
         source_by_file[file_path] = source
         source_lines_by_file[file_path] = tuple(source.splitlines())
         sloc_lines_by_file[file_path] = parsed.module.sloc_lines
@@ -188,7 +176,7 @@ def _parse_sources(files: tuple[Path, ...]) -> ParsedSources:
             node_counts[language] += _count_tree_nodes(parsed.native_tree)
 
     return ParsedSources(
-        parsed_files=tuple(parsed_files),
+        parsed_files=parsed_files,
         total_loc_by_file=tuple(total_loc_by_file),
         sloc_lines_by_file=sloc_lines_by_file,
         source_by_file=source_by_file,
@@ -220,19 +208,6 @@ def _count_tree_nodes(tree: Tree) -> int:
         count += 1
         stack.extend(node.children)
     return count
-
-
-def _parse_source_file(file_path: Path) -> tuple[str, ParsedFile] | None:
-    try:
-        source = _read_source(file_path)
-        return (source, dispatch_parse_source_file(file_path, source))
-    except ProjectParseError as exc:
-        logger.warning(
-            "failed to parse file",
-            file=str(file_path),
-            error=str(exc),
-        )
-        return None
 
 
 def _run_and_filter_rules(
@@ -335,22 +310,6 @@ def _filter_ast_hits(
     )
     filtered = _filter_boundary_ast_hits(filtered, boundary_ranges)
     return _apply_count_thresholds(filtered, thresholds)
-
-
-def _read_source(file_path: Path) -> str:
-    try:
-        return file_path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        logger.warning(
-            "file is not valid UTF-8, reading with replacement characters",
-            file=str(file_path),
-        )
-        return file_path.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        raise ProjectParseError(
-            f"failed to read source file: `{file_path}`",
-            file_path=file_path,
-        ) from exc
 
 
 def _valid_rule_ids(rules_path: Path) -> frozenset[str]:

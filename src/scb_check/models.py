@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
@@ -13,7 +14,9 @@ from scb_check.tree_walking.models import RuleFinding
 from scb_check.tree_walking.models import SymbolIR
 
 type AstGrepSeverity = Literal["info", "warning", "critical"]
-type ReportValue = int | float | dict[str, dict[str, int]]
+type ReportValue = int | float | None
+type MetricResult = Mapping[str, ReportValue]
+type Report = Mapping[str, MetricResult]
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,86 +101,8 @@ class Flags:
 
 
 @dataclass(frozen=True, slots=True)
-class ReportScores:
-    """Top-level score values."""
+class AnalysisResult:
+    """Extracted analysis facts and source lines for reporting."""
 
-    verbosity: float
-    erosion: float
-    cog_erosion: float
-
-
-@dataclass(frozen=True, slots=True)
-class VerbositySummary:
-    """Verbosity line-count summary."""
-
-    files_scanned: int
-    total_loc: int
-    verbosity_flagged_loc: int
-    clone_loc: int
-    ast_grep_flagged_loc: int
-    structural_rule_loc: int
-    structural_rule_findings: int
-
-
-@dataclass(frozen=True, slots=True)
-class FunctionMassSummary:
-    """Function count and mass summary for erosion metrics."""
-
-    total_functions: int
-    high_cc_functions: int
-    high_cog_functions: int
-    total_mass: float
-    high_cc_mass: float
-    total_cog_mass: float
-    high_cog_mass: float
-
-
-@dataclass(frozen=True, slots=True)
-class Report:
-    """Computed verbosity and erosion summary for JSON output."""
-
-    scores: ReportScores
-    verbosity_summary: VerbositySummary
-    function_summary: FunctionMassSummary
-    syntax_by_language: tuple[LanguageSyntaxSummary, ...] = ()
-
-    @property
-    def syntax_tree_count(self) -> int:
-        """Return the total parsed syntax tree count."""
-        return sum(summary.tree_count for summary in self.syntax_by_language)
-
-    @property
-    def syntax_node_count(self) -> int:
-        """Return the total syntax node count."""
-        return sum(summary.node_count for summary in self.syntax_by_language)
-
-    def to_dict(self) -> dict[str, ReportValue]:
-        """Return the JSON-compatible report payload."""
-        return {
-            "verbosity": self.scores.verbosity,
-            "erosion": self.scores.erosion,
-            "cog_erosion": self.scores.cog_erosion,
-            "files_scanned": self.verbosity_summary.files_scanned,
-            "total_loc": self.verbosity_summary.total_loc,
-            "verbosity_flagged_loc": self.verbosity_summary.verbosity_flagged_loc,
-            "clone_loc": self.verbosity_summary.clone_loc,
-            "ast_grep_flagged_loc": self.verbosity_summary.ast_grep_flagged_loc,
-            "structural_rule_loc": self.verbosity_summary.structural_rule_loc,
-            "structural_rule_findings": self.verbosity_summary.structural_rule_findings,
-            "total_functions": self.function_summary.total_functions,
-            "high_cc_functions": self.function_summary.high_cc_functions,
-            "high_cog_functions": self.function_summary.high_cog_functions,
-            "total_mass": self.function_summary.total_mass,
-            "high_cc_mass": self.function_summary.high_cc_mass,
-            "total_cog_mass": self.function_summary.total_cog_mass,
-            "high_cog_mass": self.function_summary.high_cog_mass,
-            "syntax_tree_count": self.syntax_tree_count,
-            "syntax_node_count": self.syntax_node_count,
-            "syntax_by_language": {
-                summary.language.value: {
-                    "tree_count": summary.tree_count,
-                    "node_count": summary.node_count,
-                }
-                for summary in self.syntax_by_language
-            },
-        }
+    flags: Flags
+    source_lines_by_file: dict[Path, tuple[str, ...]]

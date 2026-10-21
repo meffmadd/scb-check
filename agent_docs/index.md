@@ -25,7 +25,7 @@
 <!-- rule:499 -->
 - Compile static regex patterns at module level as constants — avoids recompilation overhead on repeated calls
 <!-- rule:1200 -->
-- Keep analysis, reporting, and command-boundary responsibilities separate — commands parse CLI input and dispatch; analysis extracts findings; reporting scores and renders
+- Keep analysis, metrics, reporting, and command-boundary responsibilities separate — commands parse CLI input and dispatch; analysis extracts findings; metrics calculate measurements and declare units; reporting composes, compares, serializes, and renders
 
 ## Type System
 
