@@ -43,14 +43,14 @@ def compare_reports(before: Report, after: Report) -> Report:
         }
         if (earlier.keys() ^ later.keys()) - language_fields:
             raise ValueError(f"missing corresponding fields in {group!r}")
-        languages = sorted({field.split(".")[0] for field in language_fields})
         fields = [
             *(field for field in earlier if field not in language_fields),
-            *(
-                f"{language}.{count}"
-                for language in languages
-                for count in REPORT_UNITS["syntax"]
-                if f"{language}.{count}" in language_fields
+            *sorted(
+                language_fields,
+                key=lambda field: (
+                    field.partition(".")[0],
+                    tuple(REPORT_UNITS["syntax"]).index(field.partition(".")[2]),
+                ),
             ),
         ]
         values: dict[str, ReportValue] = {}
