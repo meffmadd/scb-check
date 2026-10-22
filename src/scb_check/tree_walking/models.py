@@ -359,7 +359,6 @@ type ModuleLookup = Mapping[str, ModuleIR]
 type ModulesByFile = Mapping[Path, ModuleIR]
 type PhysicalFiles = Mapping[str, Path]
 type SymbolLookup = Mapping[str, SymbolIR]
-type SymbolsByFile = Mapping[Path, tuple[SymbolIR, ...]]
 type SymbolEffects = Mapping[str, tuple[EffectIR, ...]]
 
 
@@ -382,7 +381,6 @@ class ProjectIR(IRModel):
     _files_by_id: PhysicalFiles = PrivateAttr()
     _symbols_by_id: SymbolLookup = PrivateAttr()
     _symbols_by_qualified_name: SymbolLookup = PrivateAttr()
-    _symbols_by_file: SymbolsByFile = PrivateAttr()
 
     def model_post_init(self, _context: object) -> None:
         """Derive privately owned lookup views from the sole module inventory."""
@@ -403,9 +401,6 @@ class ProjectIR(IRModel):
         )
         self._symbols_by_qualified_name = MappingProxyType(
             {symbol.qualified_name: symbol for symbol in symbols}
-        )
-        self._symbols_by_file = MappingProxyType(
-            {module.file: module.symbols for module in self.modules}
         )
 
     @property
@@ -432,11 +427,6 @@ class ProjectIR(IRModel):
     def symbols_by_qualified_name(self) -> SymbolLookup:
         """Provide the existing last-declaration name selection for semantic queries."""
         return self._symbols_by_qualified_name
-
-    @property
-    def symbols_by_file(self) -> SymbolsByFile:
-        """Look up all declarations in each physical file."""
-        return self._symbols_by_file
 
 
 class RuleFinding(IRModel):

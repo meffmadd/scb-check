@@ -131,9 +131,10 @@ The full analysis workflow in `pipeline.py` validates ignore rule IDs against th
 | `modules_by_file` | Physical path → its one successfully parsed logical module |
 | `files_by_id` | Physical-file ID → physical path |
 | `symbols_by_id` | Declaration ID → every `SymbolIR`, including repeated names |
-| `symbols_by_file` | Physical path → all its declarations |
 | `symbols_by_qualified_name` | Qualified name → last declaration selected for existing semantic queries; not a complete inventory |
 | `effects_by_symbol` | Declaration ID → derived `EffectIR` tuple |
+
+Access all declarations in a physical file through `project.modules_by_file[path].symbols`. Constructing an `AnalysisResult` requires an explicit `project`; synthetic empty analyses can supply `ProjectIR()`.
 
 Records are frozen. Indexes, signature annotation mappings, and `AnalysisResult.source_lines_by_file` are read-only, privately owned mappings; nested sequences are tuples or frozensets. Parser-native trees and source IO remain outside the IR. `analyze_files()` resolves and deduplicates physical paths before parsing; files that fail extraction have no module record. An explicit empty file set yields an empty project; CLI discovery/usable-input validation still rejects unusable trees.
 

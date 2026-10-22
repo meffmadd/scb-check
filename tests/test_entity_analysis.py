@@ -36,7 +36,7 @@ def test_analysis_retains_project_inventory(tmp_path: Path) -> None:
         ("Widget", None),
         ("render", "sample.Widget"),
     ]
-    assert result.project.symbols_by_file[source] == module.symbols
+    assert result.project.modules_by_file[source].symbols == module.symbols
 
 
 def test_identity_and_lexical_ownership_survive_repeated_names(
@@ -94,7 +94,6 @@ def test_analysis_views_are_deeply_read_only(tmp_path: Path) -> None:
     for mapping, key, value in (
         (project.symbols_by_id, symbol.id, symbol),
         (project.symbols_by_qualified_name, symbol.qualified_name, symbol),
-        (project.symbols_by_file, source, ()),
         (project.modules_by_id, module.id, module),
         (project.modules_by_file, source, module),
         (project.files_by_id, module.file_id, source),
@@ -108,7 +107,6 @@ def test_analysis_views_are_deeply_read_only(tmp_path: Path) -> None:
     for record, attribute in (
         (project, "symbols_by_id"),
         (project, "symbols_by_qualified_name"),
-        (project, "symbols_by_file"),
         (project, "modules_by_id"),
         (project, "modules_by_file"),
         (project, "files_by_id"),
@@ -407,5 +405,5 @@ def test_empty_analysis_retains_empty_project() -> None:
     result = analyze_files((), disable_sg=True)
 
     assert result.project.modules == ()
-    assert not result.project.symbols_by_file
+    assert not result.project.modules_by_file
     assert not result.source_lines_by_file

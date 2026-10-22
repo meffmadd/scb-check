@@ -109,7 +109,7 @@ class AnalysisResult:
 
     flags: Flags
     source_lines_by_file: SourceLines
-    project: ProjectIR = field(default_factory=ProjectIR)
+    project: ProjectIR
 
     def __post_init__(self) -> None:
         """Expose privately owned, read-only source context."""
