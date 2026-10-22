@@ -61,10 +61,11 @@ The generic Tree-sitter parser used for Rust, JavaScript, TypeScript, Zig, Haske
 `PythonWalker` walks tree-sitter nodes into `ModuleIR`:
 
 - module names come from the path and package `__init__.py` chain,
-- spans use 1-indexed lines and 0-indexed columns,
+- spans use one-based lines, zero-based UTF-8 byte columns, and exclusive ends,
 - root-level imports become `ImportIR` records,
 - classes and functions become `SymbolIR` records,
-- nested classes/functions keep their owner in `owner_qualified_name`,
+- declarations beneath control-flow wrappers are visited once with their lexical owner,
+- nested classes/functions keep their descriptive `owner_qualified_name` and exact `owner_id`,
 - module references are aggregated from symbol call references.
 
 Function-like symbols carry:
@@ -120,15 +121,62 @@ Source directives are part of tree walking, but they are parsed separately from 
 
 The full analysis workflow in `pipeline.py` validates ignore rule IDs against the combined `ast-grep` and structural rule ID namespace. It maps boundary directives to containing function spans before filtering `ast-grep` findings. Both diff snapshots receive ordinary check directive handling, including `--include-all` suppression bypasses.
 
+## Retained entity contract
+
+`AnalysisResult.project` retains the `ProjectIR` built by `build_project()` for ordinary checks and each independent diff analysis. This is an internal interface without a public compatibility promise. The authoritative inventory is `ProjectIR.modules`, with each module's `symbols` tuple; indexes are derived read-only views over those records.
+
+| Lookup | Contents |
+| --- | --- |
+| `modules_by_id` | Logical module ID → `ModuleIR` |
+| `modules_by_file` | Physical path → its one successfully parsed logical module |
+| `files_by_id` | Physical-file ID → physical path |
+| `symbols_by_id` | Declaration ID → every `SymbolIR`, including repeated names |
+| `symbols_by_qualified_name` | Qualified name → last declaration selected for existing semantic queries; not a complete inventory |
+| `effects_by_symbol` | Declaration ID → derived `EffectIR` tuple |
+
+Access all declarations in a physical file through `project.modules_by_file[path].symbols`. Constructing an `AnalysisResult` requires an explicit `project`; synthetic empty analyses can supply `ProjectIR()`.
+
+Records are frozen. Indexes, signature annotation mappings, and `AnalysisResult.source_lines_by_file` are read-only, privately owned mappings; nested sequences are tuples or frozensets. Parser-native trees and source IO remain outside the IR. `analyze_files()` resolves and deduplicates physical paths before parsing; files that fail extraction have no module record. An explicit empty file set yields an empty project; CLI discovery/usable-input validation still rejects unusable trees.
+
+### Identity, membership, and spans
+
+Physical-file IDs use normalized absolute paths. Logical-module and declaration IDs add entity kind and declaration span to physical-file identity. They are deterministic for identical inputs at the same location, independent of input order, and do not use qualified names or hashes. IDs do not track moves, renames, or relocation between snapshots.
+
+A `ModuleIR` exposes `id`, `file_id`, `kind`, `language`, `name`, `qualified_name`, and its whole-source `span`. A `SymbolIR` exposes those facts plus `module_id` and `owner_id`. Its existing `name` is the display name. Physical files remain paths, addressed by `file_id`, rather than a second semantic entity hierarchy. There is exactly one logical module per parsed physical file; no package aggregation or multi-file module merging occurs.
+
+Python module names use the contiguous parent directory chain containing `__init__.py`, followed by the file stem. An `__init__.py` names that package itself (falling back to its parent directory name when no package chain exists). For example, `pkg/__init__.py` maps to `pkg`, `pkg/sub/__init__.py` to `pkg.sub`, and `pkg/sub/util.py` to `pkg.sub.util`. Files outside that chain use only their stem; unrelated directories can therefore produce identical module/qualified names. Namespace packages are not aggregated.
+
+Top-level declarations have the logical module's `owner_id`. Nested declarations have their enclosing declaration's ID, even beneath `if`, `try`, loops, `with`, or `match`. This is syntax traversal, not condition evaluation. Class methods are distinct from functions nested inside methods. Generic parser owner contexts without a corresponding lexical declaration retain `owner_qualified_name` and `owner_id=None`; no owner entity is invented. In particular, generic Rust `impl` contexts do not resolve their named type to a separate class declaration.
+
+All `SourceSpan` lines are one-based, columns are zero-based UTF-8 bytes, and ends are exclusive. Whole-module spans include trailing newlines (ending at column zero on the next line). Definition spans begin at the declaration, not its decorators/comments.
+
+### Fact-family coverage
+
+`ModuleIR.coverage` is a frozen, parser-declared `FactCoverage`. Each field is `complete`, `partial`, or `unavailable`, defaulting conservatively to `unavailable`. Status describes extraction support, not the number of extracted facts: successful empty extraction is distinct from unavailable extraction. `complete` means the documented supported subset, not full language semantics.
+
+| Fact family | Python | Generic languages | Producer / supported subset |
+| --- | --- | --- | --- |
+| `entities` | complete | partial | Parser: named class/function declarations (Python includes async/decorated/nested/conditional definitions; not lambdas); generic grammar-configured symbols |
+| `signatures` | partial | partial | Parser: parameter names and Python annotation text, not full type semantics |
+| `complexity` | complete | complete | Parser: configured cyclomatic/cognitive syntax counts; Python also supplies maximum nesting |
+| `sloc` | complete | complete | Parser: documented language-specific SLOC exclusions |
+| `imports` | partial | unavailable | Python parser: root-level import bindings |
+| `references` | partial | unavailable | Python parser: existing symbol call references and import-based name expansion |
+| `operations` | partial | unavailable | Python parser: shallow executable body summaries and supported values |
+| `roles` | partial | unavailable | Python parser: conservative semantic keep reasons |
+| `effects` | partial | unavailable | `build_project()`: effects derived from supported operations/values |
+
+No per-entity completeness, automatic completeness analysis, or project coverage summary is implied. Call/reference extraction and execution ownership retain their existing limitations; declaration discovery does not add module-level references or a new resolver.
+
+### Counting and associations
+
+Every declaration survives in `symbols_by_id`, including Python overloads, repeated definitions, and property accessors. Import aliases remain bindings, not duplicate target entities. Python metric populations select the last record per `(physical file, existing qualified name)`, preserving same-file collision behavior while preventing cross-file name overwrites. Generic-language collisions still receive the existing source/span name suffix so their metric populations retain overloads and duplicate basenames.
+
+The generic C++ frontend extracts function definitions, not standalone prototypes, so a prototype plus its definition does not create two counted functions. There is no general declaration/body resolver, property/overload-family grouping, `.pyi` discovery, or stub/implementation matching. Unsupported associations remain unassociated, not fabricated entities.
+
 ## Semantic context
 
-`build_project()` combines parsed modules into `ProjectIR`:
-
-- `symbols_by_qualified_name`,
-- `symbols_by_file`,
-- derived `EffectIR` records for function-like symbols.
-
-When generic-language function names collide across duplicate basenames or overloads, project indexing appends a source/span suffix to those qualified names so erosion scoring keeps each function distinct.
+`build_project()` derives effects from the retained modules and supplies `RuleContext` for structural rules. Each declaration retains its own ID-keyed effects, while `RuleContext` preserves last-qualified-name effect selection for existing rule decisions, including same-file redefinitions. Retaining more facts alone does not change those decisions. Entity lookup consumers use IDs for identity; existing name-based semantic queries remain limited and are not a canonical cross-file reference resolver.
 
 Effects are derived from normalized operations and values. Invocation values become `PROJECT_CALL`, `EXTERNAL_CALL`, or `UNRESOLVED_CALL`; symbol and member values become `READ`; raise operations become `RAISE`.
 

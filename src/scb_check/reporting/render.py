@@ -7,6 +7,7 @@ from pathlib import Path
 from scb_check.models import AstGrepHit
 from scb_check.models import CloneBlock
 from scb_check.models import Flags
+from scb_check.models import SourceLines
 from scb_check.tree_walking.models import RuleFinding
 from scb_check.tree_walking.models import SymbolIR
 
@@ -15,7 +16,7 @@ _RenderedFlag = tuple[tuple[str, int, int], str]
 
 def render_flags(
     flags: Flags,
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     *,
     context_lines: int = 1,
     min_duplicate_lines: int | None = None,
@@ -37,7 +38,7 @@ def render_flags(
 
 def _clone_entries(
     flags: Flags,
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     min_duplicate_lines: int | None,
 ) -> list[_RenderedFlag]:
     entries: list[_RenderedFlag] = []
@@ -64,7 +65,7 @@ def _clone_entries(
 
 def _ast_grep_entries(
     flags: Flags,
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     context_lines: int,
 ) -> list[_RenderedFlag]:
     entries: list[_RenderedFlag] = []
@@ -92,7 +93,7 @@ def _ast_grep_entries(
 
 def _structural_entries(
     flags: Flags,
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     context_lines: int,
 ) -> list[_RenderedFlag]:
     entries: list[_RenderedFlag] = []
@@ -109,7 +110,7 @@ def _structural_entries(
 
 def _complexity_entries(
     flags: Flags,
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     context_lines: int,
 ) -> list[_RenderedFlag]:
     entries: list[_RenderedFlag] = []
@@ -175,7 +176,7 @@ def _group_clones(
 
 def _render_clone_group(
     instances: tuple[CloneBlock, ...],
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     clone_sloc_lines_by_file: dict[Path, frozenset[int]],
 ) -> str:
     anchor = instances[0]
@@ -210,7 +211,7 @@ def _render_clone_group(
 
 def _clone_body_lines(
     clone: CloneBlock,
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     clone_sloc_lines_by_file: dict[Path, frozenset[int]],
     line_number_width: int,
 ) -> list[str]:
@@ -259,7 +260,7 @@ def _clone_source_line_numbers(
 
 def _render_ast_grep(
     hit: AstGrepHit,
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     context_lines: int,
 ) -> str:
     message = hit.message.strip() or "matches slop pattern"
@@ -289,7 +290,7 @@ def _render_ast_grep(
 
 def _render_structural_finding(
     finding: RuleFinding,
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     context_lines: int,
 ) -> str:
     source_lines = source_lines_by_file.get(finding.file, ())
@@ -313,7 +314,7 @@ def _render_structural_finding(
 
 def _render_complexity_warning(
     symbol: SymbolIR,
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     context_lines: int,
     *,
     title: str,

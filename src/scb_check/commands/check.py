@@ -19,6 +19,7 @@ from scb_check.config import load_config
 from scb_check.logging import configure_logging
 from scb_check.models import AnalysisResult
 from scb_check.models import Flags
+from scb_check.models import SourceLines
 from scb_check.pipeline import IgnoreDirectiveError
 from scb_check.pipeline import analyze
 from scb_check.reporting.render import render_flags
@@ -231,7 +232,7 @@ def _load_and_analyze(
 
 def _emit_human(
     flags: Flags,
-    source_lines_by_file: dict[Path, tuple[str, ...]],
+    source_lines_by_file: SourceLines,
     config: Config,
     min_duplicate_lines: int | None,
 ) -> None:

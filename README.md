@@ -65,6 +65,8 @@ scb-check diff TREE_A TREE_B --config FILE --disable-sg  # shared options for bo
 
 `PATH` may be a file or directory. Directories are walked for supported source files: Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). Directory discovery respects `.gitignore` globs by default; use `--include-all` to scan gitignored supported files too.
 
+Python declarations inside control-flow wrappers participate in ordinary metrics and structural rules. Same-named functions in different files count independently; repeated Python definitions within one file retain last-definition metric selection. These extraction/counting corrections can change scores without changing metric formulas or the JSON schema. Maintainer-facing immutable entity facts are described in the [IR contract](docs/tree-walking.md#retained-entity-contract); they are not additional CLI report fields.
+
 ### Check JSON report fields
 
 Check JSON is a report object with four metric groups. Each group is a flat object of numerical values or `null`, with no `data` wrapper or flat compatibility aliases.

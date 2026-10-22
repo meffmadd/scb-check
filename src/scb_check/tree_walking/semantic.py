@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from itertools import groupby
 from os.path import commonpath
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from scb_check.tree_walking.models import ProjectIR
 from scb_check.tree_walking.models import ReferenceIR
 from scb_check.tree_walking.models import SymbolIR
 from scb_check.tree_walking.models import SymbolKind
+from scb_check.tree_walking.models import SymbolLookup
 from scb_check.tree_walking.models import SymbolRole
 from scb_check.tree_walking.models import ValueIR
 from scb_check.tree_walking.models import ValueKind
@@ -62,10 +62,9 @@ def build_project(modules: tuple[ModuleIR, ...]) -> ProjectIR:
     symbols_by_qualified_name = {
         symbol.qualified_name: symbol for symbol in symbols
     }
-    symbols_by_file = _symbols_by_file(symbols)
     module_name_by_file = {module.file: module.module_name for module in modules}
     effects_by_symbol = {
-        symbol.qualified_name: _effects_for_symbol(
+        symbol.id: _effects_for_symbol(
             symbol,
             symbols_by_qualified_name,
             module_name_by_file,
@@ -75,8 +74,6 @@ def build_project(modules: tuple[ModuleIR, ...]) -> ProjectIR:
     }
     return ProjectIR(
         modules=modules,
-        symbols_by_qualified_name=symbols_by_qualified_name,
-        symbols_by_file=symbols_by_file,
         effects_by_symbol=effects_by_symbol,
     )
 
@@ -179,8 +176,10 @@ class RuleContext:
         return SymbolRole.COMPUTED_ATTRIBUTE in symbol.roles
 
     def effects_for_symbol(self, symbol: SymbolIR) -> tuple[EffectIR, ...]:
-        """Return derived effects for `symbol`."""
-        return self.project.effects_by_symbol.get(symbol.qualified_name, ())
+        """Return name-selected effects for existing structural-rule decisions."""
+        # Retaining every declaration must not change same-name rule selection.
+        selected = self.project.symbols_by_qualified_name[symbol.qualified_name]
+        return self.project.effects_by_symbol.get(selected.id, ())
 
     def return_has_meaningful_effects(self, symbol: SymbolIR) -> bool:
         """Return True if the single returned value has meaningful effects."""
@@ -245,20 +244,9 @@ class RuleContext:
         return any(effect.kind is kind for effect in self.effects_for_symbol(symbol))
 
 
-def _symbols_by_file(symbols: tuple[SymbolIR, ...]) -> dict[Path, tuple[SymbolIR, ...]]:
-    sorted_symbols = sorted(symbols, key=lambda symbol: symbol.file.as_posix())
-    return {
-        file_path: tuple(file_symbols)
-        for file_path, file_symbols in groupby(
-            sorted_symbols,
-            key=lambda symbol: symbol.file,
-        )
-    }
-
-
 def _effects_for_symbol(
     symbol: SymbolIR,
-    symbols_by_qualified_name: dict[str, SymbolIR],
+    symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
 ) -> tuple[EffectIR, ...]:
     effects: list[EffectIR] = []
@@ -277,7 +265,7 @@ def _effects_for_symbol(
 def _effects_for_operation(
     symbol: SymbolIR,
     operation: OperationIR,
-    symbols_by_qualified_name: dict[str, SymbolIR],
+    symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
 ) -> tuple[EffectIR, ...]:
     if operation.kind is OperationKind.RAISE:
@@ -301,7 +289,7 @@ def _effects_for_operation(
 def _effects_for_value(
     symbol: SymbolIR,
     value: ValueIR,
-    symbols_by_qualified_name: dict[str, SymbolIR],
+    symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
 ) -> tuple[EffectIR, ...]:
     child_effects = tuple(
@@ -373,7 +361,7 @@ def _is_external_call(value: ValueIR, symbol: SymbolIR) -> bool:
 def _resolve_project_value(
     value: ValueIR,
     symbol: SymbolIR,
-    symbols_by_qualified_name: dict[str, SymbolIR],
+    symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
 ) -> SymbolIR | None:
     candidates = tuple(_candidate_qualified_names(value, symbol, module_name_by_file))

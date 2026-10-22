@@ -38,6 +38,7 @@ from scb_check.tree_walking.directives import parse_boundary_directives
 from scb_check.tree_walking.directives import parse_ignore_directives
 from scb_check.tree_walking.dispatch import ParsedFile
 from scb_check.tree_walking.models import Language
+from scb_check.tree_walking.models import ProjectIR
 from scb_check.tree_walking.models import RuleFinding
 from scb_check.tree_walking.models import SymbolIR
 from scb_check.tree_walking.models import SymbolKind
@@ -64,6 +65,7 @@ class ParsedSources:
 class Findings:
     """Collected findings before sorting and line-set projection."""
 
+    project: ProjectIR
     clones: tuple[CloneBlock, ...]
     ast_hits: tuple[AstGrepHit, ...]
     structural_findings: tuple[RuleFinding, ...]
@@ -100,7 +102,8 @@ def analyze_files(
     disable_sg: bool = False,
     low_use_short_function: LowUseShortFunctionSettings | None = None,
 ) -> AnalysisResult:
-    """Analyze an explicit tuple of supported source `files`."""
+    """Analyze each normalized physical file once, independent of input order."""
+    files = tuple(sorted({file.resolve() for file in files}))
     findings = _collect_findings(
         files,
         include_all=include_all,
@@ -113,6 +116,7 @@ def analyze_files(
     return AnalysisResult(
         flags=flags,
         source_lines_by_file=findings.source_lines_by_file,
+        project=findings.project,
     )
 
 
@@ -129,7 +133,7 @@ def _collect_findings(
         if (parsed := read_and_parse_source(file)) is not None
     ))
     project = build_project(tuple(parsed.module for parsed in sources.parsed_files))
-    functions = _function_symbols(tuple(project.symbols_by_qualified_name.values()))
+    functions = _function_symbols(tuple(project.symbols_by_id.values()))
     structural_findings = run_rules(
         project,
         low_use_short_function=low_use_short_function,
@@ -142,6 +146,7 @@ def _collect_findings(
         disable_sg=disable_sg,
     )
     return Findings(
+        project=project,
         clones=detect_clones(sources.parsed_files),
         ast_hits=ast_hits,
         structural_findings=filtered_structural_findings,
@@ -323,9 +328,13 @@ def _valid_rule_ids(rules_path: Path) -> frozenset[str]:
 
 
 def _function_symbols(symbols: tuple[SymbolIR, ...]) -> tuple[SymbolIR, ...]:
+    # Preserve same-file last-declaration selection without cross-file overwrites.
+    selected = {
+        (symbol.file_id, symbol.qualified_name): symbol for symbol in symbols
+    }
     return tuple(
         symbol
-        for symbol in symbols
+        for symbol in selected.values()
         if symbol.kind in {SymbolKind.FUNCTION, SymbolKind.METHOD}
     )
 

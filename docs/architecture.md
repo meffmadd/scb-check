@@ -28,6 +28,8 @@ That union is intersected with `SLOC`, then divided by total `SLOC`. A line flag
 
 `cog_erosion` uses the same mass-share calculation with cognitive complexity and `cog_complexity > 10`. Zero total mass yields a zero score.
 
+Metric populations select declarations by `(physical file, qualified name)`, keeping the last same-file declaration; generic parsers retain their existing name disambiguation. Cross-file Python name collisions no longer discard functions. Python declarations under control-flow wrappers also enter ordinary metrics and structural rules. These two extraction/indexing corrections intentionally affect counts, masses, erosion scores, and potentially structural verbosity, without changing formulas, rule policies, report fields, or CLI contracts.
+
 ### Snapshot comparison
 
 Each delta is the later measurement minus the earlier measurement, in its existing units. `diff` compares every numeric check report measurement: scores, scanned-file and SLOC counts, flagged-line and finding counts, function counts and masses, and syntax-tree/node counts including per-language counts. Only absent dotted per-language syntax fields contribute zero counts to subtraction; original snapshots keep their own language coverage. Explicit `None` propagates through subtraction, while missing required groups or fields are contract errors.
@@ -59,7 +61,7 @@ CLI (`cli.py` / `commands/`)
     ├─ run bundled and extra Python `ast-grep` rules through `sg`
     ├─ run structural rules over `ProjectIR`
     ├─ apply source ignores, boundary suppression, severity, and thresholds
-    └─ return `AnalysisResult` (including sorted `Flags` and source context)
+    └─ return `AnalysisResult` (retained `ProjectIR`, sorted `Flags`, read-only source context)
            │
            ├─ `compute_report(analysis)` → `serialize_report(report)` for JSON
            └─ `render_flags()` for location-level human output
@@ -134,7 +136,7 @@ The two-analysis builder leaves room for a future pairwise measurement without d
 : Language-agnostic code symbol such as a class, function, method, or value. Function-like symbols carry signatures, roles, body operations, references, `SLOC`, complexity values, and maximum control-flow nesting depth.
 
 `ProjectIR`
-: Project-level semantic model built from parsed modules. It indexes modules, symbols, files, and derived effects.
+: Immutable project inventory retained in `AnalysisResult.project`, with derived read-only module, symbol, physical-file, and effect indexes. See the [entity contract](tree-walking.md#retained-entity-contract) for identities, ownership, coverage, and supported associations.
 
 `RuleContext`
 : Query interface passed to structural rules so rules ask semantic questions, including resolved project call sites, instead of inspecting parser-native syntax.
@@ -144,14 +146,15 @@ The two-analysis builder leaves room for a future pairwise measurement without d
 
 ## Design constraints
 
-- Line numbers are 1-indexed after tree-sitter data leaves the parser layer.
+- Source spans use one-based lines, zero-based UTF-8 byte columns, and exclusive ends after tree-sitter data leaves the parser layer.
 - Supported scan targets are Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`).
 - `ast-grep`, structural rules, and source directives are Python-only until language-specific rule sets exist.
 - Parser-native data may live on parsed file artifacts for clone detection, but not in `ModuleIR`, `ProjectIR`, or structural rules.
 - `ast-grep` failure is non-fatal. `scb-check` tries a global `sg` binary first, then falls back to package-managed ast-grep executables next to Python if global `sg` is missing or fails. If no ast-grep binary succeeds, `OSError`, non-zero exits, or invalid JSON return no hits.
 - Source ignores and structural rules share one rule ID namespace, so `scbc ignore[...]` is never ambiguous.
 - Clone and erosion findings are not suppressible. `ast-grep` and structural findings are suppressible.
-- Immutable records cross module boundaries: frozen dataclasses and Pydantic models, with tuples instead of lists.
+- Immutable records cross module boundaries: frozen dataclasses and Pydantic models, tuples/frozensets, and privately owned read-only mappings including nested annotations and lookup indexes.
+- Retained entity facts serve analysis consumers and structural rules; metric populations and aggregate calculations stay outside the IR so retaining more declarations does not silently redefine metric membership.
 
 ## Scoring-sensitive surfaces
 
