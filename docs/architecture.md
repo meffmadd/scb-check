@@ -54,7 +54,7 @@ CLI (`cli.py` / `commands/`)
     │
     ├─ discover supported source files with the walker
     ├─ read and parse source through `read_and_parse_source`
-    │      └─ emit `ModuleIR`, `SLOC`, symbols, and complexity facts
+    │      └─ emit `ModuleIR`, `SLOC`, symbols, complexity, and Python text fragments
     ├─ build source indexes
     ├─ build `ProjectIR` semantic indexes
     ├─ detect clone blocks from parser-native trees
@@ -98,6 +98,12 @@ The two-analysis builder leaves room for a future pairwise measurement without d
 
 `score.serialize_report(report)` validates the report contract and creates fresh plain outer and inner dictionaries; changing serialized data cannot change a computed report. `None` becomes JSON `null`. Tree paths remain command-owned context outside numerical reports. `render_comparison(before, after, diff)` uses metric-owned units: fractional scores become percentages, score differences become percentage points, counts and masses keep their units, and unavailable values are explicit. Unit metadata is not embedded in report values.
 
+### Text evidence boundary
+
+Python's immutable `TextFragmentIR` records preserve source evidence for analysis consumers, including CSE's function/method, class, and file documents. Each occurrence lives once in its module's physical-file inventory with a syntactic owner; parent documents can select child owners without duplicate authoritative copies. Other languages explicitly declare extraction unavailable. See [the fragment contract](tree-walking.md#source-text-fragments) for ownership, spans, and coverage.
+
+The IR preserves spelling rather than choosing semantic preprocessing: it does not split identifiers, remove stop words, stem, tokenize for a model, embed, or assemble documents. Consumers choose document membership and representations. Metric implementations remain responsible for populations, formulas, and scores; retaining comments/docstrings does not make them SLOC or change verbosity, erosion, report fields, or independent-snapshot comparison.
+
 ## Layers
 
 - Boundary: `cli.py`, `commands/`, `config.py`, `walker.py`, and `logging.py` parse arguments, load configuration, walk paths, and wire logging. They do not score code.
@@ -130,7 +136,10 @@ The two-analysis builder leaves room for a future pairwise measurement without d
 : Python class in `rules/` that checks typed IR subjects and returns `RuleFinding | None`.
 
 `ModuleIR`
-: Pydantic model for a parsed source module. It contains generic symbols, imports, references, operations, source spans, and `SLOC` lines; it does not expose raw tree-sitter nodes.
+: Pydantic model for a parsed source module. It contains generic symbols, text fragments, imports, references, operations, source spans, and `SLOC` lines; it does not expose raw tree-sitter nodes.
+
+`TextFragmentIR`
+: Immutable identifier, comment, or docstring source occurrence with exact text, source span, and syntactic owner ID.
 
 `SymbolIR`
 : Language-agnostic code symbol such as a class, function, method, or value. Function-like symbols carry signatures, roles, body operations, references, `SLOC`, complexity values, and maximum control-flow nesting depth.

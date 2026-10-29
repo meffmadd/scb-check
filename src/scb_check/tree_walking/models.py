@@ -148,6 +148,18 @@ class SourceSpan(IRModel):
         )
 
 
+type TextFragmentKind = Literal["identifier", "comment", "docstring"]
+
+
+class TextFragmentIR(IRModel):
+    """One original source occurrence, owned by a module or declaration ID."""
+
+    text: str
+    kind: TextFragmentKind
+    span: SourceSpan
+    owner_id: str
+
+
 type SignatureAnnotations = Mapping[str, str | None]
 
 
@@ -286,6 +298,7 @@ class FactCoverage(IRModel):
     """Parser-declared support for documented fact subsets, not fact counts."""
 
     entities: CoverageStatus = "unavailable"
+    text_fragments: CoverageStatus = "unavailable"
     signatures: CoverageStatus = "unavailable"
     complexity: CoverageStatus = "unavailable"
     sloc: CoverageStatus = "unavailable"
@@ -306,6 +319,7 @@ class ModuleIR(IRModel):
     coverage: FactCoverage = Field(default_factory=FactCoverage)
     imports: tuple[ImportIR, ...] = ()
     symbols: tuple[SymbolIR, ...] = ()
+    text_fragments: tuple[TextFragmentIR, ...] = ()
     operations: tuple[OperationIR, ...] = ()
     references: tuple[ReferenceIR, ...] = ()
     sloc_lines: frozenset[int] = frozenset()

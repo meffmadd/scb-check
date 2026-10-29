@@ -135,6 +135,31 @@ def test_diff_preserves_check_parity_for_entity_discovery_corrections(
     assert payload["diff"]["verbosity"]["score"] == pytest.approx(0.4)
 
 
+def test_text_evidence_edits_preserve_scores_exits_and_snapshot_parity(
+    trees: tuple[Path, Path],
+) -> None:
+    """Retaining comments/docstrings does not include their lines in metric mass."""
+    for tree, text in zip(trees, ("earlier evidence", "later evidence"), strict=True):
+        (tree / "sample.py").write_text(
+            f'# {text}\n"""{text}"""\n'
+            f'def forward(value):\n    """{text}"""\n'
+            f'    # {text}\n    return value\n',
+            encoding="utf-8",
+        )
+    checks = [CliRunner().invoke(main, ["check", str(tree), "--output-format", "json"])
+              for tree in trees]
+    assert [check.exit_code for check in checks] == [1, 1]
+    payload = _json_diff(trees)
+    assert payload["before"] == json.loads(checks[0].stdout)
+    assert payload["after"] == json.loads(checks[1].stdout)
+    assert payload["before"] == payload["after"]
+    assert payload["before"]["verbosity"]["total_loc"] == 2
+    assert payload["before"]["verbosity"]["structural_rule_loc"] == 2
+    assert payload["before"]["verbosity"]["score"] == 1.0
+    assert payload["before"]["erosion"]["total_mass"] == pytest.approx(math.sqrt(2))
+    assert all(value == 0 for group in payload["diff"].values() for value in group.values())
+
+
 def test_diff_shows_ratio_decrease_despite_growing_flagged_count(
     trees: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,

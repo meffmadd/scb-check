@@ -7,9 +7,10 @@ Supported source languages are Python, Rust, JavaScript, TypeScript, Zig, Haskel
 ## Invariants
 
 - Language parsers accept already-read source text. File IO stays in the shared `analysis/source.py` boundary used by check and diff.
-- `ModuleIR`, `SymbolIR`, `OperationIR`, `ValueIR`, `EffectIR`, and `RuleFinding` must not store raw tree-sitter nodes.
+- `ModuleIR`, `SymbolIR`, `TextFragmentIR`, `OperationIR`, `ValueIR`, `EffectIR`, and `RuleFinding` must not store raw tree-sitter nodes.
 - Parser-native data may live only on `ParsedFile` for clone detection.
 - `AnalysisResult.project` retains the module inventory with derived read-only indexes. Preserve ID-based membership, immutable nested mappings, and conservative parser-declared `FactCoverage`; see the [entity contract](../../../docs/tree-walking.md#retained-entity-contract).
+- Text fragments live once in `ModuleIR.text_fragments`, with ID-based syntactic ownership and parser-declared coverage. When extending extraction, follow the [fragment policy](../../../docs/tree-walking.md#source-text-fragments); document assembly and model preprocessing belong to consumers.
 - Declaration inventory and metric populations are distinct: retain all declarations here; pipeline selection preserves last same-file qualified-name selection without cross-file overwrites.
 - SLOC excludes comments and blank lines. Python also excludes standalone non-f-string/non-bytes string statements; generic parsers also exclude punctuation-only delimiter lines.
 - Extract per-function SLOC and cyclomatic/cognitive complexity facts here. Metric classes in `metrics/` own mass arithmetic, aggregate scores, result fields, and units; keep those calculations out of `SymbolIR`.

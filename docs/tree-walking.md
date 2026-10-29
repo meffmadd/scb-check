@@ -11,7 +11,7 @@ Tree walking turns already-read supported source into language-agnostic facts th
 - `module`: pure `ModuleIR` for downstream scoring and rules.
 - `native_tree`: parser-native data kept only for clone detection.
 
-Do not put raw tree-sitter nodes into `ModuleIR`, `SymbolIR`, `OperationIR`, `ValueIR`, `EffectIR`, or `RuleFinding`.
+Do not put raw tree-sitter nodes into `ModuleIR`, `SymbolIR`, `TextFragmentIR`, `OperationIR`, `ValueIR`, `EffectIR`, or `RuleFinding`.
 
 ## Parse flow
 
@@ -66,7 +66,8 @@ The generic Tree-sitter parser used for Rust, JavaScript, TypeScript, Zig, Haske
 - classes and functions become `SymbolIR` records,
 - declarations beneath control-flow wrappers are visited once with their lexical owner,
 - nested classes/functions keep their descriptive `owner_qualified_name` and exact `owner_id`,
-- module references are aggregated from symbol call references.
+- module references are aggregated from symbol call references,
+- identifiers, comments, and docstring literals become entity-owned `TextFragmentIR` occurrences.
 
 Function-like symbols carry:
 
@@ -87,7 +88,7 @@ Rust, JavaScript, TypeScript, Zig, Haskell, and C++ use `GenericTreeSitterParser
 - function and method symbols, including JavaScript and TypeScript generator functions, with names, owners, signatures, spans, `SLOC`, cyclomatic complexity, and cognitive complexity,
 - parser-native trees retained on `ParsedFile` for clone hashing and syntax node counts.
 
-It does not yet emit imports, references, body operations, value summaries, or source directives for non-Python languages. Structural rules therefore remain Python-only until they have language-specific semantic facts.
+It does not yet emit text fragments, imports, references, body operations, value summaries, or source directives for non-Python languages. Structural rules therefore remain Python-only until they have language-specific semantic facts.
 
 ## Operations and values
 
@@ -150,6 +151,30 @@ Top-level declarations have the logical module's `owner_id`. Nested declarations
 
 All `SourceSpan` lines are one-based, columns are zero-based UTF-8 bytes, and ends are exclusive. Whole-module spans include trailing newlines (ending at column zero on the next line). Definition spans begin at the declaration, not its decorators/comments.
 
+### Source text fragments
+
+`project.modules_by_file[path].text_fragments` is the sole physical-file inventory of `TextFragmentIR` occurrences. Each frozen record contains:
+
+| Field | Meaning |
+| --- | --- |
+| `text` | Exact source spelling, including comment markers, literal prefixes, quotes, escapes, and internal newlines |
+| `kind` | `identifier`, `comment`, or `docstring` |
+| `span` | Physical source occurrence; `span.file_id` associates it with the module's physical file |
+| `owner_id` | Syntactic owning module or declaration ID, not a resolved referent or execution scope |
+
+The Python producer reuses the already-parsed tree and its source bytes. It retains every grammar identifier occurrence (declarations, parameters, imports, attributes, annotations, expression identifiers), every grammar comment, and initial plain string expressions in module/class/function bodies. Comments before the first statement do not prevent docstring recognition. Parenthesized docstrings are supported; implicitly concatenated docstrings emit one fragment per constituent literal, with any intervening comments retained separately. Byte strings, f-strings, ordinary string literals, and later standalone string statements are not docstrings. Identifiers inside f-string expressions remain eligible. This extraction is independent of `SLOC` exclusions.
+
+Ownership follows parser syntax containment, with these attribution rules:
+
+- A class/function owns its declaration name, signature/defaults/bases, body text, and decorators, including comments inside its decorated-definition wrapper. Definition spans themselves still exclude decorators.
+- Nested declarations own their own fragments; those fragments are not copied to any ancestor. Repeated names still have distinct owning IDs.
+- Leading standalone comments before a declaration/decorator stay with the enclosing entity, rather than attaching speculatively to the following declaration. Header/inline/body comments follow their containing syntax node; comments after a dedent belong to the enclosing entity. Blank lines do not change ownership.
+- Control-flow wrappers, lambdas, and comprehensions do not introduce retained entities; their text belongs to the nearest enclosing retained declaration or module. This is syntactic ownership, not runtime name binding.
+
+Spans use the shared one-based lines, zero-based UTF-8 byte columns, and exclusive ends. Multiline text includes its internal newlines; the final column counts bytes only on its last line. Text is exact relative to the reader's newline-normalized source, not raw on-disk line endings. A source occurrence appears once in the inventory; its span distinguishes repeated spellings, including same-line statements.
+
+Consumers can select direct fragments by `owner_id`, or include child owners transitively through `SymbolIR.owner_id`, filtering the physical-file inventory once. File documents can select the whole tuple. Document assembly and child inclusion policy belong to consumers, not to the IR; see [the architectural boundary](architecture.md#text-evidence-boundary).
+
 ### Fact-family coverage
 
 `ModuleIR.coverage` is a frozen, parser-declared `FactCoverage`. Each field is `complete`, `partial`, or `unavailable`, defaulting conservatively to `unavailable`. Status describes extraction support, not the number of extracted facts: successful empty extraction is distinct from unavailable extraction. `complete` means the documented supported subset, not full language semantics.
@@ -157,6 +182,7 @@ All `SourceSpan` lines are one-based, columns are zero-based UTF-8 bytes, and en
 | Fact family | Python | Generic languages | Producer / supported subset |
 | --- | --- | --- | --- |
 | `entities` | complete | partial | Parser: named class/function declarations (Python includes async/decorated/nested/conditional definitions; not lambdas); generic grammar-configured symbols |
+| `text_fragments` | complete | unavailable | Python parser: identifiers, comments, and docstring literals under the source-text policy above |
 | `signatures` | partial | partial | Parser: parameter names and Python annotation text, not full type semantics |
 | `complexity` | complete | complete | Parser: configured cyclomatic/cognitive syntax counts; Python also supplies maximum nesting |
 | `sloc` | complete | complete | Parser: documented language-specific SLOC exclusions |
@@ -187,6 +213,6 @@ Effects are derived from normalized operations and values. Invocation values bec
 - Keep file IO at boundaries; parsers accept `Path` plus already-read source text.
 - Keep IR pure and immutable; pass tuples across module boundaries.
 - Add parser-native data only to `ParsedFile`, and only when an analysis helper needs it.
-- Add enum members or IR fields only when at least one real rule or scoring path needs them.
+- Add enum members or IR fields for a specified analysis consumer or rule/scoring need; keep consumer-specific document assembly and calculations outside the IR.
 - When adding syntax support, update parser tests, semantic tests, and any affected scoring docs.
 - When adding a new language, add a parser config/module, dispatch mapping, `Language` value, discovery support, clone config, tests, and docs deliberately; do not make Python-specific assumptions in structural rules.

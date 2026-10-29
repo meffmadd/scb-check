@@ -47,6 +47,8 @@ from scb_check.tree_walking.models import SignatureIR
 from scb_check.tree_walking.models import SymbolIR
 from scb_check.tree_walking.models import SymbolKind
 from scb_check.tree_walking.models import SymbolRole
+from scb_check.tree_walking.models import TextFragmentIR
+from scb_check.tree_walking.models import TextFragmentKind
 from scb_check.tree_walking.models import ValueIR
 from scb_check.tree_walking.models import ValueKind
 
@@ -234,13 +236,15 @@ class PythonWalker:
     def module(self) -> ModuleIR:
         """Return the parsed module IR."""
         self._visit_children(self._tree.root_node, VisitContext())
+        span = _module_span(self._file_path, self._source)
         return ModuleIR(
             language=Language.PYTHON,
             file=self._file_path,
             module_name=self._module_name,
-            span=_module_span(self._file_path, self._source),
+            span=span,
             coverage=FactCoverage(
                 entities="complete",
+                text_fragments="complete",
                 signatures="partial",
                 complexity="complete",
                 sloc="complete",
@@ -252,6 +256,12 @@ class PythonWalker:
             ),
             imports=self._imports,
             symbols=tuple(self._symbols),
+            text_fragments=_text_fragments(
+                self._file_path,
+                self._tree.root_node,
+                span.entity_id(SymbolKind.MODULE),
+                tuple(self._symbols),
+            ),
             references=tuple(
                 reference
                 for symbol in self._symbols
@@ -395,6 +405,87 @@ class PythonWalker:
             node,
             VisitContext(owner_qualified_name=qualified_name, owner_id=symbol.id),
         )
+
+
+def _text_fragments(
+    file_path: Path,
+    root: Node,
+    module_id: str,
+    symbols: tuple[SymbolIR, ...],
+) -> tuple[TextFragmentIR, ...]:
+    """Extract occurrences once, using declaration ownership rather than execution scope."""
+    owners = {
+        (symbol.span.start_line - 1, symbol.span.start_col): symbol.id
+        for symbol in symbols
+    }
+    docstrings: set[int] = set()
+    fragments: list[TextFragmentIR] = []
+    stack = [(root, module_id)]
+    while stack:
+        node, owner_id = stack.pop()
+        if node.type == "decorated_definition":
+            definition = node.child_by_field_name("definition")
+            assert definition is not None  # noqa: S101 - Guaranteed by the valid grammar.
+            owner_id = owners[definition.start_point]
+        elif node.type in _SCOPE_NODE_TYPES:
+            owner_id = owners[node.start_point]
+        if node.type == "module" or node.type in _SCOPE_NODE_TYPES:
+            docstrings.update(
+                literal.start_byte for literal in _docstring_literals(node)
+            )
+        kind: TextFragmentKind | None = None
+        if node.type == "identifier":
+            kind = "identifier"
+        elif node.type == "comment":
+            kind = "comment"
+        elif node.start_byte in docstrings and node.type == "string":
+            kind = "docstring"
+        if kind is not None:
+            fragments.append(
+                TextFragmentIR(
+                    text=_text(node),
+                    kind=kind,
+                    span=_node_span(file_path, node),
+                    owner_id=owner_id,
+                )
+            )
+            continue
+        stack.extend((child, owner_id) for child in reversed(node.named_children))
+    return tuple(fragments)
+
+
+def _docstring_literals(node: Node) -> tuple[Node, ...]:
+    """Keep constituent literals separate so intervening comments occur only once."""
+    body = node if node.type == "module" else node.child_by_field_name("body")
+    if body is None:
+        return ()
+    first = next(
+        (child for child in body.named_children if child.type != "comment"), None,
+    )
+    if first is None or first.type != "expression_statement":
+        return ()
+    # Unparenthesized tuples expose their comma beside the first expression.
+    if any(child.type == "," for child in first.children):
+        return ()
+    expression = first.named_children[0]
+    while expression.type == "parenthesized_expression":
+        expression = next(
+            child for child in expression.named_children if child.type != "comment"
+        )
+    if expression.type == "string":
+        literals = (expression,)
+    elif expression.type == "concatenated_string":
+        literals = tuple(
+            child for child in expression.named_children if child.type == "string"
+        )
+    else:
+        return ()
+    if any(
+        set(python_string_prefix(_text(literal))) & {"b", "f"}
+        for literal in literals
+    ):
+        return ()
+    return literals
 
 
 def _parse_tree(source: str) -> Tree:

@@ -14,6 +14,7 @@ Implemented analysis paths:
 
 - Source discovery for supported Python, Rust, JavaScript, TypeScript, Zig, Haskell, and C++ suffixes.
 - Tree-sitter parsing into language-agnostic IR, retained as immutable `AnalysisResult.project` with declaration identity, ownership, module/file membership, and parser-declared fact coverage.
+- Python entity-owned identifiers, comments, and docstring literals retained once per physical file as immutable `TextFragmentIR` records; other languages declare text extraction unavailable.
 - Parser `SLOC` accounting shared by verbosity, clone line counts, and rule spans.
 - One full `pipeline.analyze()` workflow using the shared source reader and source indexes for both commands.
 - Data-only grouped reports, metric-owned calculations and units, and pure nullable snapshot comparison including dotted per-language syntax counts.
@@ -56,7 +57,7 @@ Implemented analysis paths:
 ## Extending retained entity facts
 
 1. Keep facts in `ModuleIR` / `SymbolIR` and expose them through `AnalysisResult.project`; use the [entity contract](tree-walking.md#retained-entity-contract) for identity, membership, coverage, and association semantics.
-2. Update the producing parser and its conservative `FactCoverage` declaration. Keep parser-native nodes and source IO outside the IR, and metric populations/calculations in their existing layers.
+2. Update the producing parser and its conservative `FactCoverage` declaration. Keep parser-native nodes and source IO outside the IR, and metric populations/calculations in their existing layers. Text facts follow the [source-fragment ownership policy](tree-walking.md#source-text-fragments); reuse already-read/parser source, retain original spelling once, and leave document assembly and model preprocessing to consumers.
 3. Test real-source behavior through `analyze` / `analyze_files`, including immutable nested views, empty/unavailable facts, exact lexical parents, and repeatable IDs. Preserve same-file metric selection while retaining every declaration.
 4. Check numerical parity on unaffected fixtures. For cross-file function collisions and conditional Python declarations, test the corrected counts/masses/findings explicitly, including independent check/diff parity.
 
