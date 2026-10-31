@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from os.path import commonpath
 from pathlib import Path
 
@@ -14,12 +15,15 @@ from scb_check.tree_walking.models import OperationIR
 from scb_check.tree_walking.models import OperationKind
 from scb_check.tree_walking.models import ProjectIR
 from scb_check.tree_walking.models import ReferenceIR
+from scb_check.tree_walking.models import SourceSpan
+from scb_check.tree_walking.models import SourceUseIR
 from scb_check.tree_walking.models import SymbolIR
 from scb_check.tree_walking.models import SymbolKind
 from scb_check.tree_walking.models import SymbolLookup
 from scb_check.tree_walking.models import SymbolRole
 from scb_check.tree_walking.models import ValueIR
 from scb_check.tree_walking.models import ValueKind
+from scb_check.tree_walking.source_uses import resolve_source_uses
 
 _RECEIVER_PARAMETER_NAMES = frozenset({"self", "cls"})
 _REQUIRED_API_ROLES = frozenset(
@@ -53,21 +57,27 @@ _GENERIC_LANGUAGES = frozenset(
     },
 )
 _FUNCTION_SYMBOL_KINDS = frozenset({SymbolKind.FUNCTION, SymbolKind.METHOD})
+type _UsesBySpan = Mapping[tuple[SourceSpan, str], SourceUseIR]
 
 
 def build_project(modules: tuple[ModuleIR, ...]) -> ProjectIR:
     """Build project semantic indexes and derived effects from modules."""
-    modules = _with_unique_generic_function_names(modules)
+    modules = resolve_source_uses(_with_unique_generic_function_names(modules))
     symbols = tuple(symbol for module in modules for symbol in module.symbols)
     symbols_by_qualified_name = {
         symbol.qualified_name: symbol for symbol in symbols
     }
     module_name_by_file = {module.file: module.module_name for module in modules}
+    uses_by_span = {
+        (use.span, "call" if use.kind == "call" else "attribute"): use
+        for module in modules for use in module.source_uses
+    }
     effects_by_symbol = {
         symbol.id: _effects_for_symbol(
             symbol,
             symbols_by_qualified_name,
             module_name_by_file,
+            uses_by_span,
         )
         for symbol in symbols
         if symbol.kind in {SymbolKind.FUNCTION, SymbolKind.METHOD}
@@ -248,6 +258,7 @@ def _effects_for_symbol(
     symbol: SymbolIR,
     symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
+    uses_by_span: _UsesBySpan,
 ) -> tuple[EffectIR, ...]:
     effects: list[EffectIR] = []
     for operation in symbol.body:
@@ -257,6 +268,7 @@ def _effects_for_symbol(
                 operation,
                 symbols_by_qualified_name,
                 module_name_by_file,
+                uses_by_span,
             ),
         )
     return tuple(effects)
@@ -267,6 +279,7 @@ def _effects_for_operation(
     operation: OperationIR,
     symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
+    uses_by_span: _UsesBySpan,
 ) -> tuple[EffectIR, ...]:
     if operation.kind is OperationKind.RAISE:
         return (
@@ -283,6 +296,7 @@ def _effects_for_operation(
         operation.value,
         symbols_by_qualified_name,
         module_name_by_file,
+        uses_by_span,
     )
 
 
@@ -291,6 +305,7 @@ def _effects_for_value(
     value: ValueIR,
     symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
+    uses_by_span: _UsesBySpan,
 ) -> tuple[EffectIR, ...]:
     child_effects = tuple(
         effect
@@ -300,9 +315,16 @@ def _effects_for_value(
             argument,
             symbols_by_qualified_name,
             module_name_by_file,
+            uses_by_span,
         )
     )
     if value.kind is ValueKind.INVOCATION:
+        use = uses_by_span[value.span, "call"]
+        # Operation shapes select rule eligibility; target spelling/identity comes
+        # from the canonical occurrence. Rules retain their historical name policy.
+        value = value.model_copy(update={"name": (
+            use.target_spelling if use.target_form != "expression" else None
+        )})
         target = _resolve_project_value(
             value,
             symbol,
@@ -332,7 +354,7 @@ def _effects_for_value(
                 symbol_qualified_name=symbol.qualified_name,
                 target_name=value.name,
             )
-        return (call_effect, *child_effects)
+        return (call_effect.model_copy(update={"source_use_id": use.id}), *child_effects)
     if value.kind in {ValueKind.SYMBOL_REFERENCE, ValueKind.MEMBER_ACCESS}:
         return (
             EffectIR(
@@ -341,6 +363,10 @@ def _effects_for_value(
                 symbol_qualified_name=symbol.qualified_name,
                 target_name=value.name,
                 target_qualified_name=value.resolved_name,
+                source_use_id=(
+                    uses_by_span[value.span, "attribute"].id
+                    if value.kind is ValueKind.MEMBER_ACCESS else None
+                ),
             ),
             *child_effects,
         )
@@ -348,6 +374,7 @@ def _effects_for_value(
 
 
 def _is_external_call(value: ValueIR, symbol: SymbolIR) -> bool:
+    # A rule keep-policy, not evidence of external resolution in SourceUseIR.
     return (
         value.resolved_name is not None
         and value.resolved_name != value.name

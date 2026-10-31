@@ -54,7 +54,7 @@ CLI (`cli.py` / `commands/`)
     │
     ├─ discover supported source files with the walker
     ├─ read and parse source through `read_and_parse_source`
-    │      └─ emit `ModuleIR`, `SLOC`, symbols, complexity, and Python text fragments
+    │      └─ emit `ModuleIR`, `SLOC`, symbols, complexity, and Python text fragments/source uses
     ├─ build source indexes
     ├─ build `ProjectIR` semantic indexes
     ├─ detect clone blocks from parser-native trees
@@ -104,6 +104,14 @@ Python's immutable `TextFragmentIR` records preserve source evidence for analysi
 
 The IR preserves spelling rather than choosing semantic preprocessing: it does not split identifiers, remove stop words, stem, tokenize for a model, embed, or assemble documents. Consumers choose document membership and representations. Metric implementations remain responsible for populations, formulas, and scores; retaining comments/docstrings does not make them SLOC or change verbosity, erosion, report fields, or independent-snapshot comparison.
 
+### Source-use evidence boundary
+
+Python calls and attribute accesses live once in `ModuleIR.source_uses`, with snapshot occurrence IDs, spans, execution owners, and explicit direct-resolution evidence. Imports remain separate bindings. `build_project()` refines import targets against retained entities; `ProjectIR.source_uses_by_id` is a read-only index, not another inventory. See [the source-use contract](tree-walking.md#canonical-source-uses-and-imports) for supported contexts, alias/scope handling, ambiguity, and unresolved dynamics.
+
+A source site, a distinct caller, and a distinct target are different populations: repeated sites and recursion must survive extraction so consumers can choose counts and direction policies. Static binding evidence is not a possible-runtime-target set. External status requires import/builtin evidence outside the retained snapshot; dotted spelling alone supplies neither external status nor type/runtime-target inference.
+
+Rule-facing references and shallow operation-selected effects intentionally preserve textual nesting, parameter/builtin exclusions, self-recursion exclusions, and dotted-call keep-policy. Linked effects carry `source_use_id`, but their rule labels need not match canonical resolution status. This separation retains existing structural-rule behavior while exposing richer facts. Metric populations, counts, formulas, and scores stay in consumers, outside the IR; this inventory adds no report fields or metrics and changes neither verbosity/erosion nor CLI `check`/independent-snapshot `diff` contracts.
+
 ## Layers
 
 - Boundary: `cli.py`, `commands/`, `config.py`, `walker.py`, and `logging.py` parse arguments, load configuration, walk paths, and wire logging. They do not score code.
@@ -136,16 +144,19 @@ The IR preserves spelling rather than choosing semantic preprocessing: it does n
 : Python class in `rules/` that checks typed IR subjects and returns `RuleFinding | None`.
 
 `ModuleIR`
-: Pydantic model for a parsed source module. It contains generic symbols, text fragments, imports, references, operations, source spans, and `SLOC` lines; it does not expose raw tree-sitter nodes.
+: Pydantic model for a parsed source module. It contains generic symbols, text fragments, canonical source uses, import bindings, rule-facing references, operations, source spans, and `SLOC` lines; it does not expose raw tree-sitter nodes.
 
 `TextFragmentIR`
 : Immutable identifier, comment, or docstring source occurrence with exact text, source span, and syntactic owner ID.
+
+`SourceUseIR`
+: Immutable call or attribute-access occurrence with source/target spans, original target spelling, execution ownership, and direct static `TargetResolutionIR` evidence; unsupported contexts remain explicit.
 
 `SymbolIR`
 : Language-agnostic code symbol such as a class, function, method, or value. Function-like symbols carry signatures, roles, body operations, references, `SLOC`, complexity values, and maximum control-flow nesting depth.
 
 `ProjectIR`
-: Immutable project inventory retained in `AnalysisResult.project`, with derived read-only module, symbol, physical-file, and effect indexes. See the [entity contract](tree-walking.md#retained-entity-contract) for identities, ownership, coverage, and supported associations.
+: Immutable project inventory retained in `AnalysisResult.project`, with derived read-only module, symbol, physical-file, source-use, and effect indexes. See the [entity contract](tree-walking.md#retained-entity-contract) for identities, ownership, coverage, and supported associations.
 
 `RuleContext`
 : Query interface passed to structural rules so rules ask semantic questions, including resolved project call sites, instead of inspecting parser-native syntax.

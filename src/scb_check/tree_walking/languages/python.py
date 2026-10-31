@@ -36,14 +36,19 @@ from scb_check.tree_walking.languages._node_helpers import (
     qualified_name as _qualified_name,
 )
 from scb_check.tree_walking.languages._node_helpers import text as _text
+from scb_check.tree_walking.languages.python_uses import (
+    FLOW_BREAK_TYPES as _COG_FLOW_BREAK_TYPES,
+)
+from scb_check.tree_walking.languages.python_uses import import_bindings
+from scb_check.tree_walking.languages.python_uses import source_uses
 from scb_check.tree_walking.models import FactCoverage
-from scb_check.tree_walking.models import ImportIR
 from scb_check.tree_walking.models import Language
 from scb_check.tree_walking.models import ModuleIR
 from scb_check.tree_walking.models import OperationIR
 from scb_check.tree_walking.models import OperationKind
 from scb_check.tree_walking.models import ReferenceIR
 from scb_check.tree_walking.models import SignatureIR
+from scb_check.tree_walking.models import SourceUseIR
 from scb_check.tree_walking.models import SymbolIR
 from scb_check.tree_walking.models import SymbolKind
 from scb_check.tree_walking.models import SymbolRole
@@ -71,17 +76,6 @@ _CYC_COMPLEXITY_NODE_TYPES = frozenset(
         "boolean_operator",
         "conditional_expression",
         "if_clause",
-    },
-)
-_COG_FLOW_BREAK_TYPES = frozenset(
-    {
-        "if_statement",
-        "elif_clause",
-        "else_clause",
-        "for_statement",
-        "while_statement",
-        "except_clause",
-        "conditional_expression",
     },
 )
 _COG_JUMP_TYPES = frozenset({"break_statement", "continue_statement"})
@@ -162,7 +156,6 @@ _IGNORED_SLOC_TOKEN_TYPES = {
     NEWLINE,
     NL,
 }
-_MIN_ALIASED_IMPORT_PARTS = 2
 _RECEIVER_PARAMETER_NAMES = frozenset({"self", "cls"})
 
 _PARSER: Parser | None = None
@@ -227,16 +220,24 @@ class PythonWalker:
         self._tree = tree
         self._sloc_lines = sloc_lines
         self._module_name = _module_name_for_path(file_path)
-        self._imports = _imports_from_root(file_path, tree.root_node)
-        self._imports_by_name = {
-            import_.local_name: import_.qualified_name for import_ in self._imports
-        }
+        self._imports_by_name = _rule_import_names(file_path, tree.root_node)
         self._symbols: list[SymbolIR] = []
+        self._symbol_nodes: dict[str, Node] = {}
 
     def module(self) -> ModuleIR:
         """Return the parsed module IR."""
         self._visit_children(self._tree.root_node, VisitContext())
         span = _module_span(self._file_path, self._source)
+        uses, imports = source_uses(
+            self._file_path, self._tree.root_node,
+            span.entity_id(SymbolKind.MODULE), tuple(self._symbols), self._module_name,
+        )
+        symbols = tuple(
+            symbol.model_copy(update={"references": _symbol_references(
+                self._symbol_nodes[symbol.id], uses, self._imports_by_name,
+            )}) if symbol.kind in {SymbolKind.FUNCTION, SymbolKind.METHOD} else symbol
+            for symbol in self._symbols
+        )
         return ModuleIR(
             language=Language.PYTHON,
             file=self._file_path,
@@ -245,6 +246,7 @@ class PythonWalker:
             coverage=FactCoverage(
                 entities="complete",
                 text_fragments="complete",
+                source_uses="complete",
                 signatures="partial",
                 complexity="complete",
                 sloc="complete",
@@ -254,8 +256,9 @@ class PythonWalker:
                 roles="partial",
                 effects="partial",
             ),
-            imports=self._imports,
-            symbols=tuple(self._symbols),
+            imports=imports,
+            source_uses=uses,
+            symbols=symbols,
             text_fragments=_text_fragments(
                 self._file_path,
                 self._tree.root_node,
@@ -264,7 +267,7 @@ class PythonWalker:
             ),
             references=tuple(
                 reference
-                for symbol in self._symbols
+                for symbol in symbols
                 for reference in symbol.references
             ),
             sloc_lines=self._sloc_lines,
@@ -376,11 +379,6 @@ class PythonWalker:
             roles=_function_roles(name, context, node),
             signature=signature,
             body=_body_operations(self._file_path, node, self._imports_by_name),
-            references=_symbol_references(
-                node,
-                self._file_path,
-                self._imports_by_name,
-            ),
             owner_qualified_name=context.owner_qualified_name,
             owner_id=context.owner_id,
             base_names=(
@@ -401,6 +399,7 @@ class PythonWalker:
             max_nesting=_max_nesting_for_node(node),
         )
         self._symbols.append(symbol)
+        self._symbol_nodes[symbol.id] = node
         self._visit_children(
             node,
             VisitContext(owner_qualified_name=qualified_name, owner_id=symbol.id),
@@ -941,20 +940,29 @@ def _invocation_value(
 
 def _symbol_references(
     node: Node,
-    file_path: Path,
+    uses: tuple[SourceUseIR, ...],
     imports: dict[str, str],
 ) -> tuple[ReferenceIR, ...]:
-    local = _local_names(node)
-    usages = tuple(
-        _reference_from_call(call, file_path, imports, nesting=nesting)
-        for call, nesting in _call_nodes_with_nesting(node)
-    )
+    # This compatibility projection intentionally includes textually nested bodies
+    # and headers. Execution ownership in the canonical inventory is independent.
+    local = _local_names(node) | _BUILTIN_CALL_ROOTS
+    base_nesting = 0
+    ancestor = node.parent
+    while ancestor is not None:
+        base_nesting += ancestor.type in _COG_FLOW_BREAK_TYPES
+        ancestor = ancestor.parent
     return tuple(
-        usage
-        for usage in usages
-        if usage is not None
-        and usage.name.split(".", 1)[0] not in local
-        and usage.name.split(".", 1)[0] not in _BUILTIN_CALL_ROOTS
+        ReferenceIR(
+            name=use.target_spelling,
+            resolved_name=_resolve_name(use.target_spelling, imports),
+            kind="call", span=use.target_span, nesting=use.nesting - base_nesting,
+            source_use_id=use.id,
+        )
+        for use in uses
+        if use.kind == "call" and use.target_form != "expression"
+        and (use.span.start_line - 1, use.span.start_col) >= node.start_point
+        and (use.span.end_line - 1, use.span.end_col) <= node.end_point
+        and use.target_spelling.split(".", 1)[0] not in local
     )
 
 
@@ -970,38 +978,6 @@ def _local_names(node: Node) -> set[str]:
                 names.add(name)
     names.discard("")
     return names
-
-
-def _reference_from_call(
-    node: Node,
-    file_path: Path,
-    imports: dict[str, str],
-    *,
-    nesting: int,
-) -> ReferenceIR | None:
-    name = _call_name(node)
-    if name is None:
-        return None
-    target = _call_target(node) or node
-    return ReferenceIR(
-        name=name,
-        resolved_name=_resolve_name(name, imports),
-        kind="call",
-        span=_node_span(file_path, target),
-        nesting=nesting,
-    )
-
-
-def _call_nodes_with_nesting(node: Node) -> tuple[tuple[Node, int], ...]:
-    calls: list[tuple[Node, int]] = []
-    stack = [(node, 0)]
-    while stack:
-        current, nesting = stack.pop()
-        if current.type == "call":
-            calls.append((current, nesting))
-        child_nesting = nesting + 1 if current.type in _COG_FLOW_BREAK_TYPES else nesting
-        stack.extend((child, child_nesting) for child in reversed(current.children))
-    return tuple(calls)
 
 
 def _call_name(node: Node) -> str | None:
@@ -1023,95 +999,39 @@ def _call_target(node: Node) -> Node | None:
     )
 
 
-def _imports_from_root(file_path: Path, root: Node) -> tuple[ImportIR, ...]:
-    imports: list[ImportIR] = []
-    for child in root.children:
-        if child.type == "import_statement":
-            imports.extend(_import_statement_names(file_path, child))
-        elif child.type == "import_from_statement":
-            imports.extend(_import_from_statement_names(file_path, child))
-    return tuple(imports)
+def _rule_import_names(file_path: Path, root: Node) -> dict[str, str]:
+    # Keep root-only rule expansion independent of canonical scoped resolution,
+    # including its historical handling of unaliased dotted and relative imports.
+    names: dict[str, str] = {}
+    for statement in root.named_children:
+        if statement.type not in {"import_statement", "import_from_statement"}:
+            continue
+        module = statement.child_by_field_name("module_name")
+        if module is not None and module.type == "relative_import":
+            names.update(_relative_rule_import_names(file_path, statement, module))
+            continue
+        children: dict[tuple[int, int], Node] = {
+            child.start_point: child for child in statement.named_children
+        }
+        for binding in import_bindings(file_path, statement):
+            qualified = binding.qualified_name
+            point = (binding.span.start_line - 1, binding.span.start_col)
+            if statement.type == "import_statement" and children[point].type == "dotted_name":
+                qualified = _text(children[point])
+            names[binding.local_name] = qualified
+    return names
 
 
-def _import_statement_names(file_path: Path, node: Node) -> tuple[ImportIR, ...]:
-    imports: list[ImportIR] = []
-    for child in node.children:
-        match child.type:
-            case "dotted_name":
-                full_name = _text(child)
-                imports.append(
-                    ImportIR(
-                        local_name=full_name.split(".", 1)[0],
-                        qualified_name=full_name,
-                        span=_node_span(file_path, child),
-                    ),
-                )
-            case "aliased_import":
-                if parts := _aliased_import_parts(child):
-                    imported, alias = parts
-                    imports.append(
-                        ImportIR(
-                            local_name=alias,
-                            qualified_name=imported,
-                            span=_node_span(file_path, child),
-                        ),
-                    )
-    return tuple(imports)
-
-
-def _import_from_statement_names(file_path: Path, node: Node) -> tuple[ImportIR, ...]:
-    module = next(
-        (child for child in node.children if child.type == "dotted_name"), None,
-    )
-    module_name = _text(module) if module is not None else ""
-    imports: list[ImportIR] = []
-    for child in node.children:
-        if child is not module:
-            _add_import_from_child(imports, file_path, child, module_name)
-    return tuple(imports)
-
-
-def _add_import_from_child(
-    imports: list[ImportIR],
-    file_path: Path,
-    child: Node,
-    module_name: str,
-) -> None:
-    match child.type:
-        case "dotted_name":
-            imported = _text(child)
-            imports.append(
-                ImportIR(
-                    local_name=imported,
-                    qualified_name=(
-                        f"{module_name}.{imported}" if module_name else imported
-                    ),
-                    span=_node_span(file_path, child),
-                ),
-            )
-        case "aliased_import":
-            if parts := _aliased_import_parts(child):
-                imported, alias = parts
-                imports.append(
-                    ImportIR(
-                        local_name=alias,
-                        qualified_name=(
-                            f"{module_name}.{imported}" if module_name else imported
-                        ),
-                        span=_node_span(file_path, child),
-                    ),
-                )
-
-
-def _aliased_import_parts(node: Node) -> tuple[str, str] | None:
-    names = [
-        child
-        for child in node.children
-        if child.type in {"dotted_name", "identifier"}
-    ]
-    if len(names) >= _MIN_ALIASED_IMPORT_PARTS:
-        return (_text(names[0]), _text(names[-1]))
-    return None  # scbc ignore[redundant-return-none] Satisfies explicit optional return.
+def _relative_rule_import_names(file: Path, statement: Node, module: Node) -> dict[str, str]:
+    # The rule policy selects the first plain imported name as its prefix for
+    # relative imports. Do not apply this historical expansion to canonical facts.
+    selected = next((child for child in statement.named_children if child.type == "dotted_name"), None)
+    prefix = f"{_text(selected)}." if selected is not None else ""
+    return {
+        binding.local_name: prefix + binding.qualified_name[len(_text(module)):].removeprefix(".")
+        for binding in import_bindings(file, statement)
+        if selected is None or (binding.span.start_line - 1, binding.span.start_col) != selected.start_point
+    }
 
 
 def _resolve_name(name: str, imports: dict[str, str]) -> str:

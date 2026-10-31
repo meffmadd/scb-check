@@ -180,21 +180,90 @@ class SignatureIR(IRModel):
 
 
 class ImportIR(IRModel):
-    """A module import binding."""
+    """An import binding, separate from executable call occurrences."""
 
     local_name: str
     qualified_name: str
     span: SourceSpan
+    owner_id: str | None = None
+
+    @property
+    def id(self) -> str:
+        """Identify each alias binding by its own source span."""
+        return (
+            f"{self.span.file_id}:import:"
+            f"{self.span.start_line}:{self.span.start_col}-"
+            f"{self.span.end_line}:{self.span.end_col}"
+        )
+
+
+type ResolutionStatus = Literal[
+    "project", "external", "ambiguous", "unresolved", "unsupported"
+]
+
+
+type UnsupportedContext = Literal[
+    "lambda", "list_comprehension", "set_comprehension", "dictionary_comprehension",
+    "generator_expression", "type_alias_statement", "type_parameter", "annotation",
+]
+type ResolutionReason = Literal[
+    "no-direct-binding", "lexical-declaration", "parameter", "local-binding",
+    "import-binding", "relative-or-star-import", "scope-directive", "type-parameter",
+    "dynamic-target", "receiver-needs-member-resolution", "builtin", "star-import",
+    "multiple-lexical-bindings", "project-import-binding", "multiple-project-bindings",
+    "unresolved-project-member",
+] | UnsupportedContext
+
+
+class TargetResolutionIR(IRModel):
+    """Direct static binding evidence, not a set of possible runtime targets."""
+
+    status: ResolutionStatus = "unresolved"
+    target_id: str | None = None
+    qualified_name: str | None = None
+    candidate_ids: tuple[str, ...] = ()
+    reason: ResolutionReason = "no-direct-binding"
+
+
+type SourceUseKind = Literal[
+    "call", "attribute-read", "attribute-write", "attribute-read-write", "attribute-delete"
+]
+type ExecutionKind = Literal["module", "class", "function", "unsupported"]
+
+
+class SourceUseIR(IRModel):
+    """One source occurrence with execution ownership and static resolution."""
+
+    kind: SourceUseKind
+    span: SourceSpan
+    target_span: SourceSpan
+    target_spelling: str
+    target_form: Literal["name", "attribute", "expression"]
+    owner_id: str | None
+    execution_kind: ExecutionKind
+    unsupported_context: UnsupportedContext | None = None
+    resolution: TargetResolutionIR = Field(default_factory=TargetResolutionIR)
+    nesting: int = 0
+
+    @property
+    def id(self) -> str:
+        """Identify a use within this physical snapshot without deduplicating targets."""
+        return (
+            f"{self.span.file_id}:{self.kind}:"
+            f"{self.span.start_line}:{self.span.start_col}-"
+            f"{self.span.end_line}:{self.span.end_col}"
+        )
 
 
 class ReferenceIR(IRModel):
-    """A resolved symbol usage location in scanned source."""
+    """A rule-facing projection of a canonical call occurrence, not an inventory."""
 
     name: str
     resolved_name: str | None
     kind: Literal["call", "reference"]
     span: SourceSpan
     nesting: int = 0
+    source_use_id: str | None = None
 
 
 class ValueIR(IRModel):
@@ -225,6 +294,7 @@ class EffectIR(IRModel):
     symbol_qualified_name: str
     target_name: str | None = None
     target_qualified_name: str | None = None
+    source_use_id: str | None = None
 
 
 class SymbolIR(IRModel):
@@ -299,6 +369,7 @@ class FactCoverage(IRModel):
 
     entities: CoverageStatus = "unavailable"
     text_fragments: CoverageStatus = "unavailable"
+    source_uses: CoverageStatus = "unavailable"
     signatures: CoverageStatus = "unavailable"
     complexity: CoverageStatus = "unavailable"
     sloc: CoverageStatus = "unavailable"
@@ -320,6 +391,7 @@ class ModuleIR(IRModel):
     imports: tuple[ImportIR, ...] = ()
     symbols: tuple[SymbolIR, ...] = ()
     text_fragments: tuple[TextFragmentIR, ...] = ()
+    source_uses: tuple[SourceUseIR, ...] = ()
     operations: tuple[OperationIR, ...] = ()
     references: tuple[ReferenceIR, ...] = ()
     sloc_lines: frozenset[int] = frozenset()
@@ -374,6 +446,7 @@ type ModulesByFile = Mapping[Path, ModuleIR]
 type PhysicalFiles = Mapping[str, Path]
 type SymbolLookup = Mapping[str, SymbolIR]
 type SymbolEffects = Mapping[str, tuple[EffectIR, ...]]
+type SourceUseLookup = Mapping[str, SourceUseIR]
 
 
 class ProjectIR(IRModel):
@@ -395,12 +468,16 @@ class ProjectIR(IRModel):
     _files_by_id: PhysicalFiles = PrivateAttr()
     _symbols_by_id: SymbolLookup = PrivateAttr()
     _symbols_by_qualified_name: SymbolLookup = PrivateAttr()
+    _source_uses_by_id: SourceUseLookup = PrivateAttr()
 
     def model_post_init(self, _context: object) -> None:
         """Derive privately owned lookup views from the sole module inventory."""
         symbols = tuple(
             symbol for module in self.modules for symbol in module.symbols
         )
+        self._source_uses_by_id = MappingProxyType({
+            use.id: use for module in self.modules for use in module.source_uses
+        })
         self._modules_by_id = MappingProxyType(
             {module.id: module for module in self.modules}
         )
@@ -416,6 +493,11 @@ class ProjectIR(IRModel):
         self._symbols_by_qualified_name = MappingProxyType(
             {symbol.qualified_name: symbol for symbol in symbols}
         )
+
+    @property
+    def source_uses_by_id(self) -> SourceUseLookup:
+        """Look up canonical source occurrences, including unsupported contexts."""
+        return self._source_uses_by_id
 
     @property
     def modules_by_id(self) -> ModuleLookup:
