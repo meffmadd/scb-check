@@ -41,10 +41,13 @@ def resolve_source_uses(modules: tuple[ModuleIR, ...]) -> tuple[ModuleIR, ...]:
             )
         return TargetResolutionIR(status="external", qualified_name=name, reason="import-binding")
 
-    return tuple(module.model_copy(update={
-        "source_uses": tuple(use.model_copy(update={"resolution": resolve(use.resolution)})
-                             for use in module.source_uses),
-    }) for module in modules)
+    return tuple(
+        module if module.source_uses is None else module.model_copy(update={
+            "source_uses": tuple(use.model_copy(update={"resolution": resolve(use.resolution)})
+                                 for use in module.source_uses),
+        })
+        for module in modules
+    )
 
 
 def _module_accessible(symbol: SymbolIR, module_id: str, symbols: dict[str, SymbolIR]) -> bool:

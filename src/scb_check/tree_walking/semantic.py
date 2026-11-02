@@ -70,7 +70,8 @@ def build_project(modules: tuple[ModuleIR, ...]) -> ProjectIR:
     module_name_by_file = {module.file: module.module_name for module in modules}
     uses_by_span = {
         (use.span, "call" if use.kind == "call" else "attribute"): use
-        for module in modules for use in module.source_uses
+        for module in modules if module.source_uses is not None
+        for use in module.source_uses
     }
     effects_by_symbol = {
         symbol.id: _effects_for_symbol(
@@ -175,21 +176,23 @@ class RuleContext:
 
     def is_required_api_surface(self, symbol: SymbolIR) -> bool:
         """Return True when `symbol` has a semantic keep reason."""
-        return bool(symbol.roles & _REQUIRED_API_ROLES)
+        return symbol.roles is not None and bool(symbol.roles & _REQUIRED_API_ROLES)
 
     def is_inherited_override(self, symbol: SymbolIR) -> bool:
         """Return True when `symbol` implements an inherited contract."""
-        return SymbolRole.INHERITED_OVERRIDE in symbol.roles
+        return symbol.roles is not None and SymbolRole.INHERITED_OVERRIDE in symbol.roles
 
     def is_computed_attribute(self, symbol: SymbolIR) -> bool:
         """Return True when `symbol` exposes a computed attribute."""
-        return SymbolRole.COMPUTED_ATTRIBUTE in symbol.roles
+        return symbol.roles is not None and SymbolRole.COMPUTED_ATTRIBUTE in symbol.roles
 
     def effects_for_symbol(self, symbol: SymbolIR) -> tuple[EffectIR, ...]:
         """Return name-selected effects for existing structural-rule decisions."""
         # Retaining every declaration must not change same-name rule selection.
         selected = self.project.symbols_by_qualified_name[symbol.qualified_name]
-        return self.project.effects_by_symbol.get(selected.id, ())
+        effects = self.project.effects_by_symbol.get(selected.id, ())
+        assert effects is not None  # noqa: S101 - Rules require supported effect extraction.
+        return effects
 
     def return_has_meaningful_effects(self, symbol: SymbolIR) -> bool:
         """Return True if the single returned value has meaningful effects."""
@@ -240,6 +243,7 @@ class RuleContext:
             for caller in self.project.symbols_by_qualified_name.values()
             if caller.kind in _FUNCTION_SYMBOL_KINDS
             and caller.qualified_name != target.qualified_name
+            and caller.references is not None
             for reference in caller.references
             if reference.kind == "call"
             and _reference_targets_symbol(
@@ -259,7 +263,9 @@ def _effects_for_symbol(
     symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
     uses_by_span: _UsesBySpan,
-) -> tuple[EffectIR, ...]:
+) -> tuple[EffectIR, ...] | None:
+    if symbol.body is None:
+        return None
     effects: list[EffectIR] = []
     for operation in symbol.body:
         effects.extend(
@@ -418,7 +424,7 @@ def _candidate_qualified_names(
 
 
 def _single_return_value(symbol: SymbolIR) -> ValueIR | None:
-    if len(symbol.body) != 1:
+    if symbol.body is None or len(symbol.body) != 1:
         return None
     operation = symbol.body[0]
     if operation.kind is not OperationKind.RETURN:

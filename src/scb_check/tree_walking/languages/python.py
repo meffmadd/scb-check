@@ -41,7 +41,6 @@ from scb_check.tree_walking.languages.python_uses import (
 )
 from scb_check.tree_walking.languages.python_uses import import_bindings
 from scb_check.tree_walking.languages.python_uses import source_uses
-from scb_check.tree_walking.models import FactCoverage
 from scb_check.tree_walking.models import Language
 from scb_check.tree_walking.models import ModuleIR
 from scb_check.tree_walking.models import OperationIR
@@ -243,19 +242,6 @@ class PythonWalker:
             file=self._file_path,
             module_name=self._module_name,
             span=span,
-            coverage=FactCoverage(
-                entities="complete",
-                text_fragments="complete",
-                source_uses="complete",
-                signatures="partial",
-                complexity="complete",
-                sloc="complete",
-                imports="partial",
-                references="partial",
-                operations="partial",
-                roles="partial",
-                effects="partial",
-            ),
             imports=imports,
             source_uses=uses,
             symbols=symbols,
@@ -264,11 +250,6 @@ class PythonWalker:
                 self._tree.root_node,
                 span.entity_id(SymbolKind.MODULE),
                 tuple(self._symbols),
-            ),
-            references=tuple(
-                reference
-                for symbol in symbols
-                for reference in symbol.references
             ),
             sloc_lines=self._sloc_lines,
         )

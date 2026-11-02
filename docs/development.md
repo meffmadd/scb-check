@@ -13,7 +13,7 @@ This guide summarizes the current implementation status and the preferred approa
 Implemented analysis paths:
 
 - Source discovery for supported Python, Rust, JavaScript, TypeScript, Zig, Haskell, and C++ suffixes.
-- Tree-sitter parsing into language-agnostic IR, retained as immutable `AnalysisResult.project` with declaration identity, ownership, module/file membership, and parser-declared fact coverage.
+- Tree-sitter parsing into language-agnostic IR, retained as immutable `AnalysisResult.project` with declaration identity, ownership, module/file membership, and nullable unavailable inventories.
 - Python entity-owned identifiers, comments, and docstring literals retained once per physical file as immutable `TextFragmentIR` records; other languages declare text extraction unavailable.
 - Canonical Python call/attribute-access occurrences, scoped import bindings, direct lexical/import project resolution, and explicit ambiguous/unresolved/unsupported evidence; generic languages declare source uses unavailable. See [the source-use contract](tree-walking.md#canonical-source-uses-and-imports).
 - Rule-facing reference/effect projections preserve existing structural decisions; source-use facts add no metrics, report fields, or CLI changes.
@@ -60,19 +60,19 @@ Implemented analysis paths:
 
 ## Extending retained entity facts
 
-1. Keep facts in `ModuleIR` / `SymbolIR` and expose them through `AnalysisResult.project`; use the [entity contract](tree-walking.md#retained-entity-contract) for identity, membership, coverage, and association semantics.
-2. Update the producing parser and its conservative `FactCoverage` declaration. Keep parser-native nodes and source IO outside the IR, and metric populations/calculations in their existing layers. Text facts follow the [source-fragment ownership policy](tree-walking.md#source-text-fragments); reuse already-read/parser source, retain original spelling once, and leave document assembly and model preprocessing to consumers.
+1. Keep facts in `ModuleIR` / `SymbolIR` and expose them through `AnalysisResult.project`; use the [entity contract](tree-walking.md#retained-entity-contract) for identity, membership, availability, and association semantics.
+2. Update the producing parser and document its supported subset in the [availability contract](tree-walking.md#fact-availability-and-parser-support). Use `None` for unavailable inventories and empty tuples for successful extraction with no facts; preserve this distinction through resolution and projections. Keep parser-native nodes and source IO outside the IR, and metric populations/calculations in their existing layers. Text facts follow the [source-fragment ownership policy](tree-walking.md#source-text-fragments); reuse already-read/parser source, retain original spelling once, and leave document assembly and model preprocessing to consumers.
 3. Test real-source behavior through `analyze` / `analyze_files`, including immutable nested views, empty/unavailable facts, exact lexical parents, and repeatable IDs. Preserve same-file metric selection while retaining every declaration.
 4. Check numerical parity on unaffected fixtures. For cross-file function collisions and conditional Python declarations, test the corrected counts/masses/findings explicitly, including independent check/diff parity.
 
 ### Extending source-use facts
 
 1. Follow the [canonical inventory contract](tree-walking.md#canonical-source-uses-and-imports): retain each occurrence once in `ModuleIR.source_uses`, derive indexes/projections, and keep imports separate. Preserve immutable records, stable snapshot IDs, byte spans, repeated sites, and recursion.
-2. Assign execution ownership independently of text ownership. Add explicit unsupported-context records where ownership/evaluation is not modeled; `complete` coverage means only the documented subset, not full Python semantics.
+2. Assign execution ownership independently of text ownership. Add explicit unsupported-context records where ownership/evaluation is not modeled; an available inventory describes only the documented subset, not full Python semantics.
 3. Keep direct lexical/import evidence in extraction/resolution. Leave ambiguous bindings and dynamic receivers explicit; external status needs import/builtin evidence, not dotted spelling. Type/member/runtime-target inference is outside this resolver.
 4. Preserve rule compatibility: textual nested-call projections, parameter/builtin exclusions, rule-specific self-recursion exclusion, shallow effects with `source_use_id`, and dotted keep-policy are distinct from canonical resolution. Verify unchanged structural findings and verbosity/erosion scores.
 5. Test exported `analyze` / `analyze_files` facts for module/class/default execution, nested bodies/expressions/control flow, repeated and recursive calls, attribute access modes, aliases/scopes/relative imports, project collisions, dynamic targets, unsupported contexts, empty/unavailable inventories, and read-only indexes. Stub `scb_check.pipeline.run_sg`; assert facts rather than traversal order. Retain standalone-check/independent-diff parity and existing report/exit contracts.
-6. Keep site/caller/target populations and metric formulas in consumers. Update the canonical contract and coverage table when support changes, rather than adding metric-specific IR fields or a second call inventory.
+6. Keep site/caller/target populations and metric formulas in consumers. Update the canonical contract and parser-support table when support changes, rather than adding metric-specific IR fields or a second call inventory.
 
 ## Adding an `ast-grep` rule
 

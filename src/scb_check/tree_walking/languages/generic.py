@@ -29,7 +29,6 @@ from scb_check.tree_walking.languages._node_helpers import (
     qualified_name as _qualified_name,
 )
 from scb_check.tree_walking.languages._node_helpers import text as _text
-from scb_check.tree_walking.models import FactCoverage
 from scb_check.tree_walking.models import Language
 from scb_check.tree_walking.models import ModuleIR
 from scb_check.tree_walking.models import SignatureIR
@@ -209,12 +208,6 @@ class GenericTreeSitterWalker:
             file=self._file_path,
             module_name=self._module_name,
             span=_module_span(self._file_path, self._source),
-            coverage=FactCoverage(
-                entities="partial",
-                signatures="partial",
-                complexity="complete",
-                sloc="complete",
-            ),
             symbols=tuple(self._symbols),
             sloc_lines=self._sloc_lines,
         )

@@ -305,10 +305,10 @@ class SymbolIR(IRModel):
     kind: SymbolKind
     span: SourceSpan
     language: Language = Language.PYTHON
-    roles: frozenset[SymbolRole] = frozenset()
+    roles: frozenset[SymbolRole] | None = None
     signature: SignatureIR = Field(default_factory=SignatureIR)
-    body: tuple[OperationIR, ...] = ()
-    references: tuple[ReferenceIR, ...] = ()
+    body: tuple[OperationIR, ...] | None = None
+    references: tuple[ReferenceIR, ...] | None = None
     owner_qualified_name: str | None = None
     owner_id: str | None = None
     module_id: str | None = None
@@ -344,8 +344,10 @@ class SymbolIR(IRModel):
         return self.span.end_line
 
     @property
-    def return_operations(self) -> tuple[OperationIR, ...]:
-        """Return normalized `return` operations in this symbol."""
+    def return_operations(self) -> tuple[OperationIR, ...] | None:
+        """Return normalized `return` operations, or `None` if body extraction is unavailable."""
+        if self.body is None:
+            return None
         return tuple(
             operation
             for operation in self.body
@@ -361,25 +363,6 @@ class SymbolIR(IRModel):
         return self.cog_complexity > HIGH_COMPLEXITY_THRESHOLD
 
 
-type CoverageStatus = Literal["complete", "partial", "unavailable"]
-
-
-class FactCoverage(IRModel):
-    """Parser-declared support for documented fact subsets, not fact counts."""
-
-    entities: CoverageStatus = "unavailable"
-    text_fragments: CoverageStatus = "unavailable"
-    source_uses: CoverageStatus = "unavailable"
-    signatures: CoverageStatus = "unavailable"
-    complexity: CoverageStatus = "unavailable"
-    sloc: CoverageStatus = "unavailable"
-    imports: CoverageStatus = "unavailable"
-    references: CoverageStatus = "unavailable"
-    operations: CoverageStatus = "unavailable"
-    roles: CoverageStatus = "unavailable"
-    effects: CoverageStatus = "unavailable"
-
-
 class ModuleIR(IRModel):
     """A parsed source module with generic code facts."""
 
@@ -387,13 +370,11 @@ class ModuleIR(IRModel):
     file: Path
     module_name: str
     span: SourceSpan
-    coverage: FactCoverage = Field(default_factory=FactCoverage)
-    imports: tuple[ImportIR, ...] = ()
+    imports: tuple[ImportIR, ...] | None = None
     symbols: tuple[SymbolIR, ...] = ()
-    text_fragments: tuple[TextFragmentIR, ...] = ()
-    source_uses: tuple[SourceUseIR, ...] = ()
-    operations: tuple[OperationIR, ...] = ()
-    references: tuple[ReferenceIR, ...] = ()
+    text_fragments: tuple[TextFragmentIR, ...] | None = None
+    source_uses: tuple[SourceUseIR, ...] | None = None
+    operations: tuple[OperationIR, ...] | None = None
     sloc_lines: frozenset[int] = frozenset()
 
     @property
@@ -443,9 +424,8 @@ class ModuleIR(IRModel):
 
 type ModuleLookup = Mapping[str, ModuleIR]
 type ModulesByFile = Mapping[Path, ModuleIR]
-type PhysicalFiles = Mapping[str, Path]
 type SymbolLookup = Mapping[str, SymbolIR]
-type SymbolEffects = Mapping[str, tuple[EffectIR, ...]]
+type SymbolEffects = Mapping[str, tuple[EffectIR, ...] | None]
 type SourceUseLookup = Mapping[str, SourceUseIR]
 
 
@@ -465,7 +445,6 @@ class ProjectIR(IRModel):
 
     _modules_by_id: ModuleLookup = PrivateAttr()
     _modules_by_file: ModulesByFile = PrivateAttr()
-    _files_by_id: PhysicalFiles = PrivateAttr()
     _symbols_by_id: SymbolLookup = PrivateAttr()
     _symbols_by_qualified_name: SymbolLookup = PrivateAttr()
     _source_uses_by_id: SourceUseLookup = PrivateAttr()
@@ -476,16 +455,14 @@ class ProjectIR(IRModel):
             symbol for module in self.modules for symbol in module.symbols
         )
         self._source_uses_by_id = MappingProxyType({
-            use.id: use for module in self.modules for use in module.source_uses
+            use.id: use for module in self.modules
+            if module.source_uses is not None for use in module.source_uses
         })
         self._modules_by_id = MappingProxyType(
             {module.id: module for module in self.modules}
         )
         self._modules_by_file = MappingProxyType(
             {module.file: module for module in self.modules}
-        )
-        self._files_by_id = MappingProxyType(
-            {module.file_id: module.file for module in self.modules}
         )
         self._symbols_by_id = MappingProxyType(
             {symbol.id: symbol for symbol in symbols}
@@ -508,11 +485,6 @@ class ProjectIR(IRModel):
     def modules_by_file(self) -> ModulesByFile:
         """Look up the one logical module per successfully parsed file."""
         return self._modules_by_file
-
-    @property
-    def files_by_id(self) -> PhysicalFiles:
-        """Look up physical source paths independently of logical-module IDs."""
-        return self._files_by_id
 
     @property
     def symbols_by_id(self) -> SymbolLookup:

@@ -100,7 +100,7 @@ The two-analysis builder leaves room for a future pairwise measurement without d
 
 ### Text evidence boundary
 
-Python's immutable `TextFragmentIR` records preserve source evidence for analysis consumers, including CSE's function/method, class, and file documents. Each occurrence lives once in its module's physical-file inventory with a syntactic owner; parent documents can select child owners without duplicate authoritative copies. Other languages explicitly declare extraction unavailable. See [the fragment contract](tree-walking.md#source-text-fragments) for ownership, spans, and coverage.
+Python's immutable `TextFragmentIR` records preserve source evidence for analysis consumers, including CSE's function/method, class, and file documents. Each occurrence lives once in its module's physical-file inventory with a syntactic owner; parent documents can select child owners without duplicate authoritative copies. Other languages explicitly declare extraction unavailable. See [the fragment contract](tree-walking.md#source-text-fragments) for ownership, spans, and availability.
 
 The IR preserves spelling rather than choosing semantic preprocessing: it does not split identifiers, remove stop words, stem, tokenize for a model, embed, or assemble documents. Consumers choose document membership and representations. Metric implementations remain responsible for populations, formulas, and scores; retaining comments/docstrings does not make them SLOC or change verbosity, erosion, report fields, or independent-snapshot comparison.
 
@@ -156,7 +156,7 @@ Rule-facing references and shallow operation-selected effects intentionally pres
 : Language-agnostic code symbol such as a class, function, method, or value. Function-like symbols carry signatures, roles, body operations, references, `SLOC`, complexity values, and maximum control-flow nesting depth.
 
 `ProjectIR`
-: Immutable project inventory retained in `AnalysisResult.project`, with derived read-only module, symbol, physical-file, source-use, and effect indexes. See the [entity contract](tree-walking.md#retained-entity-contract) for identities, ownership, coverage, and supported associations.
+: Immutable project inventory retained in `AnalysisResult.project`, with derived read-only module, symbol, source-use, and effect indexes. Source spans retain physical-file paths; unavailable inventories are `None`, distinct from successfully extracted empty facts. See the [entity contract](tree-walking.md#retained-entity-contract) for identities, ownership, availability, and supported associations.
 
 `RuleContext`
 : Query interface passed to structural rules so rules ask semantic questions, including resolved project call sites, instead of inspecting parser-native syntax.

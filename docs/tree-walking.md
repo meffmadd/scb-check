@@ -67,7 +67,7 @@ The generic Tree-sitter parser used for Rust, JavaScript, TypeScript, Zig, Haske
 - classes and functions become `SymbolIR` records,
 - declarations beneath control-flow wrappers are visited once with their lexical owner,
 - nested classes/functions keep their descriptive `owner_qualified_name` and exact `owner_id`,
-- rule-facing references are projected from source uses and aggregated from symbols (not a second authoritative inventory),
+- rule-facing symbol references are projected from source uses (not a second authoritative inventory),
 - identifiers, comments, and docstring literals become entity-owned `TextFragmentIR` occurrences.
 
 Function-like symbols carry:
@@ -131,13 +131,12 @@ The full analysis workflow in `pipeline.py` validates ignore rule IDs against th
 | --- | --- |
 | `modules_by_id` | Logical module ID → `ModuleIR` |
 | `modules_by_file` | Physical path → its one successfully parsed logical module |
-| `files_by_id` | Physical-file ID → physical path |
 | `symbols_by_id` | Declaration ID → every `SymbolIR`, including repeated names |
 | `symbols_by_qualified_name` | Qualified name → last declaration selected for existing semantic queries; not a complete inventory |
-| `effects_by_symbol` | Declaration ID → derived `EffectIR` tuple |
+| `effects_by_symbol` | Callable declaration ID → derived `EffectIR` tuple, or `None` when body extraction is unavailable |
 | `source_uses_by_id` | Occurrence ID → canonical `SourceUseIR`, including unsupported contexts |
 
-Access all declarations in a physical file through `project.modules_by_file[path].symbols`. Constructing an `AnalysisResult` requires an explicit `project`; synthetic empty analyses can supply `ProjectIR()`.
+Access all declarations in a physical file through `project.modules_by_file[path].symbols`; source paths are available on module/entity spans without a separate physical-file index. Constructing an `AnalysisResult` requires an explicit `project`; synthetic empty analyses can supply `ProjectIR()`. The source-use index includes occurrences only from available inventories; an empty index alone does not establish extraction support.
 
 Records are frozen. Indexes, signature annotation mappings, and `AnalysisResult.source_lines_by_file` are read-only, privately owned mappings; nested sequences are tuples or frozensets. Parser-native trees and source IO remain outside the IR. `analyze_files()` resolves and deduplicates physical paths before parsing; files that fail extraction have no module record. An explicit empty file set yields an empty project; CLI discovery/usable-input validation still rejects unusable trees.
 
@@ -213,25 +212,27 @@ Lambda bodies, comprehensions/generator expressions, type aliases, type-paramete
 
 Bindings are collected lexically without evaluating control flow or statement order. Repeated declarations/rebindings can therefore be ambiguous rather than selecting a runtime winner. Function parameters (including typed variadics) and local bindings shadow outer names, including bindings in lambda defaults, comprehensions, and type aliases. Method/nested-class lookup skips the runtime class namespace as a closure scope; type-parameter bindings remain explicitly unsupported. Parenthesized direct targets resolve without dropping their original spelling. Import-qualified names match module-accessible declarations, not declarations nested inside function bodies; collisions remain ambiguous. Rebuilding a project reconsiders import resolution against its current modules. Instance/class member lookup, assignment-alias propagation, type inference, runtime dispatch, and possible-runtime-target sets are not provided. In particular, `self.method()` and arbitrary `receiver.member()` are not inferred project or external calls merely from their spelling.
 
-### Fact-family coverage
+### Fact availability and parser support
 
-`ModuleIR.coverage` is a frozen, parser-declared `FactCoverage`. Each field is `complete`, `partial`, or `unavailable`, defaulting conservatively to `unavailable`. Status describes extraction support, not the number of extracted facts: successful empty extraction is distinct from unavailable extraction. `complete` means the documented supported subset, not full language semantics.
+Availability is represented by the data itself: `None` means extraction is unavailable; an empty tuple (or frozenset for roles) means extraction succeeded with no facts in the documented supported subset. Optional inventories default to `None`. All parsers supply declaration, signature, complexity, and SLOC facts, so those fields remain non-nullable. There is no parallel coverage record or inferred per-file completeness status.
 
-| Fact family | Python | Generic languages | Producer / supported subset |
-| --- | --- | --- | --- |
-| `entities` | complete | partial | Parser: named class/function declarations (Python includes async/decorated/nested/conditional definitions; not lambdas); generic grammar-configured symbols |
-| `text_fragments` | complete | unavailable | Python parser: identifiers, comments, and docstring literals under the source-text policy above |
-| `signatures` | partial | partial | Parser: parameter names and Python annotation text, not full type semantics |
-| `complexity` | complete | complete | Parser: configured cyclomatic/cognitive syntax counts; Python also supplies maximum nesting |
-| `sloc` | complete | complete | Parser: documented language-specific SLOC exclusions |
-| `source_uses` | complete | unavailable | Python parser: documented call/access subset, with unsupported execution contexts explicitly marked; project import refinement in `build_project()` |
-| `imports` | partial | unavailable | Python parser: scoped alias bindings and resolvable relative names; no full Python import semantics |
-| `references` | partial | unavailable | Python parser: rule-compatibility projection from canonical call occurrences |
-| `operations` | partial | unavailable | Python parser: shallow executable body summaries and supported values |
-| `roles` | partial | unavailable | Python parser: conservative semantic keep reasons |
-| `effects` | partial | unavailable | `build_project()`: effects derived from supported operations/values |
+| Facts | Python supported subset | Generic-language supported subset |
+| --- | --- | --- |
+| `ModuleIR.symbols` | Named async/decorated/nested/conditional class/function declarations, not lambdas | Grammar-configured class/function declarations |
+| `SymbolIR.signature` | Parameter names and annotation text, not full type semantics | Parameter names |
+| Complexity and SLOC | Documented syntax counts, maximum nesting, and SLOC exclusions | Configured cyclomatic/cognitive syntax counts and SLOC exclusions |
+| `ModuleIR.text_fragments` | Identifiers, comments, and docstring literals under the source-text policy above | `None` |
+| `ModuleIR.source_uses` | Documented call/access subset, including explicit unsupported-context records; import refinement in `build_project()` | `None` |
+| `ModuleIR.imports` | Scoped alias bindings and resolvable relative names, not full import semantics | `None` |
+| `SymbolIR.references` | Function/method rule projections from canonical calls | `None` |
+| `SymbolIR.body` | Shallow function/method body operations and supported values | `None` |
+| `SymbolIR.roles` | Conservative semantic keep reasons | `None` |
+| `ProjectIR.effects_by_symbol` values | Callable effects derived from supported operations/values | `None` per callable |
+| `ModuleIR.operations` | `None` (module operations are not extracted) | `None` |
 
-No per-entity completeness, automatic completeness analysis, or project coverage summary is implied. Python `source_uses="complete"` covers the documented subset, including explicit unsupported-context records; it does not promise complete language semantics or complete resolution. An empty supported inventory is distinct from unavailable extraction in generic languages.
+Python class body/reference summaries are also unavailable (`None`); class initialization uses remain in the canonical module inventory. `SymbolIR.return_operations` preserves body availability. Resolution preserves availability; indexes include only available occurrences. Consumers must handle unavailable facts explicitly rather than silently treating them as empty. Available facts do not promise full language semantics or complete resolution. A retained unsupported source-use context remains an occurrence with explicit uncertainty, not an unavailable file inventory.
+
+TODO: [#6](https://github.com/meffmadd/scb-check/issues/6) adds possible-runtime-target sets with their own complete-under-assumption, approximate, or unavailable evidence. Nullable inventories alone cannot express target-set completeness; unknown targets must never become complete empty sets.
 
 ### Counting and associations
 
@@ -245,7 +246,7 @@ The generic C++ frontend extracts function definitions, not standalone prototype
 
 Rule projections intentionally preserve historical decisions rather than adopting canonical execution/resolution policy wholesale:
 
-- Symbol `references` link to canonical occurrences through `source_use_id` and use textual containment, including nested bodies and headers, with parameter-root, builtin-root, own-name, and nested-declaration-name calls excluded. Module references aggregate these projections and can repeat a canonical occurrence across textual ancestors.
+- Symbol `references` link to canonical occurrences through `source_use_id` and use textual containment, including nested bodies and headers, with parameter-root, builtin-root, own-name, and nested-declaration-name calls excluded. There is no module-wide reference aggregate; consumers needing source occurrences use `ModuleIR.source_uses`.
 - `RuleContext.call_sites_for_symbol()` preserves name-based selection and excludes self-recursion. Canonical source uses retain parameter/builtin calls and recursion, with execution ownership independent of textual containment.
 - Effects remain shallow, selected by supported body operations/values, not every canonical nested use. Invocation values become `PROJECT_CALL`, `EXTERNAL_CALL`, or `UNRESOLVED_CALL`; symbol/member values become `READ`; raise operations become `RAISE`. Call and member-read effects link back through `EffectIR.source_use_id`; plain-name reads and raises have no such occurrence link.
 - Rule import expansion remains root-only, including compatibility handling of unaliased dotted and relative imports; it is separate from canonical scoped import resolution. The effect classifier's dotted-name/import-expansion keep-policy preserves wrapper-rule behavior. Its `EXTERNAL_CALL` label is a rule decision, not an assertion that the linked canonical resolution is `external`. A dotted receiver can remain canonically unresolved.

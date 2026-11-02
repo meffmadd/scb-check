@@ -67,7 +67,7 @@ def test_identity_and_lexical_ownership_survive_repeated_names(
     assert project.symbols_by_id == repeated.symbols_by_id
     assert project.modules_by_id == repeated.modules_by_id
     assert module.id != module.file_id
-    assert project.files_by_id[module.file_id] == source
+    assert module.span.file == source
     assert module.kind is SymbolKind.MODULE
     assert module.name == module.qualified_name == "sample"
     assert first.id != second.id
@@ -96,7 +96,6 @@ def test_analysis_views_are_deeply_read_only(tmp_path: Path) -> None:
         (project.symbols_by_qualified_name, symbol.qualified_name, symbol),
         (project.modules_by_id, module.id, module),
         (project.modules_by_file, source, module),
-        (project.files_by_id, module.file_id, source),
         (project.effects_by_symbol, symbol.id, ()),
         (symbol.signature.annotations, "value", "str"),
         (result.source_lines_by_file, source, ()),
@@ -109,7 +108,6 @@ def test_analysis_views_are_deeply_read_only(tmp_path: Path) -> None:
         (project, "symbols_by_qualified_name"),
         (project, "modules_by_id"),
         (project, "modules_by_file"),
-        (project, "files_by_id"),
         (symbol.span, "file_id"),
     ):
         with pytest.raises(ValidationError):
@@ -237,10 +235,10 @@ def test_control_flow_declarations_feed_entities_metrics_and_rules(
     assert report["verbosity"]["structural_rule_loc"] == 2
 
 
-def test_coverage_distinguishes_empty_facts_from_unsupported_extraction(
+def test_inventories_distinguish_empty_facts_from_unavailable_extraction(
     tmp_path: Path,
 ) -> None:
-    """Parser coverage describes support even when no facts were extracted."""
+    """Unavailable facts stay distinct from successfully extracted empty tuples."""
     python = tmp_path / "empty.py"
     generic = tmp_path / "sample.rs"
     unsupported = tmp_path / "ignored.txt"
@@ -259,22 +257,30 @@ def test_coverage_distinguishes_empty_facts_from_unsupported_extraction(
     rust = result.project.modules_by_file[generic]
 
     assert len(result.project.modules) == 2
-    assert empty.symbols == empty.imports == empty.references == ()
-    assert empty.coverage.entities == "complete"
-    assert empty.coverage.complexity == empty.coverage.sloc == "complete"
-    assert empty.coverage.references == empty.coverage.imports == "partial"
-    assert rust.symbols[0].name == "compute"
-    assert rust.coverage.entities == rust.coverage.signatures == "partial"
-    assert rust.coverage.complexity == rust.coverage.sloc == "complete"
-    assert rust.coverage.imports == rust.coverage.references == "unavailable"
-    assert (
-        rust.coverage.operations
-        == rust.coverage.roles
-        == rust.coverage.effects
-        == "unavailable"
-    )
-    with pytest.raises(ValidationError):
-        empty.coverage.entities = "unavailable"
+    assert empty.symbols == empty.imports == empty.source_uses == empty.text_fragments == ()
+    assert empty.sloc_lines == frozenset()
+    assert empty.operations is None  # Neither parser extracts module operations.
+    function, = rust.symbols
+    assert function.name == "compute"
+    assert function.signature.parameters == ("value",)
+    assert function.sloc == function.cyc_complexity == 1
+    assert rust.imports is rust.source_uses is rust.text_fragments is rust.operations is None
+    assert function.body is function.references is function.roles is None
+    assert result.project.effects_by_symbol[function.id] is None
+    assert result.project.source_uses_by_id == {}
+
+
+def test_supported_empty_symbol_facts_are_not_unavailable(tmp_path: Path) -> None:
+    """Python rule projections can be empty without losing their availability."""
+    source = tmp_path / "empty.py"
+    source.write_text('def empty():\n    """Documentation only."""\n', encoding="utf-8")
+
+    project = analyze_files((source,), disable_sg=True).project
+    function, = project.modules[0].symbols
+
+    assert function.body == function.references == ()
+    assert function.roles == frozenset()
+    assert project.effects_by_symbol[function.id] == ()
 
 
 @pytest.mark.parametrize(
@@ -319,12 +325,12 @@ def test_effects_do_not_overwrite_repeated_declarations(tmp_path: Path) -> None:
     assert result.flags.findings.structural_findings == ()
     assert compute_report(result)["verbosity"]["score"] == 0.0
     assert set(project.effects_by_symbol) == {first.id, second.id}
-    assert [effect.kind for effect in project.effects_by_symbol[first.id]] == [
-        "read"
-    ]
-    assert [effect.kind for effect in project.effects_by_symbol[second.id]] == [
-        "unresolved-call"
-    ]
+    first_effects = project.effects_by_symbol[first.id]
+    second_effects = project.effects_by_symbol[second.id]
+    assert first_effects is not None
+    assert second_effects is not None
+    assert [effect.kind for effect in first_effects] == ["read"]
+    assert [effect.kind for effect in second_effects] == ["unresolved-call"]
 
 
 @pytest.mark.parametrize("wrapped", [False, True])

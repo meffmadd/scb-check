@@ -28,7 +28,7 @@ def test_analysis_retains_original_text_with_syntactic_owners(
     module = analyze_files((source,), disable_sg=True).project.modules[0]
     widget, render = module.symbols
 
-    assert module.coverage.text_fragments == "complete"
+    assert module.text_fragments is not None
     assert {
         (fragment.text, fragment.kind, fragment.owner_id)
         for fragment in module.text_fragments
@@ -84,6 +84,7 @@ def test_nested_and_decorated_entities_own_each_occurrence_once(
     module = project.modules[0]
     outer, method, inner, local, first, second = module.symbols
     fragments = module.text_fragments
+    assert fragments is not None
     assert len(fragments) == len({fragment.span for fragment in fragments})
     expected_owners = {
         "# before outer": module.id,
@@ -141,6 +142,7 @@ def test_unicode_multiline_and_same_line_fragments_have_exact_spans(
 
     module = analyze_files((source,), disable_sg=True).project.modules[0]
     function = module.symbols[0]
+    assert module.text_fragments is not None
     (doc,) = (
         fragment
         for fragment in module.text_fragments
@@ -201,12 +203,11 @@ def test_unicode_multiline_and_same_line_fragments_have_exact_spans(
 def test_no_eligible_fragments_is_successful_extraction(
     tmp_path: Path, source_text: str
 ) -> None:
-    """Coverage does not depend on the number of emitted fragments."""
+    """A supported inventory is empty, not unavailable, when nothing qualifies."""
     source = tmp_path / "empty.py"
     source.write_text(source_text, encoding="utf-8")
     module = analyze_files((source,), disable_sg=True).project.modules[0]
     assert module.text_fragments == ()
-    assert module.coverage.text_fragments == "complete"
 
 
 @pytest.mark.parametrize(
@@ -230,8 +231,7 @@ def test_other_language_fragments_are_explicitly_unavailable(
     source.write_text(source_text, encoding="utf-8")
     module = analyze_files((source,), disable_sg=True).project.modules[0]
     assert module.symbols
-    assert module.text_fragments == ()
-    assert module.coverage.text_fragments == "unavailable"
+    assert module.text_fragments is None
 
 
 @pytest.mark.parametrize(
@@ -261,6 +261,7 @@ def test_initial_tuple_expressions_are_not_docstrings(
 
     module = analyze_files((source,), disable_sg=True).project.modules[0]
 
+    assert module.text_fragments is not None
     assert not any(
         fragment.kind == "docstring" for fragment in module.text_fragments
     )
@@ -291,6 +292,7 @@ def test_docstrings_and_comments_come_from_syntax_not_literal_substrings(
     )
     module = analyze_files((source,), disable_sg=True).project.modules[0]
     plain, formatted, _binary = module.symbols
+    assert module.text_fragments is not None
     assert {
         (fragment.text, fragment.kind, fragment.owner_id)
         for fragment in module.text_fragments

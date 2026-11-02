@@ -30,6 +30,7 @@ def test_calls_preserve_sites_recursion_and_nested_executable_syntax(tmp_path: P
     project = analyze_files((source,), disable_sg=True).project
     module = project.modules[0]
     helper, run = module.symbols
+    assert module.source_uses is not None
     calls = [use for use in module.source_uses if use.kind == "call"]
     assert len(calls) == 7
     assert len({use.id for use in calls}) == 7
@@ -40,8 +41,8 @@ def test_calls_preserve_sites_recursion_and_nested_executable_syntax(tmp_path: P
     assert {use.owner_id for use in calls if 3 < use.span.start_line < 9} == {run.id}
     assert {use.owner_id for use in calls if use.span.start_line == 9} == {module.id}
     again = analyze_files((source,), disable_sg=True).project.modules[0]
+    assert again.source_uses is not None
     assert {use.id for use in again.source_uses} == {use.id for use in calls}
-    assert module.coverage.source_uses == "complete"
 
 
 def test_import_bindings_resolve_direct_names_without_guessing_receivers(tmp_path: Path) -> None:
@@ -69,6 +70,8 @@ def test_import_bindings_resolve_direct_names_without_guessing_receivers(tmp_pat
     project = analyze_files((source, helper_file), disable_sg=True).project
     module = project.modules_by_file[source.resolve()]
     run, shadow = module.symbols
+    assert module.imports is not None
+    assert module.source_uses is not None
     imports = {(binding.local_name, binding.qualified_name, binding.owner_id) for binding in module.imports}
     assert imports == {
         ("codec", "json", module.id), ("task", "helpers.work", module.id),
@@ -98,6 +101,7 @@ def test_attribute_occurrences_record_access_modes_and_receiver_evaluation(tmp_p
             factory().field = obj.child.value
         """))
     module = analyze_files((source,), disable_sg=True).project.modules[0]
+    assert module.source_uses is not None
     assert Counter((use.target_spelling, use.kind) for use in module.source_uses) == Counter({
         ("obj.field", "attribute-write"): 1,
         ("obj.other", "attribute-read"): 1,
@@ -134,6 +138,7 @@ def test_execution_owners_differ_from_syntactic_declaration_owners(tmp_path: Pat
         """))
     module = analyze_files((source,), disable_sg=True).project.modules[0]
     symbols = {symbol.name: symbol for symbol in module.symbols}
+    assert module.source_uses is not None
     calls = {use.target_spelling: use for use in module.source_uses if use.kind == "call"}
     for name in ("decorate", "option", "base", "module_default"):
         assert calls[name].owner_id == module.id
@@ -177,6 +182,7 @@ def test_static_resolution_handles_closures_shadowing_and_ambiguity(tmp_path: Pa
         """))
     module = analyze_files((source,), disable_sg=True).project.modules[0]
     local = next(symbol for symbol in module.symbols if symbol.name == "local")
+    assert module.source_uses is not None
     assert {use.resolution.target_id for use in module.source_uses if use.target_spelling == "local"} == {local.id}
     assert {use.resolution.status for use in module.source_uses if use.target_spelling == "target"} == {"unresolved"}
     choices = [use for use in module.source_uses if use.target_spelling == "choice"]
@@ -200,6 +206,8 @@ def test_relative_imports_and_duplicate_project_names_do_not_guess_targets(tmp_p
     expected = project.modules_by_file[helper.resolve()].symbols[0].id
     for file in (init, source):
         module = project.modules_by_file[file.resolve()]
+        assert module.imports is not None
+        assert module.source_uses is not None
         assert module.imports[0].qualified_name == "pkg.helpers.work"
         assert {use.resolution.target_id for use in module.source_uses} == {expected}
 
@@ -212,7 +220,9 @@ def test_relative_imports_and_duplicate_project_names_do_not_guess_targets(tmp_p
     caller = tmp_path / "caller.py"
     caller.write_text("from helpers import work\nwork()\n")
     project = analyze_files((loose, other, caller), disable_sg=True).project
-    use, = project.modules_by_file[caller.resolve()].source_uses
+    uses = project.modules_by_file[caller.resolve()].source_uses
+    assert uses is not None
+    use, = uses
     assert use.resolution.status == "ambiguous"
     assert len(use.resolution.candidate_ids) == 2
     assert use.resolution.target_id is None
@@ -238,6 +248,7 @@ def test_calls_survive_try_with_async_yield_and_nested_expression_syntax(tmp_pat
             return (callback())(argument())
         """))
     module = analyze_files((source,), disable_sg=True).project.modules[0]
+    assert module.source_uses is not None
     calls = [use for use in module.source_uses if use.kind == "call"]
     assert Counter(use.target_spelling for use in calls) == Counter({
         "manager": 1, "check": 1, "resource.fetch": 1, "key": 1, "wrap": 1,
@@ -263,6 +274,7 @@ def test_pattern_attributes_and_with_targets_preserve_access_occurrences(tmp_pat
                     pass
         """))
     module = analyze_files((source,), disable_sg=True).project.modules[0]
+    assert module.source_uses is not None
     assert Counter((use.target_spelling, use.kind) for use in module.source_uses) == Counter({
         ("manager", "call"): 1, ("obj.resource", "attribute-write"): 1,
         ("palette.Colors", "attribute-read"): 1, ("palette.Colors.RED", "attribute-read"): 1,
@@ -283,6 +295,7 @@ def test_direct_import_resolution_does_not_change_rule_name_projection(tmp_path:
     caller.write_text("import pkg.helpers\ndef wrapper(value): return pkg.helpers.work(value)\n")
     analysis = analyze_files((init, helper, caller), disable_sg=True)
     module = analysis.project.modules_by_file[caller.resolve()]
+    assert module.source_uses is not None
     call = next(use for use in module.source_uses if use.kind == "call")
     assert call.resolution.status == "project"
     assert call.resolution.qualified_name == "pkg.helpers.work"
@@ -310,6 +323,7 @@ def test_binding_constructs_do_not_leak_project_targets_into_locals(tmp_path: Pa
             target()
         """))
     module = analyze_files((source,), disable_sg=True).project.modules[0]
+    assert module.source_uses is not None
     calls = {use.owner_id: use for use in module.source_uses}
     _, deleted, captured, redirected, variadic, generic = module.symbols
     assert calls[deleted.id].resolution.status == "unresolved"
@@ -329,6 +343,7 @@ def test_bindings_in_unsupported_syntax_still_shadow_outer_declarations(tmp_path
     source = tmp_path / "hidden.py"
     source.write_text(f"def target(): pass\ndef run():\n    {binding}\n    target()\n")
     module = analyze_files((source,), disable_sg=True).project.modules[0]
+    assert module.source_uses is not None
     use = next(use for use in module.source_uses if use.target_spelling == "target")
     assert use.resolution.status in {"unresolved", "unsupported"}
 
@@ -340,6 +355,7 @@ def test_parenthesized_direct_names_resolve_without_inferring_nested_attributes(
     source = tmp_path / "caller.py"
     source.write_text("import math\nimport helpers\n(math.sqrt)(4)\n(helpers).outer()\nhelpers.outer.inner()\n")
     module = analyze_files((source, helper), disable_sg=True).project.modules_by_file[source.resolve()]
+    assert module.source_uses is not None
     calls = {use.target_spelling: use for use in module.source_uses if use.kind == "call"}
     assert calls["(math.sqrt)"].resolution.status == "external"
     assert calls["(math.sqrt)"].resolution.qualified_name == "math.sqrt"
@@ -352,6 +368,7 @@ def test_annotation_only_attribute_targets_are_not_writes(tmp_path: Path) -> Non
     source = tmp_path / "annotation.py"
     source.write_text("def run(obj):\n    obj.child.value: int\n    factory().field: int\n")
     module = analyze_files((source,), disable_sg=True).project.modules[0]
+    assert module.source_uses is not None
     assert {(use.target_spelling, use.kind) for use in module.source_uses} == {
         ("obj.child", "attribute-read"), ("factory", "call"),
     }
@@ -365,7 +382,9 @@ def test_rebuilding_project_resolution_reconsiders_current_snapshot_membership(t
     source.write_text("from helper import work\nwork()\n")
     project = analyze_files((source, helper), disable_sg=True).project
     caller_module = project.modules_by_file[source.resolve()]
-    removed = build_project((caller_module,)).modules[0].source_uses[0]
+    removed_uses = build_project((caller_module,)).modules[0].source_uses
+    assert removed_uses is not None
+    removed = removed_uses[0]
     assert removed.resolution.status == "external"
     assert removed.resolution.target_id is None
     other_dir = tmp_path / "other"
@@ -373,7 +392,9 @@ def test_rebuilding_project_resolution_reconsiders_current_snapshot_membership(t
     other = other_dir / "helper.py"
     other.write_text("def work(): pass\n")
     other_module = analyze_files((other,), disable_sg=True).project.modules[0]
-    colliding = build_project((*project.modules, other_module)).modules_by_file[source.resolve()].source_uses[0]
+    colliding_uses = build_project((*project.modules, other_module)).modules_by_file[source.resolve()].source_uses
+    assert colliding_uses is not None
+    colliding = colliding_uses[0]
     assert colliding.resolution.status == "ambiguous"
     assert len(colliding.resolution.candidate_ids) == 2
 
@@ -397,7 +418,9 @@ def test_relative_import_projection_keeps_existing_multiple_name_rule_selection(
         ("trivial-wrapper", "first.second"), ("trivial-wrapper", "pkg.helpers.second"),
         ("trivial-wrapper", "pkg.caller.caller"), ("low-use-short-function", "first.second"),
     }
-    call = next(use for use in analysis.project.modules_by_file[caller.resolve()].source_uses if use.kind == "call")
+    uses = analysis.project.modules_by_file[caller.resolve()].source_uses
+    assert uses is not None
+    call = next(use for use in uses if use.kind == "call")
     assert call.resolution.qualified_name == "pkg.helpers.second"
 
 
@@ -410,14 +433,15 @@ def test_empty_unavailable_and_read_only_inventory_contract(tmp_path: Path) -> N
     python_module, rust_module = (
         analyze_files((file,), disable_sg=True).project.modules[0] for file in (python, rust)
     )
-    assert python_module.source_uses == rust_module.source_uses == ()
-    assert python_module.coverage.source_uses == "complete"
-    assert rust_module.coverage.source_uses == "unavailable"
+    assert python_module.source_uses == ()
+    assert rust_module.source_uses is None
     assert analyze_files((), disable_sg=True).project.source_uses_by_id == {}
 
     python.write_text("print('é'); print('é')\n")
     project = analyze_files((python,), disable_sg=True).project
-    first, second = project.modules[0].source_uses
+    uses = project.modules[0].source_uses
+    assert uses is not None
+    first, second = uses
     assert first.id != second.id
     assert (first.span.start_col, first.span.end_col) == (0, 11)
     assert (second.span.start_col, second.span.end_col) == (13, 24)
@@ -448,16 +472,23 @@ def test_richer_inventory_preserves_rule_specific_recursion_and_effect_policies(
     project = analysis.project
     module = project.modules[0]
     recurse, caller, dotted, nested = module.symbols
+    assert module.source_uses is not None
     assert len([use for use in module.source_uses if use.target_spelling == "recurse"]) == 2
     findings = {(finding.rule_id, finding.subject_name) for finding in analysis.flags.findings.structural_findings}
     assert ("trivial-wrapper", "recurse") not in findings
     assert ("low-use-short-function", "recurse") in findings
     assert ("trivial-wrapper", "dotted") not in findings
-    assert {effect.kind for effect in project.effects_by_symbol[nested.id]} == {"read"}
-    effect = next(effect for effect in project.effects_by_symbol[dotted.id] if effect.kind == "external-call")
+    nested_effects = project.effects_by_symbol[nested.id]
+    dotted_effects = project.effects_by_symbol[dotted.id]
+    caller_effects = project.effects_by_symbol[caller.id]
+    assert nested_effects is not None
+    assert dotted_effects is not None
+    assert caller_effects is not None
+    assert {effect.kind for effect in nested_effects} == {"read"}
+    effect = next(effect for effect in dotted_effects if effect.kind == "external-call")
     assert effect.kind == "external-call"  # Deliberate rule keep-policy, not resolution evidence.
     assert effect.source_use_id is not None
     assert project.source_uses_by_id[effect.source_use_id].resolution.status == "unresolved"
-    caller_effect = next(effect for effect in project.effects_by_symbol[caller.id] if effect.kind == "project-call")
+    caller_effect = next(effect for effect in caller_effects if effect.kind == "project-call")
     assert caller_effect.source_use_id is not None
     assert project.source_uses_by_id[caller_effect.source_use_id].resolution.target_id == recurse.id
