@@ -54,7 +54,7 @@ CLI (`cli.py` / `commands/`)
     │
     ├─ discover supported source files with the walker
     ├─ read and parse source through `read_and_parse_source`
-    │      └─ emit `ModuleIR`, `SLOC`, symbols, complexity, and Python text fragments/source uses
+    │      └─ emit `ModuleIR`, `SLOC`, symbols, complexity, and Python text/use/member/type facts
     ├─ build source indexes
     ├─ build `ProjectIR` semantic indexes
     ├─ detect clone blocks from parser-native trees
@@ -112,6 +112,14 @@ A source site, a distinct caller, and a distinct target are different population
 
 Rule-facing references and shallow operation-selected effects intentionally preserve textual nesting, parameter/builtin exclusions, self-recursion exclusions, and dotted-call keep-policy. Linked effects carry `source_use_id`, but their rule labels need not match canonical resolution status. This separation retains existing structural-rule behavior while exposing richer facts. Metric populations, counts, formulas, and scores stay in consumers, outside the IR; this inventory adds no report fields or metrics and changes neither verbosity/erosion nor CLI `check`/independent-snapshot `diff` contracts.
 
+### Class and type evidence boundary
+
+Python class/member facts retain declarations rather than precomputed coupling or inherited-member populations. A canonical attribute distinguishes two fields of one class type from two writes to one field; structured types preserve self references, primitives, wrappers, and uncertainty without deciding which count toward DAC or CBO. Direct base relations distinguish inheritance from composition without treating an inherited body as new implementation mass.
+
+Callable facts separate the declaring class, source body identity/location, and recognized abstract/placeholder syntax. A subsequent resolver can associate an inherited member with its implementation owner without copying bodies or extracting their uses again. That association, receiver inference, and polymorphic dispatch are not supplied by direct-base/type evidence alone. See [the class/member reference](tree-walking.md#class-member-and-declared-type-facts) for producers, ownership, and supported syntax.
+
+Consumers decide whether to include inherited/abstract methods for RFC, which wrappers/primitive/self types contribute to DAC/CBO, and whether to count member-use sites or distinct targets for MPC. Those choices change metric populations and scores, so they remain outside the IR. These facts add no metrics or report fields and preserve existing rule, verbosity/erosion, CLI exit, and independent-snapshot comparison contracts.
+
 ## Layers
 
 - Boundary: `cli.py`, `commands/`, `config.py`, `walker.py`, and `logging.py` parse arguments, load configuration, walk paths, and wire logging. They do not score code.
@@ -152,11 +160,20 @@ Rule-facing references and shallow operation-selected effects intentionally pres
 `SourceUseIR`
 : Immutable call or attribute-access occurrence with source/target spans, original target spelling, execution ownership, and direct static `TargetResolutionIR` evidence; unsupported contexts remain explicit.
 
+`AttributeIR`
+: Canonical supported Python field identified by declaring class and name, with declaration location, syntactic storage evidence, and structured declared types; repeated writes remain source occurrences.
+
+`TypeReferenceIR`
+: Structured annotation/base-expression syntax with conservative target resolution and primitive/class/other/unknown evidence, not a metric-specific target set.
+
+`CallableIR`
+: Python callable declaration evidence: declaring class, binding/decorators, abstract marker, body location, placeholder kind, and source implementation identity.
+
 `SymbolIR`
 : Language-agnostic code symbol such as a class, function, method, or value. Function-like symbols carry signatures, roles, body operations, references, `SLOC`, complexity values, and maximum control-flow nesting depth.
 
 `ProjectIR`
-: Immutable project inventory retained in `AnalysisResult.project`, with derived read-only module, symbol, source-use, and effect indexes. Source spans retain physical-file paths; unavailable inventories are `None`, distinct from successfully extracted empty facts. See the [entity contract](tree-walking.md#retained-entity-contract) for identities, ownership, availability, and supported associations.
+: Immutable project inventory retained in `AnalysisResult.project`, with derived read-only module, symbol, attribute, source-use, and effect indexes. Source spans retain physical-file paths; unavailable inventories are `None`, distinct from successfully extracted empty facts. See the [entity contract](tree-walking.md#retained-entity-contract) for identities, ownership, availability, and supported associations.
 
 `RuleContext`
 : Query interface passed to structural rules so rules ask semantic questions, including resolved project call sites, instead of inspecting parser-native syntax.

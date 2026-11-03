@@ -36,11 +36,15 @@ from scb_check.tree_walking.languages._node_helpers import (
     qualified_name as _qualified_name,
 )
 from scb_check.tree_walking.languages._node_helpers import text as _text
-from scb_check.tree_walking.languages.python_uses import (
+from scb_check.tree_walking.languages.python_declarations import (
     FLOW_BREAK_TYPES as _COG_FLOW_BREAK_TYPES,
 )
+from scb_check.tree_walking.languages.python_strings import (
+    docstring_literals as _docstring_literals,
+)
+from scb_check.tree_walking.languages.python_strings import python_string_prefix
 from scb_check.tree_walking.languages.python_uses import import_bindings
-from scb_check.tree_walking.languages.python_uses import source_uses
+from scb_check.tree_walking.languages.python_uses import python_facts
 from scb_check.tree_walking.models import Language
 from scb_check.tree_walking.models import ModuleIR
 from scb_check.tree_walking.models import OperationIR
@@ -227,23 +231,24 @@ class PythonWalker:
         """Return the parsed module IR."""
         self._visit_children(self._tree.root_node, VisitContext())
         span = _module_span(self._file_path, self._source)
-        uses, imports = source_uses(
+        facts = python_facts(
             self._file_path, self._tree.root_node,
             span.entity_id(SymbolKind.MODULE), tuple(self._symbols), self._module_name,
         )
         symbols = tuple(
             symbol.model_copy(update={"references": _symbol_references(
-                self._symbol_nodes[symbol.id], uses, self._imports_by_name,
+                self._symbol_nodes[symbol.id], facts.source_uses, self._imports_by_name,
             )}) if symbol.kind in {SymbolKind.FUNCTION, SymbolKind.METHOD} else symbol
-            for symbol in self._symbols
+            for symbol in facts.symbols
         )
         return ModuleIR(
             language=Language.PYTHON,
             file=self._file_path,
             module_name=self._module_name,
             span=span,
-            imports=imports,
-            source_uses=uses,
+            imports=facts.imports,
+            source_uses=facts.source_uses,
+            attributes=facts.attributes,
             symbols=symbols,
             text_fragments=_text_fragments(
                 self._file_path,
@@ -434,40 +439,6 @@ def _text_fragments(
     return tuple(fragments)
 
 
-def _docstring_literals(node: Node) -> tuple[Node, ...]:
-    """Keep constituent literals separate so intervening comments occur only once."""
-    body = node if node.type == "module" else node.child_by_field_name("body")
-    if body is None:
-        return ()
-    first = next(
-        (child for child in body.named_children if child.type != "comment"), None,
-    )
-    if first is None or first.type != "expression_statement":
-        return ()
-    # Unparenthesized tuples expose their comma beside the first expression.
-    if any(child.type == "," for child in first.children):
-        return ()
-    expression = first.named_children[0]
-    while expression.type == "parenthesized_expression":
-        expression = next(
-            child for child in expression.named_children if child.type != "comment"
-        )
-    if expression.type == "string":
-        literals = (expression,)
-    elif expression.type == "concatenated_string":
-        literals = tuple(
-            child for child in expression.named_children if child.type == "string"
-        )
-    else:
-        return ()
-    if any(
-        set(python_string_prefix(_text(literal))) & {"b", "f"}
-        for literal in literals
-    ):
-        return ()
-    return literals
-
-
 def _parse_tree(source: str) -> Tree:
     parser = _get_parser()
     tree = parser.parse(source.encode("utf-8"))
@@ -556,16 +527,6 @@ def _is_plain_string_expression_statement(statement: Node) -> bool:
 
     prefix = python_string_prefix(node_text.decode("utf-8"))
     return "b" not in prefix and "f" not in prefix
-
-
-def python_string_prefix(literal: str) -> str:
-    """Return the lowercase prefix before a Python string literal quote."""
-    prefix_chars: list[str] = []
-    for character in literal:
-        if character in {'"', "'"}:
-            break
-        prefix_chars.append(character.lower())
-    return "".join(prefix_chars)
 
 
 def _sloc_line_numbers(source: str, tree: Tree) -> frozenset[int]:

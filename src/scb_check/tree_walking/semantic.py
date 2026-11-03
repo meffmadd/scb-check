@@ -23,7 +23,7 @@ from scb_check.tree_walking.models import SymbolLookup
 from scb_check.tree_walking.models import SymbolRole
 from scb_check.tree_walking.models import ValueIR
 from scb_check.tree_walking.models import ValueKind
-from scb_check.tree_walking.source_uses import resolve_source_uses
+from scb_check.tree_walking.source_uses import resolve_project_references
 
 _RECEIVER_PARAMETER_NAMES = frozenset({"self", "cls"})
 _REQUIRED_API_ROLES = frozenset(
@@ -62,7 +62,7 @@ type _UsesBySpan = Mapping[tuple[SourceSpan, str], SourceUseIR]
 
 def build_project(modules: tuple[ModuleIR, ...]) -> ProjectIR:
     """Build project semantic indexes and derived effects from modules."""
-    modules = resolve_source_uses(_with_unique_generic_function_names(modules))
+    modules = resolve_project_references(_with_unique_generic_function_names(modules))
     symbols = tuple(symbol for module in modules for symbol in module.symbols)
     symbols_by_qualified_name = {
         symbol.qualified_name: symbol for symbol in symbols

@@ -211,7 +211,7 @@ type ResolutionReason = Literal[
     "import-binding", "relative-or-star-import", "scope-directive", "type-parameter",
     "dynamic-target", "receiver-needs-member-resolution", "builtin", "star-import",
     "multiple-lexical-bindings", "project-import-binding", "multiple-project-bindings",
-    "unresolved-project-member",
+    "unresolved-project-member", "self-type",
 ] | UnsupportedContext
 
 
@@ -242,6 +242,7 @@ class SourceUseIR(IRModel):
     owner_id: str | None
     execution_kind: ExecutionKind
     unsupported_context: UnsupportedContext | None = None
+    declared_attribute_id: str | None = None
     resolution: TargetResolutionIR = Field(default_factory=TargetResolutionIR)
     nesting: int = 0
 
@@ -297,6 +298,54 @@ class EffectIR(IRModel):
     source_use_id: str | None = None
 
 
+type TypeReferenceForm = Literal["name", "generic", "union", "type-list", "literal", "unknown"]
+type TypeCategory = Literal["primitive", "class", "other", "unknown"]
+type AttributeStorage = Literal["class", "instance"]
+type CallableBinding = Literal["function", "instance", "class", "static"]
+type CallableBodyKind = Literal["implemented", "pass", "ellipsis", "empty"]
+
+
+class TypeReferenceIR(IRModel):
+    """Structured declared type syntax with conservative static target evidence."""
+
+    spelling: str
+    span: SourceSpan
+    form: TypeReferenceForm
+    name: str | None = None
+    arguments: tuple[TypeReferenceIR, ...] = ()
+    is_forward: bool = False
+    category: TypeCategory = "unknown"
+    resolution: TargetResolutionIR = Field(default_factory=TargetResolutionIR)
+
+
+class AttributeIR(IRModel):
+    """One canonical field per declaring class and name in the supported subset."""
+
+    name: str
+    declaring_class_id: str
+    owner_id: str
+    span: SourceSpan
+    storage: frozenset[AttributeStorage]
+    declared_types: tuple[TypeReferenceIR, ...] = ()
+
+    @property
+    def id(self) -> str:
+        """Identify the field independently of repeated assignments."""
+        return f"{self.declaring_class_id}:attribute:{self.name}"
+
+
+class CallableIR(IRModel):
+    """Callable declaration evidence, independent of inherited member populations."""
+
+    declaring_class_id: str | None = None
+    binding: CallableBinding
+    decorators: tuple[str, ...] = ()
+    is_abstract: bool = False
+    body_kind: CallableBodyKind
+    body_span: SourceSpan
+    implementation_id: str | None = None
+
+
 class SymbolIR(IRModel):
     """A language-agnostic code symbol."""
 
@@ -313,6 +362,8 @@ class SymbolIR(IRModel):
     owner_id: str | None = None
     module_id: str | None = None
     base_names: tuple[str, ...] = ()
+    callable_facts: CallableIR | None = None
+    direct_bases: tuple[TypeReferenceIR, ...] | None = None
     sloc: int = 0
     cyc_complexity: int = 1
     cog_complexity: int = 0
@@ -374,6 +425,7 @@ class ModuleIR(IRModel):
     symbols: tuple[SymbolIR, ...] = ()
     text_fragments: tuple[TextFragmentIR, ...] | None = None
     source_uses: tuple[SourceUseIR, ...] | None = None
+    attributes: tuple[AttributeIR, ...] | None = None
     operations: tuple[OperationIR, ...] | None = None
     sloc_lines: frozenset[int] = frozenset()
 
@@ -427,6 +479,7 @@ type ModulesByFile = Mapping[Path, ModuleIR]
 type SymbolLookup = Mapping[str, SymbolIR]
 type SymbolEffects = Mapping[str, tuple[EffectIR, ...] | None]
 type SourceUseLookup = Mapping[str, SourceUseIR]
+type AttributeLookup = Mapping[str, AttributeIR]
 
 
 class ProjectIR(IRModel):
@@ -448,12 +501,17 @@ class ProjectIR(IRModel):
     _symbols_by_id: SymbolLookup = PrivateAttr()
     _symbols_by_qualified_name: SymbolLookup = PrivateAttr()
     _source_uses_by_id: SourceUseLookup = PrivateAttr()
+    _attributes_by_id: AttributeLookup = PrivateAttr()
 
     def model_post_init(self, _context: object) -> None:
         """Derive privately owned lookup views from the sole module inventory."""
         symbols = tuple(
             symbol for module in self.modules for symbol in module.symbols
         )
+        self._attributes_by_id = MappingProxyType({
+            attribute.id: attribute for module in self.modules
+            if module.attributes is not None for attribute in module.attributes
+        })
         self._source_uses_by_id = MappingProxyType({
             use.id: use for module in self.modules
             if module.source_uses is not None for use in module.source_uses
@@ -472,6 +530,11 @@ class ProjectIR(IRModel):
         )
 
     @property
+    def attributes_by_id(self) -> AttributeLookup:
+        """Look up canonical class/instance fields from available inventories."""
+        return self._attributes_by_id
+
+    @property
     def source_uses_by_id(self) -> SourceUseLookup:
         """Look up canonical source occurrences, including unsupported contexts."""
         return self._source_uses_by_id
@@ -488,7 +551,7 @@ class ProjectIR(IRModel):
 
     @property
     def symbols_by_id(self) -> SymbolLookup:
-        """Look up every retained declaration, including repeated names."""
+        """Look up every retained symbol declaration, including repeated names."""
         return self._symbols_by_id
 
     @property

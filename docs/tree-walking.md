@@ -11,7 +11,7 @@ Tree walking turns already-read supported source into language-agnostic facts th
 - `module`: pure `ModuleIR` for downstream scoring and rules.
 - `native_tree`: parser-native data kept only for clone detection.
 
-Do not put raw tree-sitter nodes into `ModuleIR`, `SymbolIR`, `TextFragmentIR`, `SourceUseIR`, `ImportIR`, `TargetResolutionIR`, `OperationIR`, `ValueIR`, `EffectIR`, or `RuleFinding`.
+Parser-native nodes (including Python AST nodes) stay outside all IR records, including class/member and declared-type facts.
 
 ## Parse flow
 
@@ -64,7 +64,8 @@ The generic Tree-sitter parser used for Rust, JavaScript, TypeScript, Zig, Haske
 - spans use one-based lines, zero-based UTF-8 byte columns, and exclusive ends,
 - imports in retained lexical scopes become separate `ImportIR` bindings,
 - calls and attribute accesses become module-owned `SourceUseIR` occurrences,
-- classes and functions become `SymbolIR` records,
+- classes and functions become `SymbolIR` records, with direct-base and callable declaration facts,
+- supported class/receiver assignments become canonical `AttributeIR` records and linked write occurrences,
 - declarations beneath control-flow wrappers are visited once with their lexical owner,
 - nested classes/functions keep their descriptive `owner_qualified_name` and exact `owner_id`,
 - rule-facing symbol references are projected from source uses (not a second authoritative inventory),
@@ -89,7 +90,7 @@ Rust, JavaScript, TypeScript, Zig, Haskell, and C++ use `GenericTreeSitterParser
 - function and method symbols, including JavaScript and TypeScript generator functions, with names, owners, signatures, spans, `SLOC`, cyclomatic complexity, and cognitive complexity,
 - parser-native trees retained on `ParsedFile` for clone hashing and syntax node counts.
 
-It does not yet emit text fragments, source uses, imports, references, body operations, value summaries, or source directives for non-Python languages. Structural rules therefore remain Python-only until they have language-specific semantic facts.
+It does not yet emit text fragments, source uses, imports, class/member/type semantics, references, body operations, value summaries, or source directives for non-Python languages. Structural rules therefore remain Python-only until they have language-specific semantic facts.
 
 ## Operations and values
 
@@ -135,6 +136,7 @@ The full analysis workflow in `pipeline.py` validates ignore rule IDs against th
 | `symbols_by_qualified_name` | Qualified name → last declaration selected for existing semantic queries; not a complete inventory |
 | `effects_by_symbol` | Callable declaration ID → derived `EffectIR` tuple, or `None` when body extraction is unavailable |
 | `source_uses_by_id` | Occurrence ID → canonical `SourceUseIR`, including unsupported contexts |
+| `attributes_by_id` | Field ID → canonical `AttributeIR` from available module inventories |
 
 Access all declarations in a physical file through `project.modules_by_file[path].symbols`; source paths are available on module/entity spans without a separate physical-file index. Constructing an `AnalysisResult` requires an explicit `project`; synthetic empty analyses can supply `ProjectIR()`. The source-use index includes occurrences only from available inventories; an empty index alone does not establish extraction support.
 
@@ -178,7 +180,7 @@ Consumers can select direct fragments by `owner_id`, or include child owners tra
 
 ### Canonical source uses and imports
 
-`ModuleIR.source_uses` is the sole inventory of executable call and attribute-access occurrences. `languages/python_uses.py` produces it from the already-parsed tree; `source_uses.resolve_source_uses()` refines import evidence against retained modules/declarations during `build_project()`. `AnalysisResult.project` exposes the resolved modules and the derived read-only `source_uses_by_id` index. These are frozen records with tuple-valued candidates, not parser nodes or mutable resolver state.
+`ModuleIR.source_uses` is the sole inventory of executable call and attribute-access occurrences. `languages/python_uses.py` produces it from the already-parsed tree; `source_uses.resolve_project_references()` refines import evidence against retained modules/declarations during `build_project()`. `AnalysisResult.project` exposes the resolved modules and the derived read-only `source_uses_by_id` index. These are frozen records with tuple-valued candidates, not parser nodes or mutable resolver state.
 
 | `SourceUseIR` field | Meaning |
 | --- | --- |
@@ -187,6 +189,7 @@ Consumers can select direct fragments by `owner_id`, or include child owners tra
 | `target_spelling` / `target_form` | Original target text and `name`, `attribute`, or `expression` form |
 | `owner_id` / `execution_kind` | Executing module, class initialization, or function; unsupported contexts have no owner and kind `unsupported` |
 | `unsupported_context` | Explicit unsupported syntax context, otherwise `None` |
+| `declared_attribute_id` | Canonical field for a supported direct assignment/augmented-write target, otherwise `None`; not receiver inference |
 | `resolution` | Immutable `TargetResolutionIR` static binding evidence |
 | `nesting` | Syntactic control-flow depth, not an execution count |
 
@@ -212,6 +215,60 @@ Lambda bodies, comprehensions/generator expressions, type aliases, type-paramete
 
 Bindings are collected lexically without evaluating control flow or statement order. Repeated declarations/rebindings can therefore be ambiguous rather than selecting a runtime winner. Function parameters (including typed variadics) and local bindings shadow outer names, including bindings in lambda defaults, comprehensions, and type aliases. Method/nested-class lookup skips the runtime class namespace as a closure scope; type-parameter bindings remain explicitly unsupported. Parenthesized direct targets resolve without dropping their original spelling. Import-qualified names match module-accessible declarations, not declarations nested inside function bodies; collisions remain ambiguous. Rebuilding a project reconsiders import resolution against its current modules. Instance/class member lookup, assignment-alias propagation, type inference, runtime dispatch, and possible-runtime-target sets are not provided. In particular, `self.method()` and arbitrary `receiver.member()` are not inferred project or external calls merely from their spelling.
 
+### Class, member, and declared-type facts
+
+`languages/python_uses.python_facts()` collects lexical evidence shared by source uses and declarations. `languages/python_declarations.py` produces callable facts, direct bases, and canonical fields; `languages/python_types.py` parses annotation expressions without evaluation. `source_uses.resolve_project_references()` refines imported type/base targets and classifies known types during `build_project()`. These facts are available through `AnalysisResult.project`, independently of rule projections and metric populations; see [the policy boundary](architecture.md#class-and-type-evidence-boundary).
+
+#### Callable declarations
+
+`SymbolIR.callable_facts` is a frozen `CallableIR` for Python function/method declarations, otherwise `None`:
+
+| Field | Meaning |
+| --- | --- |
+| `declaring_class_id` | Immediate owning class for methods; `None` for functions, including functions nested inside methods |
+| `binding` | Syntactic `function`, `instance`, `class`, or `static`; recognized builtin `classmethod`/`staticmethod` bindings include import aliases |
+| `decorators` | Tuple of original decorator expression spellings, in source order, without `@` |
+| `is_abstract` | Recognized `abc.abstractmethod` binding evidence, including aliases; not a claim about runtime metaclass state |
+| `body_kind` | `empty` (docstring-only), `pass`, `ellipsis`, or `implemented`, after excluding an initial plain docstring and comments |
+| `body_span` | Source body location, including a docstring if present |
+| `implementation_id` | This callable's declaration ID for `implemented` bodies; `None` for the documented placeholder forms |
+
+Abstract declarations can have implemented bodies. A raising body is implemented syntax; placeholder classification is not an assessment of useful behavior. Custom decorators/descriptors, runtime abstractness, overload/property-family grouping, and stub/implementation matching are not inferred. Decorator spellings and ownership remain available for subsequent resolvers. Existing `SymbolIR.body`, complexity, and rule roles are unchanged, including for placeholders.
+
+#### Canonical attributes
+
+`ModuleIR.attributes` is the sole tuple inventory of `AttributeIR`; `ProjectIR.attributes_by_id` is a derived read-only view. Each field has `name`, `declaring_class_id`, the first declaration target's `span` and lexical `owner_id`, `storage`, and `declared_types`. Its ID is the declaring class's snapshot ID plus `:attribute:` and the attribute name, not the assignment span. Repeated writes do not create fields; two different names with one declared type remain two fields. Repeated class declarations have distinct field identities.
+
+Supported declarations are:
+
+- Class-scope identifier assignments and annotations, including declarations beneath control-flow wrappers, chained assignments, and tuple/list unpacking targets.
+- Direct assignments/annotations to the first parameter's attributes in instance methods or recognized classmethods (the parameter need not be called `self`/`cls`). Any lexical rebinding of that parameter disables this attribution for the method. Static methods and functions nested inside methods do not declare receiver fields.
+
+`storage` records syntactic declaration evidence: `class` for class-scope names/classmethod receiver assignments, `instance` for instance-method receiver assignments, or both. It does not infer runtime storage: an uninitialized class annotation, dataclass transformation, or `ClassVar` wrapper is retained as syntax, not evaluated. `declared_types` retains each explicit annotation in source order; unannotated writes add no inferred type. Parameters, function locals, and `global`/`nonlocal` targets are not fields.
+
+Ordinary supported class-name assignments also produce `SourceUseIR` writes with `target_form="name"` and class execution ownership. Receiver writes reuse existing occurrences. Repeated and augmented writes link through `declared_attribute_id`; augmented assignments alone do not introduce declarations. Annotation-only targets declare fields but are not writes. Reads/deletions retain their existing unresolved source-use evidence; field linking is not a member resolver.
+
+Unsupported creation includes `setattr`, `exec`, `__dict__`/subscript mutations, generated slots/dataclass/metaclass fields, receiver aliases, arbitrary object assignments, class-name-qualified writes outside the supported receiver form, and nested receiver paths such as `self.child.field`. An ordinary `__slots__` assignment retains the `__slots__` field itself, not generated slot declarations. Subclass writes remain declarations on the syntactic subclass; associating them with inherited fields is subsequent resolver work.
+
+#### Structured types and direct bases
+
+Each `TypeReferenceIR` retains `spelling`, annotation/base-expression `span`, `form`, optional dotted `name`, recursive tuple `arguments`, `is_forward`, `category`, and `TargetResolutionIR`. Nested arguments share the full annotation/base span as their evidence location; their spellings describe the nested expression, not separately addressable source occurrences. Root spelling preserves quotes and grouping. Forward strings are parsed without executing them.
+
+Forms are `name`, `generic`, `union` (`|`), `type-list` (for example `Callable[[A, B], R]`), `literal`, and `unknown`. Generic wrappers and arguments remain structured rather than flattened into class sets. Imported `typing`/`typing_extensions` `Literal` arguments and `Annotated` metadata remain literal evidence, not forward class references. Signature parameter/return annotations remain the existing textual `SignatureIR` contract; structured extraction covers fields and bases.
+
+Categories describe evidence, not metric inclusion:
+
+- `class`: a uniquely resolved retained class. Imported `typing.Self`/`typing_extensions.Self` refers to the declaring class in field annotations.
+- `primitive`: builtin `bool`, `int`, `float`, `complex`, `str`, `bytes`, `None`, or imported `types.NoneType` evidence.
+- `other`: known non-class project targets, other builtins, recognized typing wrappers, unions, type lists, or literal metadata.
+- `unknown`: unresolved/ambiguous/unsupported references, unknown external annotations, and unsupported dynamic expressions. An import alone does not prove a class type. Assignment aliases and type-parameter semantics are not inferred.
+
+`SymbolIR.direct_bases` is a tuple on Python classes, including `()` for no explicit bases; other symbols/parsers expose `None`. Each positional base expression retains its own structured reference and resolution limits. Class keywords (including `metaclass` and `**options`) are excluded; starred/dynamic positional bases remain unknown. No implicit `object` edge or transitive bases are invented. Dotted lexical class members can remain unresolved with `receiver-needs-member-resolution`; imported qualified names resolve conservatively against module-accessible declarations. Forward-string interpretation applies to annotations, not base expressions.
+
+The existing `base_names` strings on classes/methods remain a compatibility projection for structural-rule keep reasons, including header keywords; they are not the canonical base relation.
+
+Inheritance never copies a base's callable/field declarations, body operations, or source uses into subclasses. Direct relations and declaration ownership are the inputs to a subsequent inheritance/member resolver, not precomputed inherited method populations or dispatch sets.
+
 ### Fact availability and parser support
 
 Availability is represented by the data itself: `None` means extraction is unavailable; an empty tuple (or frozenset for roles) means extraction succeeded with no facts in the documented supported subset. Optional inventories default to `None`. All parsers supply declaration, signature, complexity, and SLOC facts, so those fields remain non-nullable. There is no parallel coverage record or inferred per-file completeness status.
@@ -224,6 +281,9 @@ Availability is represented by the data itself: `None` means extraction is unava
 | `ModuleIR.text_fragments` | Identifiers, comments, and docstring literals under the source-text policy above | `None` |
 | `ModuleIR.source_uses` | Documented call/access subset, including explicit unsupported-context records; import refinement in `build_project()` | `None` |
 | `ModuleIR.imports` | Scoped alias bindings and resolvable relative names, not full import semantics | `None` |
+| `ModuleIR.attributes` | Documented canonical class/receiver assignment subset; annotation references are structured | `None` |
+| `SymbolIR.callable_facts` | Callable declaration, binding/decorator, abstract and body-placeholder evidence | `None` |
+| `SymbolIR.direct_bases` | Explicit positional base references on classes, with conservative type resolution | `None` |
 | `SymbolIR.references` | Function/method rule projections from canonical calls | `None` |
 | `SymbolIR.body` | Shallow function/method body operations and supported values | `None` |
 | `SymbolIR.roles` | Conservative semantic keep reasons | `None` |
@@ -242,7 +302,7 @@ The generic C++ frontend extracts function definitions, not standalone prototype
 
 ## Semantic context
 
-`build_project()` resolves canonical source uses, derives compatibility effects from the retained modules, and supplies `RuleContext` for structural rules. Each declaration retains its own ID-keyed effects, while `RuleContext` preserves last-qualified-name effect selection for existing rule decisions, including same-file redefinitions. Retaining more facts alone does not change those decisions. Entity lookup consumers use IDs for identity; rule-specific name queries are not the canonical source-use resolver.
+`build_project()` resolves canonical source uses and declared type/base references, derives compatibility effects from the retained modules, and supplies `RuleContext` for structural rules. Each declaration retains its own ID-keyed effects, while `RuleContext` preserves last-qualified-name effect selection for existing rule decisions, including same-file redefinitions. Retaining more facts alone does not change those decisions. Entity lookup consumers use IDs for identity; rule-specific name queries are not the canonical source-use resolver.
 
 Rule projections intentionally preserve historical decisions rather than adopting canonical execution/resolution policy wholesale:
 

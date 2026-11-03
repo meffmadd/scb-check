@@ -6,8 +6,19 @@ from pathlib import Path
 
 from tree_sitter import Node
 
+from scb_check.tree_walking.languages._node_helpers import iter_nodes
 from scb_check.tree_walking.languages._node_helpers import node_span
 from scb_check.tree_walking.languages._node_helpers import text
+from scb_check.tree_walking.languages.python_declarations import (
+    FLOW_BREAK_TYPES,
+)
+from scb_check.tree_walking.languages.python_declarations import attribute_facts
+from scb_check.tree_walking.languages.python_declarations import callable_facts
+from scb_check.tree_walking.languages.python_declarations import (
+    declaration_index,
+)
+from scb_check.tree_walking.languages.python_declarations import direct_bases
+from scb_check.tree_walking.models import AttributeIR
 from scb_check.tree_walking.models import ExecutionKind
 from scb_check.tree_walking.models import ImportIR
 from scb_check.tree_walking.models import SourceUseIR
@@ -17,10 +28,6 @@ from scb_check.tree_walking.models import SymbolKind
 from scb_check.tree_walking.models import TargetResolutionIR
 from scb_check.tree_walking.models import UnsupportedContext
 
-FLOW_BREAK_TYPES = frozenset({
-    "if_statement", "elif_clause", "else_clause", "for_statement", "while_statement",
-    "except_clause", "conditional_expression",
-})
 _UNSUPPORTED_CONTEXTS: dict[str, UnsupportedContext] = {
     context: context for context in (
         "list_comprehension", "set_comprehension", "dictionary_comprehension",
@@ -35,6 +42,24 @@ class _Scope:
     kind: ExecutionKind
     parent_id: str | None
     bindings: dict[str, list[TargetResolutionIR]]
+
+    def bind_locals(self, node: Node) -> None:
+        """Record local bindings while preserving annotation-only parameter evidence."""
+        annotation_only = node.type == "assignment" and node.child_by_field_name("type") is not None and node.child_by_field_name("right") is None
+        for name in _bound_names(node):
+            if annotation_only and any(binding.reason == "parameter" for binding in self.bindings.get(name, ())):
+                continue
+            self.bindings.setdefault(name, []).append(TargetResolutionIR(reason="local-binding"))
+
+
+@dataclass(frozen=True, slots=True)
+class PythonFacts:
+    """Named immutable inventories produced by Python lexical/declaration extraction."""
+
+    source_uses: tuple[SourceUseIR, ...]
+    imports: tuple[ImportIR, ...]
+    symbols: tuple[SymbolIR, ...]
+    attributes: tuple[AttributeIR, ...]
 
 
 def import_bindings(file: Path, node: Node, owner_id: str | None = None) -> tuple[ImportIR, ...]:
@@ -61,15 +86,36 @@ def import_bindings(file: Path, node: Node, owner_id: str | None = None) -> tupl
     return tuple(imports)
 
 
-def source_uses(
+def python_facts(
     file: Path, root: Node, module_id: str, symbols: tuple[SymbolIR, ...], module_name: str,
-) -> tuple[tuple[SourceUseIR, ...], tuple[ImportIR, ...]]:
-    """Collect lexical bindings, then retain executable call/access occurrences once."""
-    declarations = {
-        (symbol.span.start_line - 1, symbol.span.start_col): symbol for symbol in symbols
-    }
+) -> PythonFacts:
+    """Collect lexical bindings, then retain occurrences and declaration evidence."""
+    declarations = declaration_index(symbols)
     scopes, imports = _collect_scopes(file, root, module_id, declarations, module_name)
-    return _collect_uses(file, root, module_id, declarations, scopes), imports
+    def resolve(name: str, scope_id: str) -> TargetResolutionIR:
+        return _resolve_parts(name.split("."), scope_id or module_id, scopes)
+
+    def resolve_decorator(node: Node, scope_id: str) -> TargetResolutionIR:
+        return _resolve_target(node, scope_id or module_id, scopes)
+
+    nodes: dict[tuple[int, int], Node] = {
+        node.start_point: node for node in iter_nodes(root)
+        if node.type in {"function_definition", "class_definition"}
+    }
+    symbols = tuple(
+        symbol.model_copy(update={"callable_facts": callable_facts(
+            file, nodes[symbol.span.start_line - 1, symbol.span.start_col], symbol,
+            resolve_decorator,
+        )}) if symbol.kind in {SymbolKind.FUNCTION, SymbolKind.METHOD} else symbol.model_copy(update={
+            "direct_bases": direct_bases(file, nodes[symbol.span.start_line - 1, symbol.span.start_col], symbol, resolve),
+        })
+        for symbol in symbols
+    )
+    attributes, uses = attribute_facts(
+        file, root, symbols, _collect_uses(file, root, module_id, declarations, scopes),
+        resolve,
+    )
+    return PythonFacts(source_uses=uses, imports=imports, symbols=symbols, attributes=attributes)
 
 
 def _collect_scopes(
@@ -103,8 +149,7 @@ def _collect_scopes(
             for name in _enclosing_bindings(node):
                 scope.bindings.setdefault(name, []).append(TargetResolutionIR(reason="local-binding"))
             continue
-        for name in _bound_names(node):
-            scope.bindings.setdefault(name, []).append(TargetResolutionIR(reason="local-binding"))
+        scope.bind_locals(node)
         if node.type in {"global_statement", "nonlocal_statement"}:
             for child in node.named_children:
                 scope.bindings.setdefault(text(child), []).append(TargetResolutionIR(
@@ -316,7 +361,13 @@ def _resolve_target(node: Node, scope_id: str, scopes: dict[str, _Scope]) -> Tar
         current = _unparenthesized(receiver)
     if current.type != "identifier":
         return TargetResolutionIR(reason="dynamic-target")
-    root = text(current)
+    return _resolve_parts([text(current), *parts], scope_id, scopes)
+
+
+def _resolve_parts(parts: list[str], scope_id: str, scopes: dict[str, _Scope]) -> TargetResolutionIR:
+    root, *parts = parts
+    if not all(part.isidentifier() for part in (root, *parts)):
+        return TargetResolutionIR(reason="dynamic-target")
     binding = _lookup_name(root, scopes[scope_id], scopes)
     if parts:
         if binding.status in {"ambiguous", "unresolved", "unsupported"}:

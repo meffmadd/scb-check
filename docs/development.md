@@ -16,7 +16,8 @@ Implemented analysis paths:
 - Tree-sitter parsing into language-agnostic IR, retained as immutable `AnalysisResult.project` with declaration identity, ownership, module/file membership, and nullable unavailable inventories.
 - Python entity-owned identifiers, comments, and docstring literals retained once per physical file as immutable `TextFragmentIR` records; other languages declare text extraction unavailable.
 - Canonical Python call/attribute-access occurrences, scoped import bindings, direct lexical/import project resolution, and explicit ambiguous/unresolved/unsupported evidence; generic languages declare source uses unavailable. See [the source-use contract](tree-walking.md#canonical-source-uses-and-imports).
-- Rule-facing reference/effect projections preserve existing structural decisions; source-use facts add no metrics, report fields, or CLI changes.
+- Python canonical attributes, callable declaration/body ownership, structured declared field types, and direct bases with conservative class/primitive/other/unknown resolution; generic languages expose unavailable semantic families. See [class/member facts](tree-walking.md#class-member-and-declared-type-facts).
+- Rule-facing reference/effect projections preserve existing structural decisions; retained facts add no metrics, report fields, or CLI changes.
 - Parser `SLOC` accounting shared by verbosity, clone line counts, and rule spans.
 - One full `pipeline.analyze()` workflow using the shared source reader and source indexes for both commands.
 - Data-only grouped reports, metric-owned calculations and units, and pure nullable snapshot comparison including dotted per-language syntax counts.
@@ -43,7 +44,8 @@ Implemented analysis paths:
 | Config loading or path walking | `src/scb_check/config.py`, `src/scb_check/walker.py` |
 | Source parsing, `SLOC`, directives, IR | `src/scb_check/tree_walking/`; see [Tree walking](tree-walking.md) |
 | Python source uses and scoped import extraction | `src/scb_check/tree_walking/languages/python_uses.py` |
-| Direct import-to-project resolution | `src/scb_check/tree_walking/source_uses.py`; orchestration/effect links in `semantic.py` |
+| Class/member/base extraction and annotation syntax | `src/scb_check/tree_walking/languages/python_declarations.py`, `python_types.py`; shared lexical evidence in `python_uses.py` |
+| Direct import/type/base-to-project resolution | `src/scb_check/tree_walking/source_uses.py`; orchestration/effect links in `semantic.py` |
 | Language parser configs | `src/scb_check/tree_walking/languages/` |
 | Clone detection | `src/scb_check/analysis/clones.py` |
 | Shared source IO and parse warnings | `src/scb_check/analysis/source.py` |
@@ -73,6 +75,13 @@ Implemented analysis paths:
 4. Preserve rule compatibility: textual nested-call projections, parameter/builtin exclusions, rule-specific self-recursion exclusion, shallow effects with `source_use_id`, and dotted keep-policy are distinct from canonical resolution. Verify unchanged structural findings and verbosity/erosion scores.
 5. Test exported `analyze` / `analyze_files` facts for module/class/default execution, nested bodies/expressions/control flow, repeated and recursive calls, attribute access modes, aliases/scopes/relative imports, project collisions, dynamic targets, unsupported contexts, empty/unavailable inventories, and read-only indexes. Stub `scb_check.pipeline.run_sg`; assert facts rather than traversal order. Retain standalone-check/independent-diff parity and existing report/exit contracts.
 6. Keep site/caller/target populations and metric formulas in consumers. Update the canonical contract and parser-support table when support changes, rather than adding metric-specific IR fields or a second call inventory.
+
+### Extending class/member facts
+
+1. Follow the [class/member contract](tree-walking.md#class-member-and-declared-type-facts). Keep fields in `ModuleIR.attributes`, callable/base facts on the owning symbol, and indexes derived from these inventories. Extend Python extraction using shared lexical evidence rather than building another name resolver.
+2. Preserve field identities across repeated writes. Link supported write targets to their canonical field; retain annotation occurrences and structured wrappers/arguments without inferring types from initializers. Keep syntax evidence distinct from runtime storage and metric inclusion.
+3. Retain uncertainty for dynamic fields, unknown annotations, decorators, and base expressions. Resolve known retained classes conservatively; inheritance/member resolution must associate existing declarations/bodies rather than copying them into subclasses.
+4. Test source-to-`analyze_files(...).project` behavior for repeated fields, self/forward/unresolved types, locals versus attributes, direct bases, abstract/placeholder bodies, nested declarations, unsupported syntax, empty/unavailable families, and frozen views. Keep scoring/check/diff compatibility coverage unchanged.
 
 ## Adding an `ast-grep` rule
 
