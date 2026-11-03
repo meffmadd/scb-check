@@ -1,12 +1,12 @@
 """Python source-use extraction; parser nodes never cross the returned IR seam."""
 
 import builtins
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from tree_sitter import Node
 
-from scb_check.tree_walking.languages._node_helpers import iter_nodes
 from scb_check.tree_walking.languages._node_helpers import node_span
 from scb_check.tree_walking.languages._node_helpers import text
 from scb_check.tree_walking.languages.python_declarations import (
@@ -93,8 +93,9 @@ def import_bindings(file: Path, node: Node, owner_id: str | None = None) -> tupl
     return tuple(imports)
 
 
-def python_facts(
+def python_facts(  # noqa: PLR0913 - Parser-local declaration nodes accompany lexical context.
     file: Path, root: Node, module_id: str, symbols: tuple[SymbolIR, ...], module_name: str,
+    *, declaration_nodes: Mapping[str, Node],
 ) -> PythonFacts:
     """Collect lexical bindings, then retain occurrences and declaration evidence."""
     declarations = declaration_index(symbols)
@@ -105,16 +106,12 @@ def python_facts(
     def resolve_decorator(node: Node, scope_id: str) -> TargetResolutionIR:
         return _resolve_target(node, scope_id or module_id, scopes)
 
-    nodes: dict[tuple[int, int], Node] = {
-        node.start_point: node for node in iter_nodes(root)
-        if node.type in {"function_definition", "class_definition"}
-    }
     symbols = tuple(
         symbol.model_copy(update={"callable_facts": callable_facts(
-            file, nodes[symbol.span.start_line - 1, symbol.span.start_col], symbol,
+            file, declaration_nodes[symbol.id], symbol,
             resolve_decorator,
         )}) if symbol.kind in {SymbolKind.FUNCTION, SymbolKind.METHOD} else symbol.model_copy(update={
-            "direct_bases": direct_bases(file, nodes[symbol.span.start_line - 1, symbol.span.start_col], symbol, resolve),
+            "direct_bases": direct_bases(file, declaration_nodes[symbol.id], symbol, resolve),
         })
         for symbol in symbols
     )

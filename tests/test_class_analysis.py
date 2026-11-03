@@ -67,6 +67,55 @@ def test_callable_members_retain_declarations_and_only_their_own_bodies(tmp_path
     assert len([symbol for symbol in module.symbols if symbol.owner_id == child.id]) == 1
 
 
+def test_conditional_redefinitions_keep_their_own_declaration_facts(tmp_path: Path) -> None:
+    """Repeated names and nested declarations retain distinct base and callable facts."""
+    source = tmp_path / "conditional.py"
+    source.write_text(dedent("""\
+        class Base: pass
+        if enabled:
+            class Widget(Base):
+                @staticmethod
+                def build(): ...
+                def build(self):
+                    class Nested(Base):
+                        def run(self): pass
+                    return Nested()
+        else:
+            class Widget:
+                @classmethod
+                def build(cls): return cls()
+        """))
+    project = analyze_files((source,), disable_sg=True).project
+    symbols = project.modules[0].symbols
+    base = next(symbol for symbol in symbols if symbol.name == "Base")
+    first, second = (symbol for symbol in symbols if symbol.name == "Widget")
+    nested = next(symbol for symbol in symbols if symbol.name == "Nested")
+    placeholder, implemented, factory = (symbol for symbol in symbols if symbol.name == "build")
+    run = next(symbol for symbol in symbols if symbol.name == "run")
+
+    assert first.id != second.id
+    assert first.direct_bases is not None
+    assert [reference.resolution.target_id for reference in first.direct_bases] == [base.id]
+    assert second.direct_bases == ()
+    assert nested.direct_bases is not None
+    assert [reference.resolution.target_id for reference in nested.direct_bases] == [base.id]
+    assert nested.owner_id == implemented.id
+    for symbol, owner, binding, body_kind in (
+        (placeholder, first, "static", "ellipsis"),
+        (implemented, first, "instance", "implemented"),
+        (factory, second, "class", "implemented"),
+        (run, nested, "instance", "pass"),
+    ):
+        facts = symbol.callable_facts
+        assert facts is not None
+        assert symbol.owner_id == facts.declaring_class_id == owner.id
+        assert facts.binding == binding
+        assert facts.body_kind == body_kind
+        assert facts.body_span.start_line >= symbol.start_line
+        assert facts.body_span.end_line <= symbol.end_line
+        assert facts.implementation_id == (symbol.id if body_kind == "implemented" else None)
+
+
 def test_attribute_identity_is_per_declaring_class_not_per_write_or_local(tmp_path: Path) -> None:
     """Class and direct receiver assignments retain one field and distinct write sites."""
     source = tmp_path / "fields.py"

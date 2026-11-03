@@ -234,6 +234,7 @@ class PythonWalker:
         facts = python_facts(
             self._file_path, self._tree.root_node,
             span.entity_id(SymbolKind.MODULE), tuple(self._symbols), self._module_name,
+            declaration_nodes=self._symbol_nodes,
         )
         symbols = tuple(
             symbol.model_copy(update={"references": _symbol_references(
@@ -329,6 +330,7 @@ class PythonWalker:
             sloc=_count_sloc_in_span(node, self._sloc_lines),
         )
         self._symbols.append(class_symbol)
+        self._symbol_nodes[class_symbol.id] = node
         class_context = ClassContext(
             qualified_name=qualified_name,
             base_names=base_names,

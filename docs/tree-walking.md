@@ -222,7 +222,7 @@ Bindings are collected lexically without evaluating control flow or statement or
 
 ### Class, member, and declared-type facts
 
-`languages/python_uses.python_facts()` collects lexical evidence shared by source uses and declarations. `languages/python_declarations.py` produces callable facts, direct bases, and canonical fields; `languages/python_types.py` parses annotation expressions without evaluation. `source_uses.resolve_project_references()` refines imported type/base targets and classifies known types during `build_project()`. These facts are available through `AnalysisResult.project`, independently of rule projections and metric populations; see [the policy boundary](architecture.md#class-and-type-evidence-boundary).
+`languages/python_uses.python_facts()` collects lexical evidence shared by source uses and declarations. It reuses the walker's ID-keyed declaration-node mapping for callable and base extraction; parser-native nodes remain local to extraction. `languages/python_declarations.py` produces callable facts, direct bases, and canonical fields; `languages/python_types.py` parses annotation expressions without evaluation. `source_uses.resolve_project_references()` refines imported type/base targets and classifies known types during `build_project()`. These facts are available through `AnalysisResult.project`, independently of rule projections and metric populations; see [the policy boundary](architecture.md#class-and-type-evidence-boundary).
 
 #### Callable declarations
 
