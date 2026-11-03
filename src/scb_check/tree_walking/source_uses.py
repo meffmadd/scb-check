@@ -56,7 +56,13 @@ def resolve_project_references(modules: tuple[ModuleIR, ...]) -> tuple[ModuleIR,
     symbols = {symbol.id: symbol for module in modules for symbol in module.symbols}
     return tuple(module.model_copy(update={
         "source_uses": None if module.source_uses is None else tuple(
-            use.model_copy(update={"resolution": resolve(use.resolution)}) for use in module.source_uses
+            use.model_copy(update={
+                "resolution": resolve(use.resolution),
+                "receiver": None if use.receiver is None else use.receiver.model_copy(update={
+                    "resolution": resolve(use.receiver.resolution),
+                    "declared_type": None if use.receiver.declared_type is None else _resolve_type(use.receiver.declared_type, resolve, symbols),
+                }),
+            }) for use in module.source_uses
         ),
         "symbols": tuple(symbol.model_copy(update={
             "direct_bases": None if symbol.direct_bases is None else tuple(

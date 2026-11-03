@@ -69,6 +69,7 @@ def callable_facts(
         is_abstract="abc.abstractmethod" in names,
         body_kind=kind, body_span=node_span(file, body),
         implementation_id=symbol.id if kind == "implemented" else None,
+        dispatch_supported=names <= {"builtins.classmethod", "builtins.staticmethod", "abc.abstractmethod"},
     )
 
 
@@ -109,12 +110,15 @@ class _AttributeExtractor:
                 field = self._attribute_target(target, owner)
                 if field is None:
                     continue
-                field = self._with_annotation(field, node, owner)
+                field = self._with_annotation(field, node, owner).model_copy(update={
+                    "writes": field.storage if node.child_by_field_name("right") is not None else frozenset(),
+                })
                 key = (field.declaring_class_id, field.name)
                 previous = fields.get(key)
-                if node.type != "augmented_assignment":
+                if node.type != "augmented_assignment" or previous is not None:
                     fields[key] = field if previous is None else previous.model_copy(update={
                         "storage": previous.storage | field.storage,
+                        "writes": previous.writes | field.writes,
                         "declared_types": (*previous.declared_types, *field.declared_types),
                     })
                 targets.append((field.span, key))

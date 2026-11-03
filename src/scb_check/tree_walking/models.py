@@ -211,7 +211,8 @@ type ResolutionReason = Literal[
     "import-binding", "relative-or-star-import", "scope-directive", "type-parameter",
     "dynamic-target", "receiver-needs-member-resolution", "builtin", "star-import",
     "multiple-lexical-bindings", "project-import-binding", "multiple-project-bindings",
-    "unresolved-project-member", "self-type",
+    "unresolved-project-member", "self-type", "member-declaration",
+    "unknown-member-order", "missing-member", "multiple-member-declarations", "private-member",
 ] | UnsupportedContext
 
 
@@ -231,6 +232,42 @@ type SourceUseKind = Literal[
 type ExecutionKind = Literal["module", "class", "function", "unsupported"]
 
 
+class ReceiverIR(IRModel):
+    """Lexical root and optional declared receiver type for a dotted source target."""
+
+    resolution: TargetResolutionIR
+    member_path: tuple[str, ...]
+    declared_type: TypeReferenceIR | None = None
+    is_class_receiver: bool = False
+
+
+type TargetSetStatus = Literal["complete", "approximate", "unavailable"]
+
+
+type RuntimeTargetReason = Literal[
+    "no-supported-target", "not-a-callable-use", "no-supported-implementation",
+    "supported-declarations", "partial-hierarchy-path-or-implementation",
+]
+
+
+class RuntimeTargetsIR(IRModel):
+    """Possible implementation bodies, distinct from a static declaration selection."""
+
+    status: TargetSetStatus = "unavailable"
+    target_ids: tuple[str, ...] = ()
+    assumption: Literal["closed-project-hierarchy"] | None = None
+    reason: RuntimeTargetReason = "no-supported-target"
+
+    @model_validator(mode="after")
+    def _validate_evidence(self) -> Self:
+        if self.status == "unavailable":
+            if self.target_ids or self.assumption is not None:
+                raise ValueError("Unavailable runtime targets cannot assert candidates or an assumption")
+        elif not self.target_ids or self.assumption is None:
+            raise ValueError("Available runtime targets require implementations and an assumption")
+        return self
+
+
 class SourceUseIR(IRModel):
     """One source occurrence with execution ownership and static resolution."""
 
@@ -244,6 +281,8 @@ class SourceUseIR(IRModel):
     unsupported_context: UnsupportedContext | None = None
     declared_attribute_id: str | None = None
     resolution: TargetResolutionIR = Field(default_factory=TargetResolutionIR)
+    receiver: ReceiverIR | None = None
+    runtime_targets: RuntimeTargetsIR = Field(default_factory=RuntimeTargetsIR)
     nesting: int = 0
 
     @property
@@ -326,6 +365,7 @@ class AttributeIR(IRModel):
     owner_id: str
     span: SourceSpan
     storage: frozenset[AttributeStorage]
+    writes: frozenset[AttributeStorage] = frozenset()
     declared_types: tuple[TypeReferenceIR, ...] = ()
 
     @property
@@ -344,6 +384,7 @@ class CallableIR(IRModel):
     body_kind: CallableBodyKind
     body_span: SourceSpan
     implementation_id: str | None = None
+    dispatch_supported: bool = True
 
 
 class SymbolIR(IRModel):
@@ -480,12 +521,22 @@ type SymbolLookup = Mapping[str, SymbolIR]
 type SymbolEffects = Mapping[str, tuple[EffectIR, ...] | None]
 type SourceUseLookup = Mapping[str, SourceUseIR]
 type AttributeLookup = Mapping[str, AttributeIR]
+type MemberLookup = Mapping[str, Mapping[str, TargetResolutionIR]]
+type OwnedEntities = Mapping[str, tuple[str, ...]]
 
 
 class ProjectIR(IRModel):
     """Retained module inventory with derived, read-only lookup indexes."""
 
     modules: tuple[ModuleIR, ...] = ()
+    member_lookup: MemberLookup = Field(default_factory=lambda: MappingProxyType({}))
+    class_member_lookup: MemberLookup = Field(default_factory=lambda: MappingProxyType({}))
+
+    @field_validator("member_lookup", "class_member_lookup")
+    @classmethod
+    def _freeze_members(cls, members: MemberLookup) -> MemberLookup:
+        return MappingProxyType({owner: MappingProxyType(dict(values)) for owner, values in members.items()})
+
     effects_by_symbol: SymbolEffects = Field(
         default_factory=lambda: MappingProxyType({}),
     )
@@ -502,6 +553,7 @@ class ProjectIR(IRModel):
     _symbols_by_qualified_name: SymbolLookup = PrivateAttr()
     _source_uses_by_id: SourceUseLookup = PrivateAttr()
     _attributes_by_id: AttributeLookup = PrivateAttr()
+    _entities_by_owner: OwnedEntities = PrivateAttr()
 
     def model_post_init(self, _context: object) -> None:
         """Derive privately owned lookup views from the sole module inventory."""
@@ -512,6 +564,11 @@ class ProjectIR(IRModel):
             attribute.id: attribute for module in self.modules
             if module.attributes is not None for attribute in module.attributes
         })
+        owners: dict[str, list[str]] = {}
+        for entity in (*symbols, *self._attributes_by_id.values()):
+            if entity.owner_id is not None:
+                owners.setdefault(entity.owner_id, []).append(entity.id)
+        self._entities_by_owner = MappingProxyType({owner: tuple(ids) for owner, ids in owners.items()})
         self._source_uses_by_id = MappingProxyType({
             use.id: use for module in self.modules
             if module.source_uses is not None for use in module.source_uses
@@ -528,6 +585,11 @@ class ProjectIR(IRModel):
         self._symbols_by_qualified_name = MappingProxyType(
             {symbol.qualified_name: symbol for symbol in symbols}
         )
+
+    @property
+    def entities_by_owner(self) -> OwnedEntities:
+        """Look up direct syntactic children, without inherited copies."""
+        return self._entities_by_owner
 
     @property
     def attributes_by_id(self) -> AttributeLookup:

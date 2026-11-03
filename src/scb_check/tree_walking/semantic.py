@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from os.path import commonpath
 from pathlib import Path
 
+from scb_check.tree_walking.members import resolve_member_uses
 from scb_check.tree_walking.models import EffectIR
 from scb_check.tree_walking.models import EffectKind
 from scb_check.tree_walking.models import Language
@@ -63,6 +64,7 @@ type _UsesBySpan = Mapping[tuple[SourceSpan, str], SourceUseIR]
 def build_project(modules: tuple[ModuleIR, ...]) -> ProjectIR:
     """Build project semantic indexes and derived effects from modules."""
     modules = resolve_project_references(_with_unique_generic_function_names(modules))
+    modules, member_lookup, class_member_lookup = resolve_member_uses(modules)
     symbols = tuple(symbol for module in modules for symbol in module.symbols)
     symbols_by_qualified_name = {
         symbol.qualified_name: symbol for symbol in symbols
@@ -85,6 +87,8 @@ def build_project(modules: tuple[ModuleIR, ...]) -> ProjectIR:
     }
     return ProjectIR(
         modules=modules,
+        member_lookup=member_lookup,
+        class_member_lookup=class_member_lookup,
         effects_by_symbol=effects_by_symbol,
     )
 

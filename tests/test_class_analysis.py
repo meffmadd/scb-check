@@ -106,6 +106,9 @@ def test_attribute_identity_is_per_declaring_class_not_per_write_or_local(tmp_pa
     count, item = fields[widget.id, "count"], fields[widget.id, "item"]
     assert count.storage == frozenset({"class"})
     assert item.storage == frozenset({"instance"})
+    assert count.writes == frozenset({"class"})
+    assert item.writes == frozenset({"instance"})
+    assert fields[widget.id, "pending"].writes == frozenset()
     assert item.owner_id == symbols["__init__"].id
     assert (item.span.start_line, item.span.start_col, item.span.end_col) == (8, 8, 17)
     assert fields[other.id, "item"].id != item.id

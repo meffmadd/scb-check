@@ -18,9 +18,11 @@ from scb_check.tree_walking.languages.python_declarations import (
     declaration_index,
 )
 from scb_check.tree_walking.languages.python_declarations import direct_bases
+from scb_check.tree_walking.languages.python_types import type_reference
 from scb_check.tree_walking.models import AttributeIR
 from scb_check.tree_walking.models import ExecutionKind
 from scb_check.tree_walking.models import ImportIR
+from scb_check.tree_walking.models import ReceiverIR
 from scb_check.tree_walking.models import SourceUseIR
 from scb_check.tree_walking.models import SourceUseKind
 from scb_check.tree_walking.models import SymbolIR
@@ -42,10 +44,15 @@ class _Scope:
     kind: ExecutionKind
     parent_id: str | None
     bindings: dict[str, list[TargetResolutionIR]]
+    annotations: dict[str, list[Node]]
 
     def bind_locals(self, node: Node) -> None:
         """Record local bindings while preserving annotation-only parameter evidence."""
         annotation_only = node.type == "assignment" and node.child_by_field_name("type") is not None and node.child_by_field_name("right") is None
+        annotation = node.child_by_field_name("type") if node.type == "assignment" else None
+        left = node.child_by_field_name("left")
+        if annotation is not None and left is not None and left.type == "identifier":
+            self.annotations.setdefault(text(left), []).append(annotation)
         for name in _bound_names(node):
             if annotation_only and any(binding.reason == "parameter" for binding in self.bindings.get(name, ())):
                 continue
@@ -112,7 +119,7 @@ def python_facts(
         for symbol in symbols
     )
     attributes, uses = attribute_facts(
-        file, root, symbols, _collect_uses(file, root, module_id, declarations, scopes),
+        file, root, symbols, _collect_uses(file, root, module_id, declaration_index(symbols), scopes),
         resolve,
     )
     return PythonFacts(source_uses=uses, imports=imports, symbols=symbols, attributes=attributes)
@@ -122,7 +129,7 @@ def _collect_scopes(
     file: Path, root: Node, module_id: str,
     declarations: dict[tuple[int, int], SymbolIR], module_name: str,
 ) -> tuple[dict[str, _Scope], tuple[ImportIR, ...]]:
-    scopes = {module_id: _Scope(module_id, "module", None, {})}
+    scopes = {module_id: _Scope(module_id, "module", None, {}, {})}
     imports: list[ImportIR] = []
     stack = [(root, module_id)]
     while stack:
@@ -200,8 +207,21 @@ def _declaration_scope(symbol: SymbolIR, parent: _Scope, node: Node) -> _Scope:
     return _Scope(
         symbol.id, "class" if symbol.kind is SymbolKind.CLASS else "function",
         parent.parent_id if parent.kind == "class" else parent.owner_id,
-        bindings,
+        bindings, _parameter_annotations(parameter_node),
     )
+
+
+def _parameter_annotations(parameters: Node | None) -> dict[str, list[Node]]:
+    annotations: dict[str, list[Node]] = {}
+    if parameters is not None:
+        for parameter in parameters.named_children:
+            annotation = parameter.child_by_field_name("type")
+            name = parameter.child_by_field_name("name")
+            if name is None and parameter.named_children:
+                name = parameter.named_children[0]
+            if annotation is not None and name is not None and name.type == "identifier":
+                annotations[text(name)] = [annotation]
+    return annotations
 
 
 def _absolute_import(binding: ImportIR, file: Path, module_name: str) -> ImportIR:
@@ -220,6 +240,7 @@ def _collect_uses(
     declarations: dict[tuple[int, int], SymbolIR], scopes: dict[str, _Scope],
 ) -> tuple[SourceUseIR, ...]:
     uses: list[SourceUseIR] = []
+    symbols = {symbol.id: symbol for symbol in declarations.values()}
     pending: list[tuple[Node, str, UnsupportedContext | None, int]] = [(root, module_id, None, 0)]
     while pending:
         node, scope_id, unsupported, nesting = pending.pop()
@@ -260,6 +281,7 @@ def _collect_uses(
                 owner_id=scope_id if unsupported is None else None,
                 execution_kind=scope.kind if unsupported is None else "unsupported",
                 unsupported_context=unsupported, resolution=resolution, nesting=nesting,
+                receiver=None if unsupported is not None else _receiver(file, target, scope_id, scopes, symbols),
             )
             uses.extend(_pattern_prefixes(use, node) if pattern_lookup else (use,))
         child_nesting = nesting + (node.type in FLOW_BREAK_TYPES)
@@ -346,7 +368,45 @@ def _bound_names(node: Node) -> tuple[str, ...]:
     return tuple(names)
 
 
-def _resolve_target(node: Node, scope_id: str, scopes: dict[str, _Scope]) -> TargetResolutionIR:
+def _receiver(
+    file: Path, node: Node, scope_id: str, scopes: dict[str, _Scope],
+    symbols: dict[str, SymbolIR],
+) -> ReceiverIR | None:
+    if _unparenthesized(node).type == "dotted_name":
+        return None
+    current, members = _target_parts(node)
+    if not members or current.type != "identifier":
+        return None
+    name = text(current)
+    resolution = _lookup_name(name, scopes[scope_id], scopes)
+    receiver = ReceiverIR(resolution=resolution, member_path=tuple(members))
+    scope = scopes[scope_id]
+    while name not in scope.bindings and scope.parent_id is not None:
+        scope = scopes[scope.parent_id]
+    bindings = scope.bindings.get(name, ())
+    if len(bindings) != 1 or resolution.reason not in {"parameter", "local-binding"}:
+        return receiver
+    symbol = symbols.get(scope.owner_id)
+    facts = symbol.callable_facts if symbol is not None else None
+    if (symbol is not None and facts is not None and facts.binding in {"instance", "class"}
+        and symbol.signature.parameters and name == symbol.signature.parameters[0]):
+        owner = symbols[facts.declaring_class_id] if facts.declaring_class_id is not None else None
+        if owner is not None:
+            declared = type_reference(owner.name, node_span(file, current), lambda _: TargetResolutionIR(
+                status="project", target_id=owner.id, qualified_name=owner.qualified_name, reason="lexical-declaration",
+            ))
+            return receiver.model_copy(update={"declared_type": declared, "is_class_receiver": facts.binding == "class"})
+    annotations = scope.annotations.get(name, [])
+    if len(annotations) == 1:
+        annotation = annotations[0]
+        annotation_scope = (symbol.owner_id or scope.parent_id) if resolution.reason == "parameter" and symbol is not None else scope.owner_id
+        declared = type_reference(text(annotation), node_span(file, annotation),
+                                  lambda target: _resolve_parts(target.split("."), annotation_scope or scope.owner_id, scopes))
+        return receiver.model_copy(update={"declared_type": declared})
+    return receiver
+
+
+def _target_parts(node: Node) -> tuple[Node, list[str]]:
     parts: list[str] = []
     current = _unparenthesized(node)
     if current.type == "dotted_name":
@@ -359,6 +419,11 @@ def _resolve_target(node: Node, scope_id: str, scopes: dict[str, _Scope]) -> Tar
         assert receiver is not None  # noqa: S101 - Valid grammar.
         parts.insert(0, text(member))
         current = _unparenthesized(receiver)
+    return current, parts
+
+
+def _resolve_target(node: Node, scope_id: str, scopes: dict[str, _Scope]) -> TargetResolutionIR:
+    current, parts = _target_parts(node)
     if current.type != "identifier":
         return TargetResolutionIR(reason="dynamic-target")
     return _resolve_parts([text(current), *parts], scope_id, scopes)
@@ -373,8 +438,19 @@ def _resolve_parts(parts: list[str], scope_id: str, scopes: dict[str, _Scope]) -
         if binding.status in {"ambiguous", "unresolved", "unsupported"}:
             return binding
         if binding.reason not in {"import-binding", "builtin"}:
-            return TargetResolutionIR(reason="receiver-needs-member-resolution")
+            return _direct_class_path(binding, parts, scopes)
         return binding.model_copy(update={"qualified_name": ".".join((binding.qualified_name or root, *parts))})
+    return binding
+
+
+def _direct_class_path(binding: TargetResolutionIR, parts: list[str], scopes: dict[str, _Scope]) -> TargetResolutionIR:
+    for member in parts:
+        scope = scopes.get(binding.target_id) if binding.target_id is not None else None
+        if scope is None or scope.kind != "class" or member not in scope.bindings:
+            return TargetResolutionIR(reason="receiver-needs-member-resolution")
+        binding = _binding_resolution(scope.bindings[member])
+        if binding.status != "project":
+            return binding
     return binding
 
 
@@ -399,6 +475,10 @@ def _lookup_name(root: str, scope: _Scope | None, scopes: dict[str, _Scope]) -> 
                 status="external", qualified_name=f"builtins.{root}", reason="builtin",
             )
         return TargetResolutionIR()
+    return _binding_resolution(bindings)
+
+
+def _binding_resolution(bindings: list[TargetResolutionIR]) -> TargetResolutionIR:
     unsupported = next((binding for binding in bindings if binding.status == "unsupported"), None)
     if unsupported is not None:
         return unsupported

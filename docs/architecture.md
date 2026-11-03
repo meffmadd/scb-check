@@ -116,9 +116,44 @@ Rule-facing references and shallow operation-selected effects intentionally pres
 
 Python class/member facts retain declarations rather than precomputed coupling or inherited-member populations. A canonical attribute distinguishes two fields of one class type from two writes to one field; structured types preserve self references, primitives, wrappers, and uncertainty without deciding which count toward DAC or CBO. Direct base relations distinguish inheritance from composition without treating an inherited body as new implementation mass.
 
-Callable facts separate the declaring class, source body identity/location, and recognized abstract/placeholder syntax. A subsequent resolver can associate an inherited member with its implementation owner without copying bodies or extracting their uses again. That association, receiver inference, and polymorphic dispatch are not supplied by direct-base/type evidence alone. See [the class/member reference](tree-walking.md#class-member-and-declared-type-facts) for producers, ownership, and supported syntax.
+Callable facts separate the declaring class, source body identity/location, and recognized abstract/placeholder syntax. The bounded Python member resolver associates inherited members with canonical declarations and implementation bodies without copying them. Declared receivers and retained subclass overrides supply separate possible-body sets with explicit complete-under-assumption, approximate, or unavailable evidence; these do not follow from direct-base/type facts alone. See [the class/member reference](tree-walking.md#class-member-and-declared-type-facts) for producers, ownership, and supported syntax.
 
 Consumers decide whether to include inherited/abstract methods for RFC, which wrappers/primitive/self types contribute to DAC/CBO, and whether to count member-use sites or distinct targets for MPC. Those choices change metric populations and scores, so they remain outside the IR. These facts add no metrics or report fields and preserve existing rule, verbosity/erosion, CLI exit, and independent-snapshot comparison contracts.
+
+### Metric-ready analysis data flow
+
+The retained contract connects four slices:
+
+```text
+already-read source → entities/owners + text fragments + source uses/imports + types/bases
+                              ↓                      ↓                         ↓
+                         entity indexes ← lexical/import resolution ← retained project
+                              ↓                      ↓
+                         C3 member lookup → static declarations + possible body sets
+                              ↓                      ↓
+                       AnalysisResult.project (one independent immutable snapshot)
+                              ↓
+                 consumer-selected populations, relations, documents, and metrics
+```
+
+Entity IDs connect execution owners to source occurrences, declarations to modules/classes, and text fragments to syntactic owners. A static member target identifies its declaring entity rather than manufacturing a member on the receiver class. Implementation identities distinguish an inherited body from an override. Source occurrences remain physical sites, including repetitions and recursion, not expanded runtime edges. Text remains original evidence: preprocessing, embeddings, and document assembly would bake a model and population policy into shared analysis, prevent alternative representations, and duplicate parent/child documents.
+
+The IR-first gate is validated at `analyze_files(...).project` by `tests/test_member_analysis.py`, including `tests/fixtures/ir_contract/`, alongside the entity/use/type/text suites. These tests assert facts, not early metrics. The contract enables restricted, explicitly labeled analyses; it does not remove unsupported Python/library/incoming-caller uncertainty. See [resolution support and assumptions](tree-walking.md#member-resolution-and-runtime-targets).
+
+| Candidate | Required retained facts | Consumer-owned choices |
+| --- | --- | --- |
+| CBO | Class ownership; method/field uses; canonical declaring owners; possible runtime bodies | Partner union/direction, self exclusion, modeled class universe, partial coverage |
+| RFC₁ | Own/inherited member lookup; body identities and bodyless markers; direct calls and possible bodies | Method population and one-level response-set union, not transitive closure |
+| MPC | Call occurrence IDs; executing method and implementation owner; static target implementation owner | Per-site count, own/inherited source/target exclusions |
+| Distinct callers / callees | Callable IDs; execution owners; direct static/possible targets; module IDs; recursive/repeated sites | Relation inversion/deduplication, recursion and initializer policy |
+| DAC | Canonical fields, declaring classes, structured declared types and uncertainty | Attribute population, wrappers/union interpretation, primitives and library policy |
+| Ca/Ce class categories | Class/module ownership; resolved method/field uses, types and base relations as separately selectable evidence | Category grouping and dependency predicate; class populations, not module neighbors |
+| Module edges | Logical module/file mapping; import bindings or resolved calls; endpoint module IDs | Explicit relation selection, directions, external scope, neighbor deduplication |
+| CIC | Direct bases; static member/field targets; canonical defining/implementation owners; actual sites | Proper-ancestor traversal/filter, inherited-source and dispatch policy, site counting |
+| Method RIC | Target method/class identity; distinct executing method/class owners, including owner-class and comparison-class use | Pair population, user deduplication, denominator floor and ratio |
+| Multilevel CSE | Original `TextFragmentIR` text/spans and module/declaration owner tree, including nested owners | Method/class/file selection, document preprocessing, explicitly supplied local encoder and similarity |
+
+All candidates handle unavailable inventories and uncertain targets explicitly. Shared language resolution belongs here even when expensive; metric-specific graph traversal/counting and embedding computation do not. These facts add no report fields, scores, thresholds, or backend registry. Existing verbosity/erosion, rule projections, CLI exits, and standalone-check/independent-diff contracts are unchanged.
 
 ## Layers
 
@@ -158,7 +193,7 @@ Consumers decide whether to include inherited/abstract methods for RFC, which wr
 : Immutable identifier, comment, or docstring source occurrence with exact text, source span, and syntactic owner ID.
 
 `SourceUseIR`
-: Immutable call or attribute-access occurrence with source/target spans, original target spelling, execution ownership, and direct static `TargetResolutionIR` evidence; unsupported contexts remain explicit.
+: Immutable call or attribute-access occurrence with source/target spans, original target spelling, execution ownership, static `TargetResolutionIR` evidence, and separate `RuntimeTargetsIR` implementation evidence; unsupported contexts remain explicit.
 
 `AttributeIR`
 : Canonical supported Python field identified by declaring class and name, with declaration location, syntactic storage evidence, and structured declared types; repeated writes remain source occurrences.

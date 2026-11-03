@@ -137,6 +137,9 @@ The full analysis workflow in `pipeline.py` validates ignore rule IDs against th
 | `effects_by_symbol` | Callable declaration ID → derived `EffectIR` tuple, or `None` when body extraction is unavailable |
 | `source_uses_by_id` | Occurrence ID → canonical `SourceUseIR`, including unsupported contexts |
 | `attributes_by_id` | Field ID → canonical `AttributeIR` from available module inventories |
+| `entities_by_owner` | Syntactic owner ID → direct child declaration/field IDs (not inherited members) |
+| `member_lookup` | Python class ID → member name → instance-member declaration resolution, including inherited members and competing instance writes; nested mappings are read-only |
+| `class_member_lookup` | Same shape for class-object lookup, excluding instance-only fields |
 
 Access all declarations in a physical file through `project.modules_by_file[path].symbols`; source paths are available on module/entity spans without a separate physical-file index. Constructing an `AnalysisResult` requires an explicit `project`; synthetic empty analyses can supply `ProjectIR()`. The source-use index includes occurrences only from available inventories; an empty index alone does not establish extraction support.
 
@@ -190,7 +193,9 @@ Consumers can select direct fragments by `owner_id`, or include child owners tra
 | `owner_id` / `execution_kind` | Executing module, class initialization, or function; unsupported contexts have no owner and kind `unsupported` |
 | `unsupported_context` | Explicit unsupported syntax context, otherwise `None` |
 | `declared_attribute_id` | Canonical field for a supported direct assignment/augmented-write target, otherwise `None`; not receiver inference |
-| `resolution` | Immutable `TargetResolutionIR` static binding evidence |
+| `resolution` | Immutable `TargetResolutionIR` static declaration evidence, including supported member lookup |
+| `receiver` | Optional `ReceiverIR`: lexical root resolution, member-name path, supported structured declared receiver type, and recognized classmethod receiver marker |
+| `runtime_targets` | Separate `RuntimeTargetsIR` possible implementation bodies with explicit completeness and assumption |
 | `nesting` | Syntactic control-flow depth, not an execution count |
 
 Occurrence IDs combine normalized physical-file identity, use kind, and whole-occurrence span. They are repeatable for identical source at the same location, independent of target resolution, not persistent identities across edits or snapshots. Import IDs use physical-file identity, `import`, and the individual alias span. All spans follow the shared one-based-line, zero-based UTF-8-byte-column, exclusive-end contract. Repeated calls and recursion remain separate occurrences. A method invocation has both a call occurrence and an attribute-read occurrence; chained attributes likewise retain their individual accesses. These are different fact kinds, not duplicate calls.
@@ -213,7 +218,7 @@ Lambda bodies, comprehensions/generator expressions, type aliases, type-paramete
 - `unresolved`: no direct binding, parameter/local binding, dynamic target, or a receiver requiring member resolution.
 - `unsupported`: unsupported execution syntax, type-parameter bindings, star/unexpandable relative imports, or `global`/`nonlocal` scope directives.
 
-Bindings are collected lexically without evaluating control flow or statement order. Repeated declarations/rebindings can therefore be ambiguous rather than selecting a runtime winner. Function parameters (including typed variadics) and local bindings shadow outer names, including bindings in lambda defaults, comprehensions, and type aliases. Method/nested-class lookup skips the runtime class namespace as a closure scope; type-parameter bindings remain explicitly unsupported. Parenthesized direct targets resolve without dropping their original spelling. Import-qualified names match module-accessible declarations, not declarations nested inside function bodies; collisions remain ambiguous. Rebuilding a project reconsiders import resolution against its current modules. Instance/class member lookup, assignment-alias propagation, type inference, runtime dispatch, and possible-runtime-target sets are not provided. In particular, `self.method()` and arbitrary `receiver.member()` are not inferred project or external calls merely from their spelling.
+Bindings are collected lexically without evaluating control flow or statement order. Repeated declarations/rebindings can therefore be ambiguous rather than selecting a runtime winner. Function parameters (including typed variadics) and local bindings shadow outer names, including bindings in lambda defaults, comprehensions, and type aliases. Method/nested-class lookup skips the runtime class namespace as a closure scope; type-parameter bindings remain explicitly unsupported. Parenthesized direct targets resolve without dropping their original spelling. Import-qualified names match module-accessible declarations, not declarations nested inside function bodies; collisions remain ambiguous. Rebuilding a project reconsiders import resolution against its current modules. [Member resolution](#member-resolution-and-runtime-targets) uses additional receiver evidence, not dotted spelling alone. Assignment-alias propagation and general type inference remain unavailable.
 
 ### Class, member, and declared-type facts
 
@@ -232,12 +237,13 @@ Bindings are collected lexically without evaluating control flow or statement or
 | `body_kind` | `empty` (docstring-only), `pass`, `ellipsis`, or `implemented`, after excluding an initial plain docstring and comments |
 | `body_span` | Source body location, including a docstring if present |
 | `implementation_id` | This callable's declaration ID for `implemented` bodies; `None` for the documented placeholder forms |
+| `dispatch_supported` | Only undecorated callables or recognized builtin class/static method and `abc.abstractmethod` decorators; custom decorators/properties do not establish runtime bodies |
 
 Abstract declarations can have implemented bodies. A raising body is implemented syntax; placeholder classification is not an assessment of useful behavior. Custom decorators/descriptors, runtime abstractness, overload/property-family grouping, and stub/implementation matching are not inferred. Decorator spellings and ownership remain available for subsequent resolvers. Existing `SymbolIR.body`, complexity, and rule roles are unchanged, including for placeholders.
 
 #### Canonical attributes
 
-`ModuleIR.attributes` is the sole tuple inventory of `AttributeIR`; `ProjectIR.attributes_by_id` is a derived read-only view. Each field has `name`, `declaring_class_id`, the first declaration target's `span` and lexical `owner_id`, `storage`, and `declared_types`. Its ID is the declaring class's snapshot ID plus `:attribute:` and the attribute name, not the assignment span. Repeated writes do not create fields; two different names with one declared type remain two fields. Repeated class declarations have distinct field identities.
+`ModuleIR.attributes` is the sole tuple inventory of `AttributeIR`; `ProjectIR.attributes_by_id` is a derived read-only view. Each field has `name`, `declaring_class_id`, the first declaration target's `span` and lexical `owner_id`, `storage`, and `declared_types`. `writes` separately records the `class`/`instance` contexts with actual assignment syntax (including augmented writes to existing fields); annotation-only declarations have no write evidence. Its ID is the declaring class's snapshot ID plus `:attribute:` and the attribute name, not the assignment span. Repeated writes do not create fields; two different names with one declared type remain two fields. Repeated class declarations have distinct field identities.
 
 Supported declarations are:
 
@@ -246,7 +252,7 @@ Supported declarations are:
 
 `storage` records syntactic declaration evidence: `class` for class-scope names/classmethod receiver assignments, `instance` for instance-method receiver assignments, or both. It does not infer runtime storage: an uninitialized class annotation, dataclass transformation, or `ClassVar` wrapper is retained as syntax, not evaluated. `declared_types` retains each explicit annotation in source order; unannotated writes add no inferred type. Parameters, function locals, and `global`/`nonlocal` targets are not fields.
 
-Ordinary supported class-name assignments also produce `SourceUseIR` writes with `target_form="name"` and class execution ownership. Receiver writes reuse existing occurrences. Repeated and augmented writes link through `declared_attribute_id`; augmented assignments alone do not introduce declarations. Annotation-only targets declare fields but are not writes. Reads/deletions retain their existing unresolved source-use evidence; field linking is not a member resolver.
+Ordinary supported class-name assignments also produce `SourceUseIR` writes with `target_form="name"` and class execution ownership. Receiver writes reuse existing occurrences. Repeated and augmented writes link through `declared_attribute_id`; augmented assignments alone do not introduce declarations. Annotation-only targets declare fields but are not writes. Reads/deletions use the separate member resolver; `declared_attribute_id` remains syntactic write/declaration evidence.
 
 Unsupported creation includes `setattr`, `exec`, `__dict__`/subscript mutations, generated slots/dataclass/metaclass fields, receiver aliases, arbitrary object assignments, class-name-qualified writes outside the supported receiver form, and nested receiver paths such as `self.child.field`. An ordinary `__slots__` assignment retains the `__slots__` field itself, not generated slot declarations. Subclass writes remain declarations on the syntactic subclass; associating them with inherited fields is subsequent resolver work.
 
@@ -263,11 +269,40 @@ Categories describe evidence, not metric inclusion:
 - `other`: known non-class project targets, other builtins, recognized typing wrappers, unions, type lists, or literal metadata.
 - `unknown`: unresolved/ambiguous/unsupported references, unknown external annotations, and unsupported dynamic expressions. An import alone does not prove a class type. Assignment aliases and type-parameter semantics are not inferred.
 
-`SymbolIR.direct_bases` is a tuple on Python classes, including `()` for no explicit bases; other symbols/parsers expose `None`. Each positional base expression retains its own structured reference and resolution limits. Class keywords (including `metaclass` and `**options`) are excluded; starred/dynamic positional bases remain unknown. No implicit `object` edge or transitive bases are invented. Dotted lexical class members can remain unresolved with `receiver-needs-member-resolution`; imported qualified names resolve conservatively against module-accessible declarations. Forward-string interpretation applies to annotations, not base expressions.
+`SymbolIR.direct_bases` is a tuple on Python classes, including `()` for no explicit bases; other symbols/parsers expose `None`. Each positional base expression retains its own structured reference and resolution limits. Class keywords (including `metaclass` and `**options`) are excluded; starred/dynamic positional bases remain unknown. No implicit `object` edge or transitive bases are invented. Direct nested class declaration paths such as `Outer.Base` resolve lexically in annotations/bases, matching imported paths to those same declarations. Paths requiring inherited nested-type lookup can remain unresolved with `receiver-needs-member-resolution`; imported qualified names resolve conservatively against module-accessible declarations. Forward-string interpretation applies to annotations, not base expressions.
 
 The existing `base_names` strings on classes/methods remain a compatibility projection for structural-rule keep reasons, including header keywords; they are not the canonical base relation.
 
-Inheritance never copies a base's callable/field declarations, body operations, or source uses into subclasses. Direct relations and declaration ownership are the inputs to a subsequent inheritance/member resolver, not precomputed inherited method populations or dispatch sets.
+Inheritance never copies a base's callable/field declarations, body operations, or source uses into subclasses. Direct relations feed the member resolver; metric-specific inherited method populations remain consumer choices.
+
+### Member resolution and runtime targets
+
+`members.resolve_member_uses()` consumes retained entities, resolved direct bases, declared types, and lexical `ReceiverIR` evidence during `build_project()`. It returns new module records and derives `ProjectIR.member_lookup` and `class_member_lookup`; no parser nodes, source reads, or rule heuristics participate. Lookup targets identify canonical declarations. For a callable, `symbols_by_id[target_id].callable_facts` supplies declaring class and implementation/body identity; fields use `attributes_by_id[target_id].declaring_class_id`.
+
+The bounded Python subset is:
+
+| Source case | Static selection | Possible runtime bodies |
+| --- | --- | --- |
+| `helper()` / imported `alias()` | Direct lexical/import declaration | Its supported implemented body |
+| `Child.method(...)` / `pkg.Child.method(...)` | Canonical own/inherited declaration | Selected supported body, not subclass overrides |
+| `self.method()` / recognized classmethod `cls.method()` | Member of syntactically declaring class | Selected member on that class and retained subclasses |
+| `value: Base` parameter, or singly bound annotated local/module name; `value.method()` | Member selected on declared `Base` | Selected member on `Base` and retained subclasses |
+| `self.child.method()` with one simple retained-class annotation on `child` | Follows canonical field type, then selects method | Approximate bodies on declared child type and retained subclasses; intermediate overrides are not expanded |
+| `receiver.field` (read/write/delete) | Canonical field declaration | Fields are not callable implementation bodies |
+
+Parameter annotations resolve in the definition's enclosing scope; local annotations resolve lexically in the local scope. Simple forward-string annotations and direct nested declaration types (`Outer.Base`) are supported. Any lexical rebinding disables declared-receiver inference. The first parameter of an instance/class method is recognized by binding, not by spelling. Static methods and untyped arbitrary receivers do not acquire an inferred class.
+
+Lookup uses Python C3 linearization for uniquely resolved retained simple bases, honoring diamond inheritance and overrides. Explicit builtin `object` is terminal. Missing/external/dynamic bases, duplicate bases, cycles, or inconsistent C3 orders leave inherited lookup unresolved (`unknown-member-order`); an unambiguous own declaration can still be selected. Class-object lookup excludes instance-only fields and annotation-only class declarations. An annotation alone does not shadow an inherited namespace binding. Instance field annotations remain type/declaration evidence when no namespace entry supplies the member; actual instance writes that may shadow non-data descriptors retain competing declaration IDs instead of asserting a runtime winner. Construction/assignment flow is not modeled. Repeated same-owner member declarations preserve `candidate_ids` and ambiguity. Subclass field writes remain subclass declarations. `member_lookup` contains known member names, not a promise that absent/dynamic names cannot exist; unresolved ancestry can limit it to own names. Availability still comes from each module/symbol family, not from an empty lookup alone.
+
+`RuntimeTargetsIR.target_ids` contains implementation IDs, never apparent receiver-class IDs. Method references (`attribute-read`) expose the same callable-body evidence as calls; this does not turn them into extra invocations. Sets are:
+
+- `complete`: nonempty and complete under `assumption="closed-project-hierarchy"`.
+- `approximate`: known nonempty implementations, but unknown hierarchy/overrides, a multi-step polymorphic receiver path, a field-mediated path, or unsupported/bodyless candidate implementations prevent completeness. Intermediate receiver overrides are not propagated, so such paths never claim complete sets. An unresolved hierarchy anywhere in the retained Python classes conservatively prevents a polymorphic set from being complete.
+- `unavailable`: no supported implementation set; `target_ids=()` means unknown, not complete empty. External/builtin callables, class construction, unresolved/ambiguous targets, properties/custom decorators, and placeholder-only bodies can produce this status. Available sets require an explicit assumption; unavailable sets carry no assumption.
+
+The assumption restricts runtime objects to the declared receiver type and retained subclasses, using ordinary declared lookup without monkey-patching, custom descriptor/attribute lookup, reflection, metaclass transformations, or unknown runtime class generation. It is not a claim about all Python executions or external callers. Private-name mangling (`__name`, excluding dunders), `super()` receivers, constructor/return-value inference, assignment aliases, union/generic receiver annotations, and arbitrary points-to analysis are unavailable. Existing field/base annotations still retain their richer structured syntax even when unsuitable for receiver inference.
+
+`SourceUseIR.resolution` and `runtime_targets` are independent: static selection can succeed while possible bodies are approximate/unavailable. Unknown sites survive so incoming as well as outgoing consumers can report uncertainty. Owner/member/target indexes are reusable analysis views; response sets, proper-ancestor filtering, deduplication, category grouping, and scores stay in metrics.
 
 ### Fact availability and parser support
 
@@ -292,7 +327,7 @@ Availability is represented by the data itself: `None` means extraction is unava
 
 Python class body/reference summaries are also unavailable (`None`); class initialization uses remain in the canonical module inventory. `SymbolIR.return_operations` preserves body availability. Resolution preserves availability; indexes include only available occurrences. Consumers must handle unavailable facts explicitly rather than silently treating them as empty. Available facts do not promise full language semantics or complete resolution. A retained unsupported source-use context remains an occurrence with explicit uncertainty, not an unavailable file inventory.
 
-TODO: [#6](https://github.com/meffmadd/scb-check/issues/6) adds possible-runtime-target sets with their own complete-under-assumption, approximate, or unavailable evidence. Nullable inventories alone cannot express target-set completeness; unknown targets must never become complete empty sets.
+Nullable inventories express extraction support, not target-set completeness. Each retained source use separately exposes static resolution and [runtime-target evidence](#member-resolution-and-runtime-targets). An empty Python file has available empty inventories; a generic-language file has unavailable semantic/text families even when it contains declarations. Independent snapshot analyses own distinct immutable records and read-only views.
 
 ### Counting and associations
 
@@ -302,7 +337,7 @@ The generic C++ frontend extracts function definitions, not standalone prototype
 
 ## Semantic context
 
-`build_project()` resolves canonical source uses and declared type/base references, derives compatibility effects from the retained modules, and supplies `RuleContext` for structural rules. Each declaration retains its own ID-keyed effects, while `RuleContext` preserves last-qualified-name effect selection for existing rule decisions, including same-file redefinitions. Retaining more facts alone does not change those decisions. Entity lookup consumers use IDs for identity; rule-specific name queries are not the canonical source-use resolver.
+`build_project()` resolves lexical/import and declared type/base references, resolves supported member uses and implementation sets, derives compatibility effects from the retained modules, and supplies `RuleContext` for structural rules. Each declaration retains its own ID-keyed effects, while `RuleContext` preserves last-qualified-name effect selection for existing rule decisions, including same-file redefinitions. Retaining more facts alone does not change those decisions. Entity lookup consumers use IDs for identity; rule-specific name queries are not the canonical source-use resolver.
 
 Rule projections intentionally preserve historical decisions rather than adopting canonical execution/resolution policy wholesale:
 
