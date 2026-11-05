@@ -44,10 +44,10 @@ Implemented analysis paths:
 | CLI command or option | `src/scb_check/commands/` |
 | Config loading or path walking | `src/scb_check/config.py`, `src/scb_check/walker.py` |
 | Source parsing, `SLOC`, directives, IR | `src/scb_check/tree_walking/`; see [Tree walking](tree-walking.md) |
-| Python source uses and scoped import extraction | `src/scb_check/tree_walking/languages/python_uses.py` |
-| Class/member/base extraction and annotation syntax | `src/scb_check/tree_walking/languages/python_declarations.py`, `python_types.py`; shared lexical evidence in `python_uses.py` |
+| Python source uses and scoped import extraction | `src/scb_check/tree_walking/languages/python/uses.py` |
+| Class/member/base extraction and annotation syntax | `src/scb_check/tree_walking/languages/python/declarations.py`, `python/types.py`; shared names and scopes in `python/uses.py` |
 | Direct import/type/base-to-project resolution | `src/scb_check/tree_walking/source_uses.py`; orchestration/effect links in `semantic.py` |
-| C3 member lookup and possible implementation sets | `src/scb_check/tree_walking/members.py`; receiver evidence in `languages/python_uses.py` |
+| C3 member lookup and possible implementation sets | `src/scb_check/tree_walking/members.py`; receiver details in `languages/python/uses.py` |
 | Language parser configs | `src/scb_check/tree_walking/languages/` |
 | Clone detection | `src/scb_check/analysis/clones.py` |
 | Shared source IO and parse warnings | `src/scb_check/analysis/source.py` |

@@ -179,7 +179,7 @@ class RuleContext:
         }
 
     def is_required_api_surface(self, symbol: SymbolIR) -> bool:
-        """Return True when `symbol` has a semantic keep reason."""
+        """Return `True` when `symbol.roles` includes a role that requires keeping the symbol."""
         return symbol.roles is not None and bool(symbol.roles & _REQUIRED_API_ROLES)
 
     def is_inherited_override(self, symbol: SymbolIR) -> bool:
@@ -191,7 +191,7 @@ class RuleContext:
         return symbol.roles is not None and SymbolRole.COMPUTED_ATTRIBUTE in symbol.roles
 
     def effects_for_symbol(self, symbol: SymbolIR) -> tuple[EffectIR, ...]:
-        """Return name-selected effects for existing structural-rule decisions."""
+        """Return effects for the declaration selected by `symbol.qualified_name`."""
         # Retaining every declaration must not change same-name rule selection.
         selected = self.project.symbols_by_qualified_name[symbol.qualified_name]
         effects = self.project.effects_by_symbol.get(selected.id, ())

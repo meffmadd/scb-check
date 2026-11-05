@@ -1,4 +1,4 @@
-"""Python source-use extraction; parser nodes never cross the returned IR seam."""
+"""Extract Python calls, attribute accesses, imports, and declarations into IR records."""
 
 import builtins
 from collections.abc import Mapping
@@ -9,16 +9,16 @@ from tree_sitter import Node
 
 from scb_check.tree_walking.languages._node_helpers import node_span
 from scb_check.tree_walking.languages._node_helpers import text
-from scb_check.tree_walking.languages.python_declarations import (
+from scb_check.tree_walking.languages.python.declarations import (
     FLOW_BREAK_TYPES,
 )
-from scb_check.tree_walking.languages.python_declarations import attribute_facts
-from scb_check.tree_walking.languages.python_declarations import callable_facts
-from scb_check.tree_walking.languages.python_declarations import (
+from scb_check.tree_walking.languages.python.declarations import attribute_facts
+from scb_check.tree_walking.languages.python.declarations import callable_facts
+from scb_check.tree_walking.languages.python.declarations import (
     declaration_index,
 )
-from scb_check.tree_walking.languages.python_declarations import direct_bases
-from scb_check.tree_walking.languages.python_types import type_reference
+from scb_check.tree_walking.languages.python.declarations import direct_bases
+from scb_check.tree_walking.languages.python.types import type_reference
 from scb_check.tree_walking.models import AttributeIR
 from scb_check.tree_walking.models import ExecutionKind
 from scb_check.tree_walking.models import ImportIR
@@ -47,7 +47,7 @@ class _Scope:
     annotations: dict[str, list[Node]]
 
     def bind_locals(self, node: Node) -> None:
-        """Record local bindings while preserving annotation-only parameter evidence."""
+        """Record local names without treating a parameter annotation as a reassignment."""
         annotation_only = node.type == "assignment" and node.child_by_field_name("type") is not None and node.child_by_field_name("right") is None
         annotation = node.child_by_field_name("type") if node.type == "assignment" else None
         left = node.child_by_field_name("left")
@@ -61,7 +61,7 @@ class _Scope:
 
 @dataclass(frozen=True, slots=True)
 class PythonFacts:
-    """Named immutable inventories produced by Python lexical/declaration extraction."""
+    """Calls, accesses, imports, symbols, and fields extracted from one Python file."""
 
     source_uses: tuple[SourceUseIR, ...]
     imports: tuple[ImportIR, ...]
@@ -70,7 +70,7 @@ class PythonFacts:
 
 
 def import_bindings(file: Path, node: Node, owner_id: str | None = None) -> tuple[ImportIR, ...]:
-    """Extract alias relations from a single import statement."""
+    """Collect imported names and their local aliases from one import statement."""
     module = node.child_by_field_name("module_name")
     prefix = text(module) if module is not None else ""
     imports: list[ImportIR] = []
@@ -97,7 +97,7 @@ def python_facts(  # noqa: PLR0913 - Parser-local declaration nodes accompany le
     file: Path, root: Node, module_id: str, symbols: tuple[SymbolIR, ...], module_name: str,
     *, declaration_nodes: Mapping[str, Node],
 ) -> PythonFacts:
-    """Collect lexical bindings, then retain occurrences and declaration evidence."""
+    """Collect names by scope, then extract calls, accesses, and declaration details."""
     declarations = declaration_index(symbols)
     scopes, imports = _collect_scopes(file, root, module_id, declarations, module_name)
     def resolve(name: str, scope_id: str) -> TargetResolutionIR:

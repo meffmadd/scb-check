@@ -130,14 +130,14 @@ class SourceSpan(IRModel):
     _file_id: str = PrivateAttr()
 
     def model_post_init(self, _context: object) -> None:
-        """Capture physical-file identity before the process cwd can change."""
+        """Save the file ID before the working directory can change."""
         # `Path.resolve()` would introduce filesystem IO into the pure IR.
         normalized = abspath(self.file)  # noqa: PTH100
         self._file_id = f"file:{Path(normalized).as_posix()}"
 
     @property
     def file_id(self) -> str:
-        """Return normalized absolute physical-file identity without source IO."""
+        """Return the file ID based on its normalized absolute path, without reading the source."""
         return self._file_id
 
     def entity_id(self, kind: SymbolKind) -> str:
@@ -152,7 +152,7 @@ type TextFragmentKind = Literal["identifier", "comment", "docstring"]
 
 
 class TextFragmentIR(IRModel):
-    """One original source occurrence, owned by a module or declaration ID."""
+    """An identifier, comment, or docstring at one location, linked to its enclosing entity."""
 
     text: str
     kind: TextFragmentKind
@@ -180,7 +180,7 @@ class SignatureIR(IRModel):
 
 
 class ImportIR(IRModel):
-    """An import binding, separate from executable call occurrences."""
+    """An imported name and its local alias, recorded separately from calls."""
 
     local_name: str
     qualified_name: str
@@ -217,7 +217,7 @@ type ResolutionReason = Literal[
 
 
 class TargetResolutionIR(IRModel):
-    """Direct static binding evidence, not a set of possible runtime targets."""
+    """A target selected from source bindings, not the possible runtime implementations."""
 
     status: ResolutionStatus = "unresolved"
     target_id: str | None = None
@@ -233,7 +233,7 @@ type ExecutionKind = Literal["module", "class", "function", "unsupported"]
 
 
 class ReceiverIR(IRModel):
-    """Lexical root and optional declared receiver type for a dotted source target."""
+    """The starting name and optional declared type for a dotted target such as `obj.method`."""
 
     resolution: TargetResolutionIR
     member_path: tuple[str, ...]
@@ -251,7 +251,7 @@ type RuntimeTargetReason = Literal[
 
 
 class RuntimeTargetsIR(IRModel):
-    """Possible implementation bodies, distinct from a static declaration selection."""
+    """Possible implementation bodies, with their completeness and required assumption."""
 
     status: TargetSetStatus = "unavailable"
     target_ids: tuple[str, ...] = ()
@@ -269,7 +269,7 @@ class RuntimeTargetsIR(IRModel):
 
 
 class SourceUseIR(IRModel):
-    """One source occurrence with execution ownership and static resolution."""
+    """One call or attribute access, with its execution owner and target resolution."""
 
     kind: SourceUseKind
     span: SourceSpan
@@ -287,7 +287,7 @@ class SourceUseIR(IRModel):
 
     @property
     def id(self) -> str:
-        """Identify a use within this physical snapshot without deduplicating targets."""
+        """Identify this occurrence, keeping repeated uses of the same target separate."""
         return (
             f"{self.span.file_id}:{self.kind}:"
             f"{self.span.start_line}:{self.span.start_col}-"
@@ -296,7 +296,7 @@ class SourceUseIR(IRModel):
 
 
 class ReferenceIR(IRModel):
-    """A rule-facing projection of a canonical call occurrence, not an inventory."""
+    """A call summary for rules, derived from source uses rather than collected separately."""
 
     name: str
     resolved_name: str | None
@@ -345,7 +345,7 @@ type CallableBodyKind = Literal["implemented", "pass", "ellipsis", "empty"]
 
 
 class TypeReferenceIR(IRModel):
-    """Structured declared type syntax with conservative static target evidence."""
+    """A type expression split into its name and arguments, with any known target."""
 
     spelling: str
     span: SourceSpan
@@ -358,7 +358,7 @@ class TypeReferenceIR(IRModel):
 
 
 class AttributeIR(IRModel):
-    """One canonical field per declaring class and name in the supported subset."""
+    """One field per declaring class and name, collected from supported assignments."""
 
     name: str
     declaring_class_id: str
@@ -375,7 +375,7 @@ class AttributeIR(IRModel):
 
 
 class CallableIR(IRModel):
-    """Callable declaration evidence, independent of inherited member populations."""
+    """One callable's declaring class, method binding, decorators, and body details."""
 
     declaring_class_id: str | None = None
     binding: CallableBinding
@@ -412,7 +412,7 @@ class SymbolIR(IRModel):
 
     @property
     def id(self) -> str:
-        """Return snapshot-local declaration identity, independent of its name."""
+        """Identify this declaration by file and location, not by name."""
         return self.span.entity_id(self.kind)
 
     @property
@@ -472,7 +472,7 @@ class ModuleIR(IRModel):
 
     @property
     def id(self) -> str:
-        """Return logical-module identity, distinct from physical-file identity."""
+        """Identify this module by file and span, separately from the file's own ID."""
         return self.span.entity_id(SymbolKind.MODULE)
 
     @property
@@ -492,7 +492,7 @@ class ModuleIR(IRModel):
 
     @property
     def qualified_name(self) -> str:
-        """Return searchable module metadata, not unique identity."""
+        """Return the module name for lookups; unrelated files may share this name."""
         return self.module_name
 
     @model_validator(mode="after")
@@ -526,7 +526,7 @@ type OwnedEntities = Mapping[str, tuple[str, ...]]
 
 
 class ProjectIR(IRModel):
-    """Retained module inventory with derived, read-only lookup indexes."""
+    """The analyzed modules and read-only lookups for their declarations and source uses."""
 
     modules: tuple[ModuleIR, ...] = ()
     member_lookup: MemberLookup = Field(default_factory=lambda: MappingProxyType({}))
@@ -556,7 +556,7 @@ class ProjectIR(IRModel):
     _entities_by_owner: OwnedEntities = PrivateAttr()
 
     def model_post_init(self, _context: object) -> None:
-        """Derive privately owned lookup views from the sole module inventory."""
+        """Build read-only lookups from the modules without keeping caller-owned mappings."""
         symbols = tuple(
             symbol for module in self.modules for symbol in module.symbols
         )
@@ -588,27 +588,27 @@ class ProjectIR(IRModel):
 
     @property
     def entities_by_owner(self) -> OwnedEntities:
-        """Look up direct syntactic children, without inherited copies."""
+        """Look up directly enclosed declarations and fields, without inherited copies."""
         return self._entities_by_owner
 
     @property
     def attributes_by_id(self) -> AttributeLookup:
-        """Look up canonical class/instance fields from available inventories."""
+        """Look up class and instance fields from modules that support field extraction."""
         return self._attributes_by_id
 
     @property
     def source_uses_by_id(self) -> SourceUseLookup:
-        """Look up canonical source occurrences, including unsupported contexts."""
+        """Look up calls and attribute accesses, including those in unsupported contexts."""
         return self._source_uses_by_id
 
     @property
     def modules_by_id(self) -> ModuleLookup:
-        """Look up logical modules by identity."""
+        """Look up modules by ID."""
         return self._modules_by_id
 
     @property
     def modules_by_file(self) -> ModulesByFile:
-        """Look up the one logical module per successfully parsed file."""
+        """Look up the module for each successfully parsed file."""
         return self._modules_by_file
 
     @property
@@ -618,7 +618,7 @@ class ProjectIR(IRModel):
 
     @property
     def symbols_by_qualified_name(self) -> SymbolLookup:
-        """Provide the existing last-declaration name selection for semantic queries."""
+        """Look up the last declaration for each qualified name; earlier duplicates are omitted."""
         return self._symbols_by_qualified_name
 
 

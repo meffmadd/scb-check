@@ -1,4 +1,4 @@
-"""Structured annotation syntax; no evaluation, imports, or source IO."""
+"""Parse type annotations without evaluating them, importing modules, or reading files."""
 
 import ast
 from collections.abc import Callable
@@ -15,7 +15,7 @@ def type_reference(
     spelling: str, span: SourceSpan, resolve: AnnotationResolver,
     *, allow_forward: bool = True,
 ) -> TypeReferenceIR:
-    """Parse an annotation expression, retaining unknown syntax rather than guessing."""
+    """Parse a type expression, keeping unsupported syntax as unknown rather than guessing."""
     try:
         expression = ast.parse(spelling, mode="eval").body
     except SyntaxError:

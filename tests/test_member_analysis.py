@@ -311,6 +311,43 @@ def test_empty_nested_and_generic_analysis_preserve_family_coverage(tmp_path: Pa
     assert analyze_files((), disable_sg=True).project.entities_by_owner == {}
 
 
+@pytest.mark.parametrize("duplicate_child", [False, True])
+def test_package_member_paths_preserve_child_module_ambiguity(tmp_path: Path, *, duplicate_child: bool) -> None:
+    """Package paths resolve unique child modules without choosing between duplicate names."""
+    package = tmp_path / "left" / "pkg"
+    package.mkdir(parents=True)
+    parent = package / "__init__.py"
+    parent.write_text("")
+    child = package / "child.py"
+    child.write_text("class Worker:\n    @staticmethod\n    def work(): return 1\n")
+    caller = tmp_path / "caller.py"
+    caller.write_text("import pkg\npkg.child.Worker.work()\n")
+    sources = [caller, child, parent]
+    if duplicate_child:
+        other_package = tmp_path / "right" / "pkg"
+        other_package.mkdir(parents=True)
+        (other_package / "__init__.py").write_text("")
+        other_child = other_package / "child.py"
+        other_child.write_text(child.read_text())
+        sources.append(other_child)
+
+    project = analyze_files(tuple(sources), disable_sg=True).project
+    call = next(use for use in project.source_uses_by_id.values() if use.kind == "call")
+    if duplicate_child:
+        assert call.resolution.status == "unresolved"
+        assert call.runtime_targets.status == "unavailable"
+        child_use = next(use for use in project.source_uses_by_id.values() if use.target_spelling == "pkg.child")
+        assert child_use.resolution.status == "ambiguous"
+        assert set(child_use.resolution.candidate_ids) == {
+            module.id for module in project.modules if module.module_name == "pkg.child"
+        }
+    else:
+        method = project.symbols_by_qualified_name["pkg.child.Worker.work"]
+        assert call.resolution.target_id == method.id
+        assert call.runtime_targets.target_ids == (method.id,)
+        assert call.runtime_targets.status == "complete"
+
+
 def test_self_receiver_identity_survives_local_classes_and_qualified_name_collisions(tmp_path: Path) -> None:
     """A syntactic receiver class is selected by declaration ID, not a global name."""
     sources = []

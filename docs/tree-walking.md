@@ -58,6 +58,8 @@ The generic Tree-sitter parser used for Rust, JavaScript, TypeScript, Zig, Haske
 
 ## Python walking
 
+The Python implementation lives in `tree_walking/languages/python/`: `parser.py` owns parsing, SLOC, complexity, and rule summaries; `uses.py` collects names, scopes, calls, and attribute accesses; `declarations.py`, `types.py`, and `strings.py` handle declarations, type expressions, and string syntax. The package exposes `PythonParser` for dispatch and direct parser callers.
+
 `PythonWalker` walks tree-sitter nodes into `ModuleIR`:
 
 - module names come from the path and package `__init__.py` chain,
@@ -183,7 +185,7 @@ Consumers can select direct fragments by `owner_id`, or include child owners tra
 
 ### Canonical source uses and imports
 
-`ModuleIR.source_uses` is the sole inventory of executable call and attribute-access occurrences. `languages/python_uses.py` produces it from the already-parsed tree; `source_uses.resolve_project_references()` refines import evidence against retained modules/declarations during `build_project()`. `AnalysisResult.project` exposes the resolved modules and the derived read-only `source_uses_by_id` index. These are frozen records with tuple-valued candidates, not parser nodes or mutable resolver state.
+`ModuleIR.source_uses` is the sole inventory of executable call and attribute-access occurrences. `languages/python/uses.py` produces it from the already-parsed tree; `source_uses.resolve_project_references()` refines import evidence against retained modules/declarations during `build_project()`. `AnalysisResult.project` exposes the resolved modules and the derived read-only `source_uses_by_id` index. These are frozen records with tuple-valued candidates, not parser nodes or mutable resolver state.
 
 | `SourceUseIR` field | Meaning |
 | --- | --- |
@@ -222,7 +224,7 @@ Bindings are collected lexically without evaluating control flow or statement or
 
 ### Class, member, and declared-type facts
 
-`languages/python_uses.python_facts()` collects lexical evidence shared by source uses and declarations. It reuses the walker's ID-keyed declaration-node mapping for callable and base extraction; parser-native nodes remain local to extraction. `languages/python_declarations.py` produces callable facts, direct bases, and canonical fields; `languages/python_types.py` parses annotation expressions without evaluation. `source_uses.resolve_project_references()` refines imported type/base targets and classifies known types during `build_project()`. These facts are available through `AnalysisResult.project`, independently of rule projections and metric populations; see [the policy boundary](architecture.md#class-and-type-evidence-boundary).
+`languages.python.uses.python_facts()` collects names and scopes shared by source uses and declarations. It reuses the walker's declaration-node mapping, keyed by ID, to extract callable details and base classes; parser nodes stay within extraction. `languages/python/declarations.py` collects callable details, direct bases, and one field per class and name; `languages/python/types.py` parses annotation expressions without evaluating them. `source_uses.resolve_project_references()` refines imported type/base targets and classifies known types during `build_project()`. These facts are available through `AnalysisResult.project`, independently of rule projections and metric populations; see [the policy boundary](architecture.md#class-and-type-evidence-boundary).
 
 #### Callable declarations
 

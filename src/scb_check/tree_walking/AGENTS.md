@@ -2,7 +2,7 @@
 
 Owns parser dispatch, language walkers, source directives, SLOC lines, pure Pydantic IR models, and semantic project context.
 
-Supported source languages are Python, Rust, JavaScript, TypeScript, Zig, Haskell, and C++ (`cpp`). Python has the rich semantic walker; the other languages use the generic Tree-sitter parser core for minimal symbols, SLOC, and complexity facts.
+Supported source languages are Python, Rust, JavaScript, TypeScript, Zig, Haskell, and C++ (`cpp`). Python parsing and extraction live in `languages/python/`, which exposes `PythonParser`; the other languages use the generic Tree-sitter parser core for minimal symbols, SLOC, and complexity facts.
 
 ## Invariants
 

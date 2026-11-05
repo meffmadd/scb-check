@@ -1,4 +1,4 @@
-"""Bounded Python member lookup and closed-project implementation evidence."""
+"""Resolve Python members and possible method implementations within the analyzed project."""
 
 from dataclasses import dataclass
 
@@ -21,7 +21,7 @@ class _MemberSelection:
 
 
 def resolve_member_uses(modules: tuple[ModuleIR, ...]) -> tuple[tuple[ModuleIR, ...], MemberLookup, MemberLookup]:
-    """Return resolved occurrences and derived class/name lookup views, without IO."""
+    """Resolve calls and accesses, and build instance and class member lookups without IO."""
     resolver = _MemberResolver(modules)
     return tuple(module.model_copy(update={
         "source_uses": None if module.source_uses is None else tuple(
@@ -31,6 +31,7 @@ def resolve_member_uses(modules: tuple[ModuleIR, ...]) -> tuple[tuple[ModuleIR, 
 
 
 def _c3_merge_inplace(sequences: list[list[str]]) -> tuple[str, ...] | None:
+    """Consume base-class method orders using Python's C3 merge; return `None` on conflict."""
     result: list[str] = []
     while any(sequences):
         sequences = [sequence for sequence in sequences if sequence]
@@ -54,11 +55,13 @@ class _MemberResolver:
         }
         self.classes = {key: symbol for key, symbol in self.symbols.items() if symbol.direct_bases is not None}
         self.children: dict[str, dict[str, list[str]]] = {}
-        for parent in modules:
-            for child in modules:
-                prefix, _, name = child.module_name.rpartition(".")
-                if prefix == parent.module_name:
-                    self.children.setdefault(parent.id, {}).setdefault(name, []).append(child.id)
+        modules_by_name: dict[str, list[ModuleIR]] = {}
+        for module in modules:
+            modules_by_name.setdefault(module.module_name, []).append(module)
+        for child in modules:
+            prefix, _, name = child.module_name.rpartition(".")
+            for parent in modules_by_name.get(prefix, ()):
+                self.children.setdefault(parent.id, {}).setdefault(name, []).append(child.id)
         for entity in self.entities.values():
             if isinstance(entity, ModuleIR):
                 continue

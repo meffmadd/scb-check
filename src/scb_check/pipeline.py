@@ -63,7 +63,7 @@ class ParsedSources:
 
 @dataclass(frozen=True, slots=True)
 class Findings:
-    """Collected findings before sorting and line-set projection."""
+    """Collected findings before sorting and identifying affected source lines."""
 
     project: ProjectIR
     clones: tuple[CloneBlock, ...]

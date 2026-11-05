@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, cast
 
 from scb_check.models import CloneBlock
 from scb_check.tree_walking.dispatch import ParsedFile
-from scb_check.tree_walking.languages.python_strings import python_string_prefix
+from scb_check.tree_walking.languages.python.strings import python_string_prefix
 from scb_check.tree_walking.languages.registry import LANGUAGE_CONFIGS
 from scb_check.tree_walking.languages.registry import (
     clone_node_types_for_language,

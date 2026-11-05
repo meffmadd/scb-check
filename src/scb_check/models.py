@@ -112,7 +112,7 @@ class AnalysisResult:
     project: ProjectIR
 
     def __post_init__(self) -> None:
-        """Expose privately owned, read-only source context."""
+        """Copy `source_lines_by_file` into a read-only mapping."""
         object.__setattr__(
             self,
             "source_lines_by_file",

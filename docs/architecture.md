@@ -232,9 +232,9 @@ All candidates handle unavailable inventories and uncertain targets explicitly. 
 
 Change these only with tests and documentation updates because they move user-visible scores:
 
-- `SLOC` exclusions in `tree_walking/languages/python.py` and `tree_walking/languages/generic.py`,
+- `SLOC` exclusions in `tree_walking/languages/python/parser.py` and `tree_walking/languages/generic.py`,
 - `CLONE_NODE_TYPES`, language clone configs, and clone normalization in `analysis/clones.py` plus `tree_walking/languages/*`,
-- cyclomatic and cognitive complexity node sets in `tree_walking/languages/python.py` and `tree_walking/languages/*`,
+- cyclomatic and cognitive complexity node sets in `tree_walking/languages/python/parser.py` and `tree_walking/languages/*`,
 - structural rule span selection and filtering in `rules/` and `pipeline.py`,
 - verbosity union in `metrics/verbosity.py` and complexity mass-share logic in `metrics/erosion.py`, `metrics/cog_erosion.py`, and private `metrics/_mass.py`,
 - field coverage and later-minus-earlier arithmetic in `reporting/comparison.py`.

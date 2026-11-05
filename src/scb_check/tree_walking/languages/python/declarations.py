@@ -1,4 +1,4 @@
-"""Python declaration extraction over already-parsed syntax and lexical evidence."""
+"""Extract Python fields, callable details, and base classes from parsed source."""
 
 from collections.abc import Callable
 from collections.abc import Iterator
@@ -9,8 +9,8 @@ from tree_sitter import Node
 
 from scb_check.tree_walking.languages._node_helpers import node_span
 from scb_check.tree_walking.languages._node_helpers import text
-from scb_check.tree_walking.languages.python_strings import docstring_literals
-from scb_check.tree_walking.languages.python_types import type_reference
+from scb_check.tree_walking.languages.python.strings import docstring_literals
+from scb_check.tree_walking.languages.python.types import type_reference
 from scb_check.tree_walking.models import AttributeIR
 from scb_check.tree_walking.models import CallableIR
 from scb_check.tree_walking.models import SourceSpan
@@ -30,14 +30,14 @@ FLOW_BREAK_TYPES = frozenset({
 
 
 def declaration_index(symbols: tuple[SymbolIR, ...]) -> dict[tuple[int, int], SymbolIR]:
-    """Index IR declarations by parser-native start points within this extraction."""
+    """Match declarations to parser nodes by their starting line and byte column."""
     return {(symbol.span.start_line - 1, symbol.span.start_col): symbol for symbol in symbols}
 
 
 def callable_facts(
     file: Path, node: Node, symbol: SymbolIR, resolve: DecoratorResolver,
 ) -> CallableIR:
-    """Retain syntax-level body/descriptor facts, without merging declarations."""
+    """Describe one callable's body, decorators, and method binding without merging declarations."""
     decorators = ()
     parent = node.parent
     if parent is not None and parent.type == "decorated_definition":
@@ -74,7 +74,7 @@ def callable_facts(
 
 
 def direct_bases(file: Path, node: Node, symbol: SymbolIR, resolve: NameResolver) -> tuple[TypeReferenceIR, ...]:
-    """Retain positional base expressions, excluding metaclass and other keywords."""
+    """Collect base-class expressions, excluding metaclass and other keyword arguments."""
     arguments = node.child_by_field_name("superclasses")
     if arguments is None:
         return ()
@@ -88,7 +88,7 @@ def attribute_facts(
     file: Path, root: Node, symbols: tuple[SymbolIR, ...],
     uses: tuple[SourceUseIR, ...], resolve: NameResolver,
 ) -> tuple[tuple[AttributeIR, ...], tuple[SourceUseIR, ...]]:
-    """Canonicalize supported assignment targets, retaining write occurrences once."""
+    """Collect one field per class and name, and link each supported write to its field."""
     return _AttributeExtractor(file, resolve, declaration_index(symbols)).extract(root, uses)
 
 
@@ -99,7 +99,7 @@ class _AttributeExtractor:
     declarations: dict[tuple[int, int], SymbolIR]
 
     def extract(self, root: Node, uses: tuple[SourceUseIR, ...]) -> tuple[tuple[AttributeIR, ...], tuple[SourceUseIR, ...]]:
-        """Return canonical fields and linked occurrences using this parser context."""
+        """Collect fields and link their writes using the current parser context."""
         fields: dict[tuple[str, str], AttributeIR] = {}
         targets: list[tuple[SourceSpan, tuple[str, str]]] = []
         class_writes: list[SourceUseIR] = []

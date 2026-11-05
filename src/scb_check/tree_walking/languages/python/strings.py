@@ -1,4 +1,4 @@
-"""Shared Python literal and docstring syntax policies."""
+"""Recognize Python string prefixes and docstring literals."""
 
 from tree_sitter import Node
 

@@ -1,4 +1,4 @@
-"""Python tree-sitter parser that emits language-agnostic IR."""
+"""Parse Python source into shared IR records using tree-sitter."""
 
 from __future__ import annotations
 
@@ -36,15 +36,15 @@ from scb_check.tree_walking.languages._node_helpers import (
     qualified_name as _qualified_name,
 )
 from scb_check.tree_walking.languages._node_helpers import text as _text
-from scb_check.tree_walking.languages.python_declarations import (
+from scb_check.tree_walking.languages.python.declarations import (
     FLOW_BREAK_TYPES as _COG_FLOW_BREAK_TYPES,
 )
-from scb_check.tree_walking.languages.python_strings import (
+from scb_check.tree_walking.languages.python.strings import (
     docstring_literals as _docstring_literals,
 )
-from scb_check.tree_walking.languages.python_strings import python_string_prefix
-from scb_check.tree_walking.languages.python_uses import import_bindings
-from scb_check.tree_walking.languages.python_uses import python_facts
+from scb_check.tree_walking.languages.python.strings import python_string_prefix
+from scb_check.tree_walking.languages.python.uses import import_bindings
+from scb_check.tree_walking.languages.python.uses import python_facts
 from scb_check.tree_walking.models import Language
 from scb_check.tree_walking.models import ModuleIR
 from scb_check.tree_walking.models import OperationIR
@@ -400,7 +400,7 @@ def _text_fragments(
     module_id: str,
     symbols: tuple[SymbolIR, ...],
 ) -> tuple[TextFragmentIR, ...]:
-    """Extract occurrences once, using declaration ownership rather than execution scope."""
+    """Collect text fragments once under their enclosing declaration, not execution scope."""
     owners = {
         (symbol.span.start_line - 1, symbol.span.start_col): symbol.id
         for symbol in symbols

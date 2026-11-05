@@ -1,4 +1,4 @@
-"""Pure project resolution for source uses, declared types, and direct bases."""
+"""Match calls, accesses, and declared types or bases to project declarations without IO."""
 
 from collections.abc import Callable
 
@@ -19,7 +19,7 @@ _TYPING_FORMS = frozenset(f"{module}.{name}" for module in ("typing", "typing_ex
 
 
 def resolve_project_references(modules: tuple[ModuleIR, ...]) -> tuple[ModuleIR, ...]:
-    """Resolve imported names only against retained project facts, without type inference."""
+    """Match imported names to analyzed modules and declarations without inferring types."""
     entities: dict[str, list[ModuleIR | SymbolIR]] = {}
     for module in modules:
         entities.setdefault(module.qualified_name, []).append(module)
