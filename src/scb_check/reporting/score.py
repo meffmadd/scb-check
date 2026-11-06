@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from math import isfinite
 from types import MappingProxyType
 
+from scb_check.metrics.cbo import CBO
 from scb_check.metrics.cog_erosion import CognitiveErosion
 from scb_check.metrics.erosion import Erosion
 from scb_check.metrics.syntax import Syntax
@@ -20,6 +21,7 @@ REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(
         "erosion": Erosion.units,
         "cog_erosion": CognitiveErosion.units,
         "syntax": Syntax.units,
+        "cbo": CBO.units,
     }
 )
 
@@ -40,6 +42,7 @@ def compute_report(analysis: AnalysisResult) -> Report:
                 findings.all_functions, findings.high_cog_functions
             ),
             "syntax": Syntax().compute(flags.syntax_by_language),
+            "cbo": CBO().compute(analysis.project.modules),
         }
     )
 

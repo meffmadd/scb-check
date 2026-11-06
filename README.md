@@ -9,6 +9,7 @@ Python CLI that reports SCBench verbosity and erosion composites for supported s
 - **Verbosity**: fraction of SLOC flagged by clone detection, ast-grep slop rules, or structural rules. Non-Python languages currently contribute clone lines only.
 - **Erosion**: share of function "mass" (`complexity * sqrt(sloc)`) concentrated in high-complexity functions (cyclomatic complexity > 10).
 - **Cognitive erosion**: same mass-share calculation using cognitive complexity > 10.
+- **Partial CBO**: distinct retained-project class partners from method/attribute use in either direction, with Python-first resolution and explicit availability counts. This is not a quality score.
 - **Metric deltas**: signed later-minus-earlier differences in scores, counts, and complexity masses from two full analyses.
 
 ## Install
@@ -65,11 +66,11 @@ scb-check diff TREE_A TREE_B --config FILE --disable-sg  # shared options for bo
 
 `PATH` may be a file or directory. Directories are walked for supported source files: Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). Directory discovery respects `.gitignore` globs by default; use `--include-all` to scan gitignored supported files too.
 
-Python declarations inside control-flow wrappers participate in ordinary metrics and structural rules. Same-named functions in different files count independently; repeated Python definitions within one file retain last-definition metric selection. These extraction/counting corrections can change scores without changing metric formulas or the JSON schema. Maintainer-facing immutable entity facts are described in the [IR contract](docs/tree-walking.md#retained-entity-contract), including [Python entity-owned source text fragments](docs/tree-walking.md#source-text-fragments). Internal analysis also retains [Python call/access occurrences and scoped import bindings](docs/tree-walking.md#canonical-source-uses-and-imports), with execution ownership and conservative direct-resolution evidence, plus [class/member declarations, structured field types, and direct bases](docs/tree-walking.md#class-member-and-declared-type-facts). [Bounded Python member resolution](docs/tree-walking.md#member-resolution-and-runtime-targets) connects those facts to canonical declarations and separate possible implementation sets with explicit uncertainty; the [candidate input matrix](docs/architecture.md#metric-ready-analysis-data-flow) describes metric consumers. Unavailable internal fact inventories are `None`, distinct from successfully extracted empty facts; parser-supported subsets are documented in the [availability contract](docs/tree-walking.md#fact-availability-and-parser-support). These facts add no metrics or CLI report fields; verbosity, erosion, structural-rule policies, and independent `check`/`diff` behavior are unchanged.
+Python declarations inside control-flow wrappers participate in ordinary metrics and structural rules. Same-named functions in different files count independently; repeated Python definitions within one file retain last-definition metric selection. These extraction/counting corrections can change scores without changing metric formulas or the JSON schema. Maintainer-facing immutable entity facts are described in the [IR contract](docs/tree-walking.md#retained-entity-contract), including [Python entity-owned source text fragments](docs/tree-walking.md#source-text-fragments). Internal analysis also retains [Python call/access occurrences and scoped import bindings](docs/tree-walking.md#canonical-source-uses-and-imports), with execution ownership and conservative direct-resolution evidence, plus [class/member declarations, structured field types, and direct bases](docs/tree-walking.md#class-member-and-declared-type-facts). [Bounded Python member resolution](docs/tree-walking.md#member-resolution-and-runtime-targets) connects those facts to canonical declarations and separate possible implementation sets with explicit uncertainty; the [candidate input matrix](docs/architecture.md#metric-ready-analysis-data-flow) describes metric consumers. Unavailable internal fact inventories are `None`, distinct from successfully extracted empty facts; parser-supported subsets are documented in the [availability contract](docs/tree-walking.md#fact-availability-and-parser-support). CBO consumes these retained facts without changing verbosity, erosion, structural-rule policies, or independent snapshot analysis.
 
 ### Check JSON report fields
 
-Check JSON is a report object with four metric groups. Each group is a flat object of numerical values or `null`, with no `data` wrapper or flat compatibility aliases.
+Check JSON is a report object with five metric groups. Each group is a flat object of numerical values or `null`, with no `data` wrapper or flat compatibility aliases.
 
 | Metric group | Result fields |
 | --- | --- |
@@ -77,10 +78,13 @@ Check JSON is a report object with four metric groups. Each group is a flat obje
 | `erosion` | `score`, `total_functions`, `high_cc_functions`, `total_mass`, `high_cc_mass` |
 | `cog_erosion` | `score`, `total_functions`, `high_cog_functions`, `total_cog_mass`, `high_cog_mass` |
 | `syntax` | `tree_count`, `node_count`, plus `<language>.tree_count` and `<language>.node_count` |
+| `cbo` | `measured_classes`, `unavailable_classes`, `partial_partner_sum`, `partial_partner_mean`, `partial_partner_max` |
 
 Syntax counts cover parsed Tree-sitter trees and their nodes. Dotted per-language names such as `python.node_count` are single flat keys, not nested objects. Only languages present in that snapshot appear. Group, field, and language ordering is deterministic.
 
 Scores use fractional units. Counts and complexity masses retain their numerical units. Values are finite numbers or `null`; `null` means unavailable or undefined, not zero. Existing zero-denominator scores remain zero, including zero-SLOC verbosity and zero-mass erosion. Human check output remains location-level findings with source context.
+
+CBO's `partial_partner_*` summaries cover measured retained-project classes only: sum of per-class partner counts (each pair counts twice), arithmetic mean, and maximum. Population fields use classes; summaries use partner counts. All are **partial**, including zero: unresolved outgoing/incoming uses and unmodeled library classes can hide partners. Unsupported classes count as unavailable, not measured zero. With no measured classes, summaries are `null`. This project aggregation is an analyzer convention, not a paper-defined formula. CBO adds no findings, exit-code changes, thresholds, or sloppiness judgments. See [the precise variant, population, and resolution policy](docs/architecture.md#coupling-between-objects-cbo).
 
 ### Comparing source trees
 

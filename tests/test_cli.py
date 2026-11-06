@@ -26,6 +26,7 @@ _REPORT_KEYS = {
     "erosion",
     "cog_erosion",
     "syntax",
+    "cbo",
 }
 
 
@@ -134,6 +135,10 @@ def test_check_output_format_json(
             "node_count": 6,
             "python.tree_count": 1,
             "python.node_count": 6,
+        },
+        "cbo": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_partner_sum": None, "partial_partner_mean": None, "partial_partner_max": None,
         },
     }
 

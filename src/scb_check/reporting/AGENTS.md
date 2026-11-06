@@ -4,7 +4,7 @@ Consumes shared `AnalysisResult` for metric reports and `Flags` for location-lev
 
 ## Ownership
 
-- `Verbosity`, `Erosion`, `CognitiveErosion`, and `Syntax` live in the sibling [`metrics/`](../metrics/AGENTS.md) package. Their `Metric` base declares the calculation contract; concrete classes own their narrow inputs, calculations, result fields, and units.
+- `Verbosity`, `Erosion`, `CognitiveErosion`, `Syntax`, and `CBO` live in the sibling [`metrics/`](../metrics/AGENTS.md) package. Their `Metric` base declares the calculation contract; concrete classes own their narrow inputs, calculations, result fields, and units.
 - `compute_report(AnalysisResult)` owns explicit group composition. `Report` is a mapping alias, with read-only outer and inner mappings, not a runtime class. Keep units outside nullable numerical values.
 - Keep calculations and shared erosion arithmetic in `metrics/`. Complexity extraction stays in tree walking.
 - `serialize_report` validates contracts and creates fresh plain outer and inner dictionaries. Keep required-field and finite-value validation at the reporting boundary; reject booleans and nonnumeric/nested results.

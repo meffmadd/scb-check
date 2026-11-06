@@ -28,7 +28,27 @@ That union is intersected with `SLOC`, then divided by total `SLOC`. A line flag
 
 `cog_erosion` uses the same mass-share calculation with cognitive complexity and `cog_complexity > 10`. Zero total mass yields a zero score.
 
-Metric populations select declarations by `(physical file, qualified name)`, keeping the last same-file declaration; generic parsers retain their existing name disambiguation. Cross-file Python name collisions no longer discard functions. Python declarations under control-flow wrappers also enter ordinary metrics and structural rules. These two extraction/indexing corrections intentionally affect counts, masses, erosion scores, and potentially structural verbosity, without changing formulas, rule policies, report fields, or CLI contracts.
+Complexity metric populations select declarations by `(physical file, qualified name)`, keeping the last same-file declaration; generic parsers retain their existing name disambiguation. Cross-file Python name collisions no longer discard functions. Python declarations under control-flow wrappers also enter ordinary metrics and structural rules. These two extraction/indexing corrections intentionally affect counts, masses, erosion scores, and potentially structural verbosity, without changing formulas, rule policies, report fields, or CLI contracts.
+
+### Coupling Between Objects (CBO)
+
+`cbo` reports **partial retained-project CBO**, not verified full-program CBO and not a sloppiness score. The selected definition is Briand, Daly & Wüst (1999), [DOI 10.1109/32.748920](https://doi.org/10.1109/32.748920), §4.2.1 Definition 20 (printed p. 101), using §3.7 Definition 17's `uses` predicate (printed p. 94). It formalizes the CK metric ([Chidamber & Kemerer, 1994](https://doi.org/10.1109/32.295895)). No refined/slice-based variants or quality thresholds are applied.
+
+For each class, count distinct other classes where either class invokes a method implemented by the other or accesses an attribute declared by the other. Count actual ancestor-member use; inheritance and type declarations alone add no edges. Repeated sites, reads/writes/deletes, and reverse-direction uses deduplicate to one partner. Self-use adds none. An inherited body belongs to its declaring class; it is not copied to subclasses. Uses belong to their nearest enclosing class (including class initialization and nested functions); module/free-function uses without an enclosing class cannot contribute a class partner.
+
+The modeled population is every retained class declaration, including nested and repeated declarations, in successfully parsed files. Python classes with available use/attribute inventories and direct-base facts receive partial measurements; unsupported classes receive `None` diagnostics. External/library classes, builtins, excluded files, and failed parses are outside the population. Libraries contribute only if their source is explicitly included and parsed as project source. Imports, class construction alone, bare method references, and placeholder-only method bodies do not add method-use edges; declared fields supply attribute edges. Construction does not imply an inferred `__init__` call.
+
+For method calls, use the IR's possible implementation bodies when available, including polymorphic overrides. Both complete-under-`closed-project-hierarchy` and approximate sets contribute their known bodies. If unavailable, use a statically selected implemented method as partial evidence. Attribute uses select canonical declared fields. The metric performs no language resolution or source IO. Its immutable module-fact input is a projection of retained analysis, not rule references or a second graph resolver.
+
+All measurements are explicitly **partial**: dynamic receivers, unsupported contexts/decorators/descriptors, unresolved/ambiguous uses, unavailable inventories, unmodeled libraries, and external subclasses/callers can hide partners. Unknown outgoing references are omitted, never assigned invented partners. An unresolved incoming use in another class can hide a partner for any measured class, even one with completely resolved outgoing sites. A partial zero means no observed resolved partners, not a verified absence of coupling. Approximate/static fallback sets are not a sound full-runtime upper or lower bound.
+
+Project aggregation is an **analyzer convention**, not a paper-defined project formula:
+
+- `measured_classes` counts classes with partial measurements; `unavailable_classes` counts retained classes with unsupported extraction (units: classes).
+- `partial_partner_sum`, `partial_partner_mean`, and `partial_partner_max` summarize only the measured population (units: partners per class for mean/max, class-partner incidences for sum). Each undirected pair contributes twice to the sum.
+- With no measured classes, all three summaries are `None`, not zero. Unavailable classes are excluded from denominators. All measured values remain partial, including in mixed-language snapshots.
+
+`CBO.partner_sets()` exposes read-only per-class partner-ID sets (`None` for unsupported extraction) separately from flat numerical reports. `tests/fixtures/cbo/partners.py` has eight measured classes with partner counts `3, 1, 2, 1, 0, 0, 0, 1`: sum `8`, mean `1`, maximum `3`. Snapshot differences compare independently modeled populations; larger breadth is not inherently worse.
 
 ### Snapshot comparison
 
@@ -88,7 +108,7 @@ Each side must have successfully parsed eligible source; zero-SLOC files are val
 
 `models.py` defines `ReportValue = int | float | None`, `MetricResult = Mapping[str, ReportValue]`, and `Report = Mapping[str, MetricResult]`. These are data contracts, not runtime report classes. Computed reports expose read-only outer and inner mappings over privately owned dictionaries. Metric results are flat: booleans, strings, sequences, nested mappings, and non-finite numbers are not report values. The canonical groups and fields are in the [README schema reference](../README.md#check-json-report-fields).
 
-`reporting.score.compute_report(analysis: AnalysisResult)` explicitly composes `Verbosity`, `Erosion`, `CognitiveErosion`, and `Syntax` instances from the sibling `metrics/` package. Each metric's `compute()` receives narrowly scoped extracted facts and owns its field names, supporting counts, calculations, and units. The builder owns group names. Private `metrics/_mass.py` shares erosion arithmetic; tree walking owns complexity extraction, not mass calculations.
+`reporting.score.compute_report(analysis: AnalysisResult)` explicitly composes `Verbosity`, `Erosion`, `CognitiveErosion`, `Syntax`, and `CBO` instances from the sibling `metrics/` package. Each metric's `compute()` receives narrowly scoped extracted facts and owns its field names, supporting counts, calculations, and units. The builder owns group names. Private `metrics/_mass.py` shares erosion arithmetic; tree walking owns complexity extraction, not mass calculations.
 
 `metrics.base.Metric` is an abstract base with an abstract `compute()` method and class-declared `units`. Its parameter specification preserves each concrete metric's distinct input signature; it does not require a common analysis context or introduce a registry or dynamic discovery. Metrics do not import reporting.
 

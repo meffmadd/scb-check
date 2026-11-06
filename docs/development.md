@@ -26,6 +26,7 @@ Implemented analysis paths:
 - Bundled Python `ast-grep` slop patterns, plus optional local rules from `SCB_CHECK_EXTRA_SLOP_RULES`.
 - Structural rules over `ProjectIR`; the current bundled Python rules are `trivial-wrapper` and opt-in `low-use-short-function`.
 - Cyclomatic and cognitive erosion scores for all supported languages.
+- [Partial retained-project CBO](architecture.md#coupling-between-objects-cbo), with Python-first member use, possible polymorphic targets, separate immutable partner diagnostics, measured/unavailable populations, and independent check/diff reports.
 - Python source ignores for `ast-grep` and structural rule IDs.
 - Python boundary suppression for validation/normalization functions.
 
@@ -54,7 +55,7 @@ Implemented analysis paths:
 | Full snapshot analysis and source indexing | `src/scb_check/pipeline.py` |
 | Snapshot composition and serialization | `src/scb_check/reporting/score.py` |
 | Metric contract | `src/scb_check/metrics/base.py` (`Metric`) |
-| Metric calculations, fields, and units | `src/scb_check/metrics/verbosity.py`, `erosion.py`, `cog_erosion.py`, `syntax.py`, `units.py` |
+| Metric calculations, fields, and units | `src/scb_check/metrics/verbosity.py`, `erosion.py`, `cog_erosion.py`, `syntax.py`, `cbo.py`, `units.py` |
 | Shared erosion arithmetic | `src/scb_check/metrics/_mass.py` |
 | Report comparison and summary rendering | `src/scb_check/reporting/comparison.py` |
 | `ast-grep` integration | `src/scb_check/analysis/astgrep.py` and `src/scb_check/resources/slop_rules/` |

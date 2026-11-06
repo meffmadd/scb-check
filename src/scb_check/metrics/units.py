@@ -11,4 +11,6 @@ type Unit = Literal[
     "mass",
     "trees",
     "nodes",
+    "classes",
+    "partners",
 ]
