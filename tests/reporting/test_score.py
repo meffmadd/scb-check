@@ -19,6 +19,7 @@ from scb_check.reporting.comparison import compute_diff_report
 from scb_check.reporting.comparison import render_comparison
 from scb_check.reporting.score import compute_report
 from scb_check.reporting.score import serialize_report
+from scb_check.tree_walking.models import ProjectIR
 from scb_check.tree_walking.models import SourceSpan
 from scb_check.tree_walking.models import SymbolIR
 from scb_check.tree_walking.models import SymbolKind
@@ -71,8 +72,8 @@ def test_unknown_measurements_propagate_without_mutating_snapshots(
     field: str,
 ) -> None:
     """Explicit unknowns are never zero-filled, including per-language counts."""
-    before = serialize_report(compute_report(AnalysisResult(Flags(), {})))
-    after = serialize_report(compute_report(AnalysisResult(Flags(), {})))
+    before = serialize_report(compute_report(AnalysisResult(Flags(), {}, ProjectIR())))
+    after = serialize_report(compute_report(AnalysisResult(Flags(), {}, ProjectIR())))
     before[group][field], after[group][field] = earlier, later
 
     difference = compare_reports(before, after)
@@ -97,8 +98,8 @@ def test_unknown_measurements_propagate_without_mutating_snapshots(
 @pytest.mark.parametrize("reverse", [False, True])
 def test_only_absent_language_counts_are_zero_filled(*, reverse: bool) -> None:
     """Language zero-filling applies only to subtraction, never to explicit nulls."""
-    before = serialize_report(compute_report(AnalysisResult(Flags(), {})))
-    after = serialize_report(compute_report(AnalysisResult(Flags(), {})))
+    before = serialize_report(compute_report(AnalysisResult(Flags(), {}, ProjectIR())))
+    after = serialize_report(compute_report(AnalysisResult(Flags(), {}, ProjectIR())))
     after["syntax"].update({"python.tree_count": 1, "python.node_count": None})
     if reverse:
         before, after = after, before
@@ -118,7 +119,7 @@ def test_missing_required_groups_and_fields_are_contract_errors(
     side: str, group: str
 ) -> None:
     """Neither incomplete operand may silently omit a required measurement."""
-    baseline = serialize_report(compute_report(AnalysisResult(Flags(), {})))
+    baseline = serialize_report(compute_report(AnalysisResult(Flags(), {}, ProjectIR())))
     for missing_field in (None, *baseline[group]):
         incomplete = serialize_report(baseline)
         if missing_field is None:
@@ -143,7 +144,7 @@ def test_report_values_must_be_flat_finite_nullable_numbers(
     """Malformed library inputs fail instead of leaking invalid measurements."""
     payload: dict[str, dict[str, object]] = {
         group: dict(result)
-        for group, result in compute_report(AnalysisResult(Flags(), {})).items()
+        for group, result in compute_report(AnalysisResult(Flags(), {}, ProjectIR())).items()
     }
     payload["verbosity"]["score"] = invalid
     # Simulate an untyped library caller supplying malformed external data.
@@ -181,7 +182,7 @@ def test_nonpositive_function_sloc_has_zero_mass(sloc: int) -> None:
         )
     )
 
-    report = compute_report(AnalysisResult(flags, {}))
+    report = compute_report(AnalysisResult(flags, {}, ProjectIR()))
 
     assert report["erosion"] == {
         "score": 0.0,
@@ -201,7 +202,7 @@ def test_nonpositive_function_sloc_has_zero_mass(sloc: int) -> None:
 
 def test_subtraction_cannot_return_nonfinite_measurements() -> None:
     """Even finite operands may overflow; do not return an invalid diff report."""
-    before = serialize_report(compute_report(AnalysisResult(Flags(), {})))
+    before = serialize_report(compute_report(AnalysisResult(Flags(), {}, ProjectIR())))
     after = serialize_report(before)
     before["erosion"]["total_mass"] = -1e308
     after["erosion"]["total_mass"] = 1e308

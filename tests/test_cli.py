@@ -15,6 +15,7 @@ from scb_check.models import CloneBlock
 from scb_check.models import Flags
 from scb_check.pipeline import AnalysisResult
 from scb_check.pipeline import IgnoreDirectiveError
+from scb_check.tree_walking.models import ProjectIR
 
 if TYPE_CHECKING:
     import pytest
@@ -384,6 +385,7 @@ def test_check_filters_duplicates_by_line_count(
             source_lines_by_file={
                 resolved: tuple(source_file.read_text(encoding="utf-8").splitlines()),
             },
+            project=ProjectIR(),
         )
 
     monkeypatch.setattr("scb_check.commands.check.analyze", fake_analyze)
@@ -560,6 +562,7 @@ def test_check_passes_context(
         return AnalysisResult(
             flags=make_flags(total_loc_by_file=[(resolved, 1)]),
             source_lines_by_file={resolved: ("x = 1",)},
+            project=ProjectIR(),
         )
 
     captured: dict[str, int] = {}
@@ -616,6 +619,7 @@ def test_check_verbosity_sets_logging(
         return AnalysisResult(
             flags=make_flags(total_loc_by_file=[(resolved, 1)]),
             source_lines_by_file={resolved: ("x = 1",)},
+            project=ProjectIR(),
         )
 
     captured: dict[str, int] = {}
@@ -679,6 +683,7 @@ def test_check_include_all(
         assert include_all is True
         assert disable_sg is False
         return AnalysisResult(
+            project=ProjectIR(),
             flags=make_flags(total_loc_by_file=[(resolved, 1)]),
             source_lines_by_file={resolved: ("x = 1",)},
         )
@@ -744,6 +749,7 @@ def test_check_exits_zero_when_no_findings(
     ) -> AnalysisResult:
         del include_all, disable_sg
         return AnalysisResult(
+            project=ProjectIR(),
             flags=make_flags(total_loc_by_file=[(resolved, 1)]),
             source_lines_by_file={resolved: ("x = 1",)},
         )
@@ -792,6 +798,7 @@ def test_check_exits_nonzero_when_clones_exist(
                 clone_sloc_lines_by_file=[(resolved, {1})],
             ),
             source_lines_by_file={resolved: ("x = 1",)},
+            project=ProjectIR(),
         )
 
     monkeypatch.setattr("scb_check.commands.check.analyze", fake_analyze)
@@ -837,6 +844,7 @@ def test_check_exits_nonzero_when_ast_hits_exist(
                 total_loc_by_file=[(resolved, 1)],
             ),
             source_lines_by_file={resolved: ("x = 1",)},
+            project=ProjectIR(),
         )
 
     monkeypatch.setattr("scb_check.commands.check.analyze", fake_analyze)
@@ -883,6 +891,7 @@ def test_check_json_report_exits_nonzero_when_findings_exist(
                 clone_sloc_lines_by_file=[(resolved, {1})],
             ),
             source_lines_by_file={resolved: ("x = 1",)},
+            project=ProjectIR(),
         )
 
     monkeypatch.setattr("scb_check.commands.check.analyze", fake_analyze)

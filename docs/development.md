@@ -13,7 +13,12 @@ This guide summarizes the current implementation status and the preferred approa
 Implemented analysis paths:
 
 - Source discovery for supported Python, Rust, JavaScript, TypeScript, Zig, Haskell, and C++ suffixes.
-- Tree-sitter parsing into language-agnostic IR.
+- Tree-sitter parsing into language-agnostic IR, retained as immutable `AnalysisResult.project` with declaration identity, ownership, module/file membership, and nullable unavailable inventories.
+- Python entity-owned identifiers, comments, and docstring literals retained once per physical file as immutable `TextFragmentIR` records; other languages declare text extraction unavailable.
+- Canonical Python call/attribute-access occurrences, scoped import bindings, direct lexical/import project resolution, and explicit ambiguous/unresolved/unsupported evidence; generic languages declare source uses unavailable. See [the source-use contract](tree-walking.md#canonical-source-uses-and-imports).
+- Python canonical attributes, callable declaration/body ownership, structured declared field types, and direct bases with conservative class/primitive/other/unknown resolution; generic languages expose unavailable semantic families. See [class/member facts](tree-walking.md#class-member-and-declared-type-facts).
+- Bounded Python C3 member lookup connects lexical/import and declared-receiver evidence to canonical declarations and separate possible implementation sets, with explicit completeness assumptions. The [candidate input matrix](architecture.md#metric-ready-analysis-data-flow) and source-to-analysis fixtures validate the IR-first metric gate.
+- Rule-facing reference/effect projections preserve existing structural decisions; retained facts add no metrics, report fields, or CLI changes.
 - Parser `SLOC` accounting shared by verbosity, clone line counts, and rule spans.
 - One full `pipeline.analyze()` workflow using the shared source reader and source indexes for both commands.
 - Data-only grouped reports, metric-owned calculations and units, and pure nullable snapshot comparison including dotted per-language syntax counts.
@@ -39,6 +44,10 @@ Implemented analysis paths:
 | CLI command or option | `src/scb_check/commands/` |
 | Config loading or path walking | `src/scb_check/config.py`, `src/scb_check/walker.py` |
 | Source parsing, `SLOC`, directives, IR | `src/scb_check/tree_walking/`; see [Tree walking](tree-walking.md) |
+| Python source uses and scoped import extraction | `src/scb_check/tree_walking/languages/python/uses.py` |
+| Class/member/base extraction and annotation syntax | `src/scb_check/tree_walking/languages/python/declarations.py`, `python/types.py`; shared names and scopes in `python/uses.py` |
+| Direct import/type/base-to-project resolution | `src/scb_check/tree_walking/source_uses.py`; orchestration/effect links in `semantic.py` |
+| C3 member lookup and possible implementation sets | `src/scb_check/tree_walking/members.py`; receiver details in `languages/python/uses.py` |
 | Language parser configs | `src/scb_check/tree_walking/languages/` |
 | Clone detection | `src/scb_check/analysis/clones.py` |
 | Shared source IO and parse warnings | `src/scb_check/analysis/source.py` |
@@ -52,6 +61,30 @@ Implemented analysis paths:
 | Structural rule behavior | `src/scb_check/rules/` |
 | JSON scores or human rendering | `src/scb_check/reporting/` |
 | Shared `AnalysisResult`, finding records, and report mapping aliases | `src/scb_check/models.py` |
+
+## Extending retained entity facts
+
+1. Keep facts in `ModuleIR` / `SymbolIR` and expose them through `AnalysisResult.project`; use the [entity contract](tree-walking.md#retained-entity-contract) for identity, membership, availability, and association semantics.
+2. Update the producing parser and document its supported subset in the [availability contract](tree-walking.md#fact-availability-and-parser-support). Use `None` for unavailable inventories and empty tuples for successful extraction with no facts; preserve this distinction through resolution and projections. Keep parser-native nodes and source IO outside the IR, and metric populations/calculations in their existing layers. Text facts follow the [source-fragment ownership policy](tree-walking.md#source-text-fragments); reuse already-read/parser source, retain original spelling once, and leave document assembly and model preprocessing to consumers.
+3. Test real-source behavior through `analyze` / `analyze_files`, including immutable nested views, empty/unavailable facts, exact lexical parents, and repeatable IDs. Preserve same-file metric selection while retaining every declaration.
+4. Check numerical parity on unaffected fixtures. For cross-file function collisions and conditional Python declarations, test the corrected counts/masses/findings explicitly, including independent check/diff parity.
+
+### Extending source-use facts
+
+1. Follow the [canonical inventory contract](tree-walking.md#canonical-source-uses-and-imports): retain each occurrence once in `ModuleIR.source_uses`, derive indexes/projections, and keep imports separate. Preserve immutable records, stable snapshot IDs, byte spans, repeated sites, and recursion.
+2. Assign execution ownership independently of text ownership. Add explicit unsupported-context records where ownership/evaluation is not modeled; an available inventory describes only the documented subset, not full Python semantics.
+3. Keep direct lexical/import evidence in extraction/resolution. Leave ambiguous bindings and dynamic receivers explicit; external status needs import/builtin evidence, not dotted spelling. Bounded member/declared-receiver resolution belongs in `members.py`, separately from lexical/import extraction and from rule-specific effects; preserve [runtime-target uncertainty](tree-walking.md#member-resolution-and-runtime-targets).
+4. Preserve rule compatibility: textual nested-call projections, parameter/builtin exclusions, rule-specific self-recursion exclusion, shallow effects with `source_use_id`, and dotted keep-policy are distinct from canonical resolution. Verify unchanged structural findings and verbosity/erosion scores.
+5. Test exported `analyze` / `analyze_files` facts for module/class/default execution, nested bodies/expressions/control flow, repeated and recursive calls, attribute access modes, aliases/scopes/relative imports, project collisions, dynamic targets, unsupported contexts, empty/unavailable inventories, and read-only indexes. Stub `scb_check.pipeline.run_sg`; assert facts rather than traversal order. Retain standalone-check/independent-diff parity and existing report/exit contracts.
+6. Keep site/caller/target populations and metric formulas in consumers. Update the canonical contract and parser-support table when support changes, rather than adding metric-specific IR fields or a second call inventory.
+
+### Extending class/member facts
+
+1. Follow the [class/member contract](tree-walking.md#class-member-and-declared-type-facts). Keep fields in `ModuleIR.attributes`, callable/base facts on the owning symbol, and indexes derived from these inventories. Extend Python extraction using shared lexical evidence rather than building another name resolver.
+2. Preserve field identities across repeated writes. Link supported write targets to their canonical field; retain annotation occurrences and structured wrappers/arguments without inferring types from initializers. Keep syntax evidence distinct from runtime storage and metric inclusion.
+3. Retain uncertainty for dynamic fields, unknown annotations, decorators, and base expressions. Resolve known retained classes conservatively; inheritance/member resolution must associate existing declarations/bodies rather than copying them into subclasses.
+4. Test source-to-`analyze_files(...).project` behavior for repeated fields, self/forward/unresolved types, locals versus attributes, direct bases, abstract/placeholder bodies, nested declarations, unsupported syntax, empty/unavailable families, and frozen views. Keep scoring/check/diff compatibility coverage unchanged.
+5. Extend the member resolver through the same seam: verify C3/overrides, static declarations versus possible body sets, receiver annotation scope/rebinding, and uncertainty. Reuse canonical IDs and derived read-only owner/member/target views; update the candidate input fixture/matrix rather than introducing metric-specific inventories or scores.
 
 ## Adding an `ast-grep` rule
 

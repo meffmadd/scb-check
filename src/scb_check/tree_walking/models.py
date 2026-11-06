@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
+from os.path import abspath
 from pathlib import Path
-from typing import Literal
+from types import MappingProxyType
+from typing import Literal, Self
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import PrivateAttr
+from pydantic import field_validator
+from pydantic import model_validator
 
 HIGH_COMPLEXITY_THRESHOLD = 10
 
@@ -113,7 +119,7 @@ class EffectKind(StrEnum):
 
 
 class SourceSpan(IRModel):
-    """A source range with 1-indexed lines and 0-indexed columns."""
+    """A range with one-based lines, zero-based UTF-8 byte columns, exclusive ends."""
 
     file: Path
     start_line: int = Field(ge=1)
@@ -121,31 +127,183 @@ class SourceSpan(IRModel):
     end_line: int = Field(ge=1)
     end_col: int = Field(ge=0)
 
+    _file_id: str = PrivateAttr()
+
+    def model_post_init(self, _context: object) -> None:
+        """Save the file ID before the working directory can change."""
+        # `Path.resolve()` would introduce filesystem IO into the pure IR.
+        normalized = abspath(self.file)  # noqa: PTH100
+        self._file_id = f"file:{Path(normalized).as_posix()}"
+
+    @property
+    def file_id(self) -> str:
+        """Return the file ID based on its normalized absolute path, without reading the source."""
+        return self._file_id
+
+    def entity_id(self, kind: SymbolKind) -> str:
+        """Identify a declaration by physical file, kind, and declaration span."""
+        return (
+            f"{self.file_id}:{kind.value}:"
+            f"{self.start_line}:{self.start_col}-{self.end_line}:{self.end_col}"
+        )
+
+
+type TextFragmentKind = Literal["identifier", "comment", "docstring"]
+
+
+class TextFragmentIR(IRModel):
+    """An identifier, comment, or docstring at one location, linked to its enclosing entity."""
+
+    text: str
+    kind: TextFragmentKind
+    span: SourceSpan
+    owner_id: str
+
+
+type SignatureAnnotations = Mapping[str, str | None]
+
 
 class SignatureIR(IRModel):
     """Normalized callable signature facts."""
 
     parameters: tuple[str, ...] = ()
-    annotations: dict[str, str | None] = Field(default_factory=dict)
+    annotations: SignatureAnnotations = Field(
+        default_factory=lambda: MappingProxyType({})
+    )
     returns: str | None = None
+
+    @field_validator("annotations")
+    @classmethod
+    def _freeze_annotations(cls, annotations: SignatureAnnotations) -> SignatureAnnotations:
+        """Own a read-only copy of signature annotations."""
+        return MappingProxyType(dict(annotations))
 
 
 class ImportIR(IRModel):
-    """A module import binding."""
+    """An imported name and its local alias, recorded separately from calls."""
 
     local_name: str
     qualified_name: str
     span: SourceSpan
+    owner_id: str | None = None
+
+    @property
+    def id(self) -> str:
+        """Identify each alias binding by its own source span."""
+        return (
+            f"{self.span.file_id}:import:"
+            f"{self.span.start_line}:{self.span.start_col}-"
+            f"{self.span.end_line}:{self.span.end_col}"
+        )
+
+
+type ResolutionStatus = Literal[
+    "project", "external", "ambiguous", "unresolved", "unsupported"
+]
+
+
+type UnsupportedContext = Literal[
+    "lambda", "list_comprehension", "set_comprehension", "dictionary_comprehension",
+    "generator_expression", "type_alias_statement", "type_parameter", "annotation",
+]
+type ResolutionReason = Literal[
+    "no-direct-binding", "lexical-declaration", "parameter", "local-binding",
+    "import-binding", "relative-or-star-import", "scope-directive", "type-parameter",
+    "dynamic-target", "receiver-needs-member-resolution", "builtin", "star-import",
+    "multiple-lexical-bindings", "project-import-binding", "multiple-project-bindings",
+    "unresolved-project-member", "self-type", "member-declaration",
+    "unknown-member-order", "missing-member", "multiple-member-declarations", "private-member",
+] | UnsupportedContext
+
+
+class TargetResolutionIR(IRModel):
+    """A target selected from source bindings, not the possible runtime implementations."""
+
+    status: ResolutionStatus = "unresolved"
+    target_id: str | None = None
+    qualified_name: str | None = None
+    candidate_ids: tuple[str, ...] = ()
+    reason: ResolutionReason = "no-direct-binding"
+
+
+type SourceUseKind = Literal[
+    "call", "attribute-read", "attribute-write", "attribute-read-write", "attribute-delete"
+]
+type ExecutionKind = Literal["module", "class", "function", "unsupported"]
+
+
+class ReceiverIR(IRModel):
+    """The starting name and optional declared type for a dotted target such as `obj.method`."""
+
+    resolution: TargetResolutionIR
+    member_path: tuple[str, ...]
+    declared_type: TypeReferenceIR | None = None
+    is_class_receiver: bool = False
+
+
+type TargetSetStatus = Literal["complete", "approximate", "unavailable"]
+
+
+type RuntimeTargetReason = Literal[
+    "no-supported-target", "not-a-callable-use", "no-supported-implementation",
+    "supported-declarations", "partial-hierarchy-path-or-implementation",
+]
+
+
+class RuntimeTargetsIR(IRModel):
+    """Possible implementation bodies, with their completeness and required assumption."""
+
+    status: TargetSetStatus = "unavailable"
+    target_ids: tuple[str, ...] = ()
+    assumption: Literal["closed-project-hierarchy"] | None = None
+    reason: RuntimeTargetReason = "no-supported-target"
+
+    @model_validator(mode="after")
+    def _validate_evidence(self) -> Self:
+        if self.status == "unavailable":
+            if self.target_ids or self.assumption is not None:
+                raise ValueError("Unavailable runtime targets cannot assert candidates or an assumption")
+        elif not self.target_ids or self.assumption is None:
+            raise ValueError("Available runtime targets require implementations and an assumption")
+        return self
+
+
+class SourceUseIR(IRModel):
+    """One call or attribute access, with its execution owner and target resolution."""
+
+    kind: SourceUseKind
+    span: SourceSpan
+    target_span: SourceSpan
+    target_spelling: str
+    target_form: Literal["name", "attribute", "expression"]
+    owner_id: str | None
+    execution_kind: ExecutionKind
+    unsupported_context: UnsupportedContext | None = None
+    declared_attribute_id: str | None = None
+    resolution: TargetResolutionIR = Field(default_factory=TargetResolutionIR)
+    receiver: ReceiverIR | None = None
+    runtime_targets: RuntimeTargetsIR = Field(default_factory=RuntimeTargetsIR)
+    nesting: int = 0
+
+    @property
+    def id(self) -> str:
+        """Identify this occurrence, keeping repeated uses of the same target separate."""
+        return (
+            f"{self.span.file_id}:{self.kind}:"
+            f"{self.span.start_line}:{self.span.start_col}-"
+            f"{self.span.end_line}:{self.span.end_col}"
+        )
 
 
 class ReferenceIR(IRModel):
-    """A resolved symbol usage location in scanned source."""
+    """A call summary for rules, derived from source uses rather than collected separately."""
 
     name: str
     resolved_name: str | None
     kind: Literal["call", "reference"]
     span: SourceSpan
     nesting: int = 0
+    source_use_id: str | None = None
 
 
 class ValueIR(IRModel):
@@ -176,6 +334,56 @@ class EffectIR(IRModel):
     symbol_qualified_name: str
     target_name: str | None = None
     target_qualified_name: str | None = None
+    source_use_id: str | None = None
+
+
+type TypeReferenceForm = Literal["name", "generic", "union", "type-list", "literal", "unknown"]
+type TypeCategory = Literal["primitive", "class", "other", "unknown"]
+type AttributeStorage = Literal["class", "instance"]
+type CallableBinding = Literal["function", "instance", "class", "static"]
+type CallableBodyKind = Literal["implemented", "pass", "ellipsis", "empty"]
+
+
+class TypeReferenceIR(IRModel):
+    """A type expression split into its name and arguments, with any known target."""
+
+    spelling: str
+    span: SourceSpan
+    form: TypeReferenceForm
+    name: str | None = None
+    arguments: tuple[TypeReferenceIR, ...] = ()
+    is_forward: bool = False
+    category: TypeCategory = "unknown"
+    resolution: TargetResolutionIR = Field(default_factory=TargetResolutionIR)
+
+
+class AttributeIR(IRModel):
+    """One field per declaring class and name, collected from supported assignments."""
+
+    name: str
+    declaring_class_id: str
+    owner_id: str
+    span: SourceSpan
+    storage: frozenset[AttributeStorage]
+    writes: frozenset[AttributeStorage] = frozenset()
+    declared_types: tuple[TypeReferenceIR, ...] = ()
+
+    @property
+    def id(self) -> str:
+        """Identify the field independently of repeated assignments."""
+        return f"{self.declaring_class_id}:attribute:{self.name}"
+
+
+class CallableIR(IRModel):
+    """One callable's declaring class, method binding, and body details."""
+
+    declaring_class_id: str | None = None
+    binding: CallableBinding
+    is_abstract: bool = False
+    body_kind: CallableBodyKind
+    body_span: SourceSpan
+    implementation_id: str | None = None
+    dispatch_supported: bool = True
 
 
 class SymbolIR(IRModel):
@@ -186,16 +394,30 @@ class SymbolIR(IRModel):
     kind: SymbolKind
     span: SourceSpan
     language: Language = Language.PYTHON
-    roles: frozenset[SymbolRole] = frozenset()
+    roles: frozenset[SymbolRole] | None = None
     signature: SignatureIR = Field(default_factory=SignatureIR)
-    body: tuple[OperationIR, ...] = ()
-    references: tuple[ReferenceIR, ...] = ()
+    body: tuple[OperationIR, ...] | None = None
+    references: tuple[ReferenceIR, ...] | None = None
     owner_qualified_name: str | None = None
+    owner_id: str | None = None
+    module_id: str | None = None
     base_names: tuple[str, ...] = ()
+    callable_facts: CallableIR | None = None
+    direct_bases: tuple[TypeReferenceIR, ...] | None = None
     sloc: int = 0
     cyc_complexity: int = 1
     cog_complexity: int = 0
     max_nesting: int = 0
+
+    @property
+    def id(self) -> str:
+        """Identify this declaration by file and location, not by name."""
+        return self.span.entity_id(self.kind)
+
+    @property
+    def file_id(self) -> str:
+        """Return physical-file membership."""
+        return self.span.file_id
 
     @property
     def file(self) -> Path:
@@ -213,8 +435,10 @@ class SymbolIR(IRModel):
         return self.span.end_line
 
     @property
-    def return_operations(self) -> tuple[OperationIR, ...]:
-        """Return normalized `return` operations in this symbol."""
+    def return_operations(self) -> tuple[OperationIR, ...] | None:
+        """Return normalized `return` operations, or `None` if body extraction is unavailable."""
+        if self.body is None:
+            return None
         return tuple(
             operation
             for operation in self.body
@@ -237,20 +461,164 @@ class ModuleIR(IRModel):
     file: Path
     module_name: str
     span: SourceSpan
-    imports: tuple[ImportIR, ...] = ()
+    imports: tuple[ImportIR, ...] | None = None
     symbols: tuple[SymbolIR, ...] = ()
-    operations: tuple[OperationIR, ...] = ()
-    references: tuple[ReferenceIR, ...] = ()
+    text_fragments: tuple[TextFragmentIR, ...] | None = None
+    source_uses: tuple[SourceUseIR, ...] | None = None
+    attributes: tuple[AttributeIR, ...] | None = None
+    operations: tuple[OperationIR, ...] | None = None
     sloc_lines: frozenset[int] = frozenset()
+
+    @property
+    def id(self) -> str:
+        """Identify this module by file and span, separately from the file's own ID."""
+        return self.span.entity_id(SymbolKind.MODULE)
+
+    @property
+    def file_id(self) -> str:
+        """Return physical-file membership."""
+        return self.span.file_id
+
+    @property
+    def kind(self) -> SymbolKind:
+        """Return the logical entity kind."""
+        return SymbolKind.MODULE
+
+    @property
+    def name(self) -> str:
+        """Return the parser's descriptive module name."""
+        return self.module_name
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the module name for lookups; unrelated files may share this name."""
+        return self.module_name
+
+    @model_validator(mode="after")
+    def _attach_membership(self) -> Self:
+        """Bind declarations to this module without inferring unknown owners."""
+        symbols = tuple(
+            symbol.model_copy(
+                update={
+                    "module_id": self.id,
+                    "owner_id": (
+                        self.id
+                        if symbol.owner_qualified_name is None
+                        else symbol.owner_id
+                    ),
+                }
+            )
+            for symbol in self.symbols
+        )
+        object.__setattr__(self, "symbols", symbols)
+        return self
+
+
+type ModuleLookup = Mapping[str, ModuleIR]
+type ModulesByFile = Mapping[Path, ModuleIR]
+type SymbolLookup = Mapping[str, SymbolIR]
+type SymbolEffects = Mapping[str, tuple[EffectIR, ...] | None]
+type SourceUseLookup = Mapping[str, SourceUseIR]
+type AttributeLookup = Mapping[str, AttributeIR]
+type MemberLookup = Mapping[str, Mapping[str, TargetResolutionIR]]
+type OwnedEntities = Mapping[str, tuple[str, ...]]
 
 
 class ProjectIR(IRModel):
-    """Project-level semantic indexes built from parsed modules."""
+    """The analyzed modules and read-only lookups for their declarations and source uses."""
 
-    modules: tuple[ModuleIR, ...]
-    symbols_by_qualified_name: dict[str, SymbolIR]
-    symbols_by_file: dict[Path, tuple[SymbolIR, ...]]
-    effects_by_symbol: dict[str, tuple[EffectIR, ...]] = Field(default_factory=dict)
+    modules: tuple[ModuleIR, ...] = ()
+    member_lookup: MemberLookup = Field(default_factory=lambda: MappingProxyType({}))
+    class_member_lookup: MemberLookup = Field(default_factory=lambda: MappingProxyType({}))
+
+    @field_validator("member_lookup", "class_member_lookup")
+    @classmethod
+    def _freeze_members(cls, members: MemberLookup) -> MemberLookup:
+        return MappingProxyType({owner: MappingProxyType(dict(values)) for owner, values in members.items()})
+
+    effects_by_symbol: SymbolEffects = Field(
+        default_factory=lambda: MappingProxyType({}),
+    )
+
+    @field_validator("effects_by_symbol")
+    @classmethod
+    def _freeze_effects(cls, effects: SymbolEffects) -> SymbolEffects:
+        """Own a read-only copy of derived effects."""
+        return MappingProxyType(dict(effects))
+
+    _modules_by_id: ModuleLookup = PrivateAttr()
+    _modules_by_file: ModulesByFile = PrivateAttr()
+    _symbols_by_id: SymbolLookup = PrivateAttr()
+    _symbols_by_qualified_name: SymbolLookup = PrivateAttr()
+    _source_uses_by_id: SourceUseLookup = PrivateAttr()
+    _attributes_by_id: AttributeLookup = PrivateAttr()
+    _entities_by_owner: OwnedEntities = PrivateAttr()
+
+    def model_post_init(self, _context: object) -> None:
+        """Build read-only lookups from the modules without keeping caller-owned mappings."""
+        symbols = tuple(
+            symbol for module in self.modules for symbol in module.symbols
+        )
+        self._attributes_by_id = MappingProxyType({
+            attribute.id: attribute for module in self.modules
+            if module.attributes is not None for attribute in module.attributes
+        })
+        owners: dict[str, list[str]] = {}
+        for entity in (*symbols, *self._attributes_by_id.values()):
+            if entity.owner_id is not None:
+                owners.setdefault(entity.owner_id, []).append(entity.id)
+        self._entities_by_owner = MappingProxyType({owner: tuple(ids) for owner, ids in owners.items()})
+        self._source_uses_by_id = MappingProxyType({
+            use.id: use for module in self.modules
+            if module.source_uses is not None for use in module.source_uses
+        })
+        self._modules_by_id = MappingProxyType(
+            {module.id: module for module in self.modules}
+        )
+        self._modules_by_file = MappingProxyType(
+            {module.file: module for module in self.modules}
+        )
+        self._symbols_by_id = MappingProxyType(
+            {symbol.id: symbol for symbol in symbols}
+        )
+        self._symbols_by_qualified_name = MappingProxyType(
+            {symbol.qualified_name: symbol for symbol in symbols}
+        )
+
+    @property
+    def entities_by_owner(self) -> OwnedEntities:
+        """Look up directly enclosed declarations and fields, without inherited copies."""
+        return self._entities_by_owner
+
+    @property
+    def attributes_by_id(self) -> AttributeLookup:
+        """Look up class and instance fields from modules that support field extraction."""
+        return self._attributes_by_id
+
+    @property
+    def source_uses_by_id(self) -> SourceUseLookup:
+        """Look up calls and attribute accesses, including those in unsupported contexts."""
+        return self._source_uses_by_id
+
+    @property
+    def modules_by_id(self) -> ModuleLookup:
+        """Look up modules by ID."""
+        return self._modules_by_id
+
+    @property
+    def modules_by_file(self) -> ModulesByFile:
+        """Look up the module for each successfully parsed file."""
+        return self._modules_by_file
+
+    @property
+    def symbols_by_id(self) -> SymbolLookup:
+        """Look up every retained symbol declaration, including repeated names."""
+        return self._symbols_by_id
+
+    @property
+    def symbols_by_qualified_name(self) -> SymbolLookup:
+        """Look up the last declaration for each qualified name; earlier duplicates are omitted."""
+        return self._symbols_by_qualified_name
 
 
 class RuleFinding(IRModel):

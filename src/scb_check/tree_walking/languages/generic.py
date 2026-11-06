@@ -128,6 +128,7 @@ class VisitContext:
     """Current ownership while walking a syntax tree."""
 
     owner_qualified_name: str | None = None
+    owner_id: str | None = None
     class_context: ClassContext | None = None
 
 
@@ -193,7 +194,7 @@ class GenericTreeSitterWalker:
         """Initialize with parser config and precomputed SLOC."""
         self._config = config
         self._file_path = file_path
-        self._source_lines = source.splitlines()
+        self._source = source
         self._tree = tree
         self._sloc_lines = sloc_lines
         self._module_name = _module_name_for_path(file_path)
@@ -206,7 +207,7 @@ class GenericTreeSitterWalker:
             language=self._config.language,
             file=self._file_path,
             module_name=self._module_name,
-            span=_module_span(self._file_path, self._source_lines),
+            span=_module_span(self._file_path, self._source),
             symbols=tuple(self._symbols),
             sloc_lines=self._sloc_lines,
         )
@@ -273,6 +274,7 @@ class GenericTreeSitterWalker:
             span=_node_span(self._file_path, node),
             language=self._config.language,
             owner_qualified_name=context.owner_qualified_name,
+            owner_id=context.owner_id,
             sloc=_count_sloc_in_span(node, self._sloc_lines),
         )
         self._symbols.append(class_symbol)
@@ -281,6 +283,7 @@ class GenericTreeSitterWalker:
             node,
             VisitContext(
                 owner_qualified_name=qualified_name,
+                owner_id=class_symbol.id,
                 class_context=class_context,
             ),
             ancestors,
@@ -338,8 +341,11 @@ class GenericTreeSitterWalker:
             kind=kind,
             span=_node_span(self._file_path, node),
             language=self._config.language,
-            signature=SignatureIR(parameters=_parameter_names(node, self._config)),
+            signature=SignatureIR(
+                parameters=_parameter_names(node, self._config)
+            ),
             owner_qualified_name=context.owner_qualified_name,
+            owner_id=context.owner_id,
             base_names=(
                 context.class_context.base_names
                 if context.class_context is not None
@@ -355,7 +361,9 @@ class GenericTreeSitterWalker:
         self._symbols.append(symbol)
         self._visit_children(
             node,
-            VisitContext(owner_qualified_name=qualified_name),
+            VisitContext(
+                owner_qualified_name=qualified_name, owner_id=symbol.id
+            ),
             node_ancestors,
         )
 

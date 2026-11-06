@@ -28,6 +28,8 @@ That union is intersected with `SLOC`, then divided by total `SLOC`. A line flag
 
 `cog_erosion` uses the same mass-share calculation with cognitive complexity and `cog_complexity > 10`. Zero total mass yields a zero score.
 
+Metric populations select declarations by `(physical file, qualified name)`, keeping the last same-file declaration; generic parsers retain their existing name disambiguation. Cross-file Python name collisions no longer discard functions. Python declarations under control-flow wrappers also enter ordinary metrics and structural rules. These two extraction/indexing corrections intentionally affect counts, masses, erosion scores, and potentially structural verbosity, without changing formulas, rule policies, report fields, or CLI contracts.
+
 ### Snapshot comparison
 
 Each delta is the later measurement minus the earlier measurement, in its existing units. `diff` compares every numeric check report measurement: scores, scanned-file and SLOC counts, flagged-line and finding counts, function counts and masses, and syntax-tree/node counts including per-language counts. Only absent dotted per-language syntax fields contribute zero counts to subtraction; original snapshots keep their own language coverage. Explicit `None` propagates through subtraction, while missing required groups or fields are contract errors.
@@ -52,14 +54,14 @@ CLI (`cli.py` / `commands/`)
     │
     ├─ discover supported source files with the walker
     ├─ read and parse source through `read_and_parse_source`
-    │      └─ emit `ModuleIR`, `SLOC`, symbols, and complexity facts
+    │      └─ emit `ModuleIR`, `SLOC`, symbols, complexity, and Python text/use/member/type facts
     ├─ build source indexes
     ├─ build `ProjectIR` semantic indexes
     ├─ detect clone blocks from parser-native trees
     ├─ run bundled and extra Python `ast-grep` rules through `sg`
     ├─ run structural rules over `ProjectIR`
     ├─ apply source ignores, boundary suppression, severity, and thresholds
-    └─ return `AnalysisResult` (including sorted `Flags` and source context)
+    └─ return `AnalysisResult` (retained `ProjectIR`, sorted `Flags`, read-only source context)
            │
            ├─ `compute_report(analysis)` → `serialize_report(report)` for JSON
            └─ `render_flags()` for location-level human output
@@ -96,6 +98,63 @@ The two-analysis builder leaves room for a future pairwise measurement without d
 
 `score.serialize_report(report)` validates the report contract and creates fresh plain outer and inner dictionaries; changing serialized data cannot change a computed report. `None` becomes JSON `null`. Tree paths remain command-owned context outside numerical reports. `render_comparison(before, after, diff)` uses metric-owned units: fractional scores become percentages, score differences become percentage points, counts and masses keep their units, and unavailable values are explicit. Unit metadata is not embedded in report values.
 
+### Text evidence boundary
+
+Python's immutable `TextFragmentIR` records preserve source evidence for analysis consumers, including CSE's function/method, class, and file documents. Each occurrence lives once in its module's physical-file inventory with a syntactic owner; parent documents can select child owners without duplicate authoritative copies. Other languages explicitly declare extraction unavailable. See [the fragment contract](tree-walking.md#source-text-fragments) for ownership, spans, and availability.
+
+The IR preserves spelling rather than choosing semantic preprocessing: it does not split identifiers, remove stop words, stem, tokenize for a model, embed, or assemble documents. Consumers choose document membership and representations. Metric implementations remain responsible for populations, formulas, and scores; retaining comments/docstrings does not make them SLOC or change verbosity, erosion, report fields, or independent-snapshot comparison.
+
+### Source-use evidence boundary
+
+Python calls and attribute accesses live once in `ModuleIR.source_uses`, with snapshot occurrence IDs, spans, execution owners, and explicit direct-resolution evidence. Imports remain separate bindings. `build_project()` refines import targets against retained entities; `ProjectIR.source_uses_by_id` is a read-only index, not another inventory. See [the source-use contract](tree-walking.md#canonical-source-uses-and-imports) for supported contexts, alias/scope handling, ambiguity, and unresolved dynamics.
+
+A source site, a distinct caller, and a distinct target are different populations: repeated sites and recursion must survive extraction so consumers can choose counts and direction policies. Static binding evidence is not a possible-runtime-target set. External status requires import/builtin evidence outside the retained snapshot; dotted spelling alone supplies neither external status nor type/runtime-target inference.
+
+Rule-facing references and shallow operation-selected effects intentionally preserve textual nesting, parameter/builtin exclusions, self-recursion exclusions, and dotted-call keep-policy. Linked effects carry `source_use_id`, but their rule labels need not match canonical resolution status. This separation retains existing structural-rule behavior while exposing richer facts. Metric populations, counts, formulas, and scores stay in consumers, outside the IR; this inventory adds no report fields or metrics and changes neither verbosity/erosion nor CLI `check`/independent-snapshot `diff` contracts.
+
+### Class and type evidence boundary
+
+Python class/member facts retain declarations rather than precomputed coupling or inherited-member populations. A canonical attribute distinguishes two fields of one class type from two writes to one field; structured types preserve self references, primitives, wrappers, and uncertainty without deciding which count toward DAC or CBO. Direct base relations distinguish inheritance from composition without treating an inherited body as new implementation mass.
+
+Callable facts separate the declaring class, source body identity/location, and recognized abstract/placeholder syntax. The bounded Python member resolver associates inherited members with canonical declarations and implementation bodies without copying them. Declared receivers and retained subclass overrides supply separate possible-body sets with explicit complete-under-assumption, approximate, or unavailable evidence; these do not follow from direct-base/type facts alone. See [the class/member reference](tree-walking.md#class-member-and-declared-type-facts) for producers, ownership, and supported syntax.
+
+Consumers decide whether to include inherited/abstract methods for RFC, which wrappers/primitive/self types contribute to DAC/CBO, and whether to count member-use sites or distinct targets for MPC. Those choices change metric populations and scores, so they remain outside the IR. These facts add no metrics or report fields and preserve existing rule, verbosity/erosion, CLI exit, and independent-snapshot comparison contracts.
+
+### Metric-ready analysis data flow
+
+The retained contract connects four slices:
+
+```text
+already-read source → entities/owners + text fragments + source uses/imports + types/bases
+                              ↓                      ↓                         ↓
+                         entity indexes ← lexical/import resolution ← retained project
+                              ↓                      ↓
+                         C3 member lookup → static declarations + possible body sets
+                              ↓                      ↓
+                       AnalysisResult.project (one independent immutable snapshot)
+                              ↓
+                 consumer-selected populations, relations, documents, and metrics
+```
+
+Entity IDs connect execution owners to source occurrences, declarations to modules/classes, and text fragments to syntactic owners. A static member target identifies its declaring entity rather than manufacturing a member on the receiver class. Implementation identities distinguish an inherited body from an override. Source occurrences remain physical sites, including repetitions and recursion, not expanded runtime edges. Text remains original evidence: preprocessing, embeddings, and document assembly would bake a model and population policy into shared analysis, prevent alternative representations, and duplicate parent/child documents.
+
+The IR-first gate is validated at `analyze_files(...).project` by `tests/test_member_analysis.py`, including `tests/fixtures/ir_contract/`, alongside the entity/use/type/text suites. These tests assert facts, not early metrics. The contract enables restricted, explicitly labeled analyses; it does not remove unsupported Python/library/incoming-caller uncertainty. See [resolution support and assumptions](tree-walking.md#member-resolution-and-runtime-targets).
+
+| Candidate | Required retained facts | Consumer-owned choices |
+| --- | --- | --- |
+| CBO | Class ownership; method/field uses; canonical declaring owners; possible runtime bodies | Partner union/direction, self exclusion, modeled class universe, partial coverage |
+| RFC₁ | Own/inherited member lookup; body identities and bodyless markers; direct calls and possible bodies | Method population and one-level response-set union, not transitive closure |
+| MPC | Call occurrence IDs; executing method and implementation owner; static target implementation owner | Per-site count, own/inherited source/target exclusions |
+| Distinct callers / callees | Callable IDs; execution owners; direct static/possible targets; module IDs; recursive/repeated sites | Relation inversion/deduplication, recursion and initializer policy |
+| DAC | Canonical fields, declaring classes, structured declared types and uncertainty | Attribute population, wrappers/union interpretation, primitives and library policy |
+| Ca/Ce class categories | Class/module ownership; resolved method/field uses, types and base relations as separately selectable evidence | Category grouping and dependency predicate; class populations, not module neighbors |
+| Module edges | Logical module/file mapping; import bindings or resolved calls; endpoint module IDs | Explicit relation selection, directions, external scope, neighbor deduplication |
+| CIC | Direct bases; static member/field targets; canonical defining/implementation owners; actual sites | Proper-ancestor traversal/filter, inherited-source and dispatch policy, site counting |
+| Method RIC | Target method/class identity; distinct executing method/class owners, including owner-class and comparison-class use | Pair population, user deduplication, denominator floor and ratio |
+| Multilevel CSE | Original `TextFragmentIR` text/spans and module/declaration owner tree, including nested owners | Method/class/file selection, document preprocessing, explicitly supplied local encoder and similarity |
+
+All candidates handle unavailable inventories and uncertain targets explicitly. Shared language resolution belongs here even when expensive; metric-specific graph traversal/counting and embedding computation do not. These facts add no report fields, scores, thresholds, or backend registry. Existing verbosity/erosion, rule projections, CLI exits, and standalone-check/independent-diff contracts are unchanged.
+
 ## Layers
 
 - Boundary: `cli.py`, `commands/`, `config.py`, `walker.py`, and `logging.py` parse arguments, load configuration, walk paths, and wire logging. They do not score code.
@@ -128,13 +187,28 @@ The two-analysis builder leaves room for a future pairwise measurement without d
 : Python class in `rules/` that checks typed IR subjects and returns `RuleFinding | None`.
 
 `ModuleIR`
-: Pydantic model for a parsed source module. It contains generic symbols, imports, references, operations, source spans, and `SLOC` lines; it does not expose raw tree-sitter nodes.
+: Pydantic model for a parsed source module. It contains generic symbols, text fragments, canonical source uses, import bindings, rule-facing references, operations, source spans, and `SLOC` lines; it does not expose raw tree-sitter nodes.
+
+`TextFragmentIR`
+: Immutable identifier, comment, or docstring source occurrence with exact text, source span, and syntactic owner ID.
+
+`SourceUseIR`
+: Immutable call or attribute-access occurrence with source/target spans, original target spelling, execution ownership, static `TargetResolutionIR` evidence, and separate `RuntimeTargetsIR` implementation evidence; unsupported contexts remain explicit.
+
+`AttributeIR`
+: Canonical supported Python field identified by declaring class and name, with declaration location, syntactic storage evidence, and structured declared types; repeated writes remain source occurrences.
+
+`TypeReferenceIR`
+: Structured annotation/base-expression syntax with conservative target resolution and primitive/class/other/unknown evidence, not a metric-specific target set.
+
+`CallableIR`
+: Python callable declaration evidence: declaring class, binding/decorators, abstract marker, body location, placeholder kind, and source implementation identity.
 
 `SymbolIR`
 : Language-agnostic code symbol such as a class, function, method, or value. Function-like symbols carry signatures, roles, body operations, references, `SLOC`, complexity values, and maximum control-flow nesting depth.
 
 `ProjectIR`
-: Project-level semantic model built from parsed modules. It indexes modules, symbols, files, and derived effects.
+: Immutable project inventory retained in `AnalysisResult.project`, with derived read-only module, symbol, attribute, source-use, and effect indexes. Source spans retain physical-file paths; unavailable inventories are `None`, distinct from successfully extracted empty facts. See the [entity contract](tree-walking.md#retained-entity-contract) for identities, ownership, availability, and supported associations.
 
 `RuleContext`
 : Query interface passed to structural rules so rules ask semantic questions, including resolved project call sites, instead of inspecting parser-native syntax.
@@ -144,22 +218,23 @@ The two-analysis builder leaves room for a future pairwise measurement without d
 
 ## Design constraints
 
-- Line numbers are 1-indexed after tree-sitter data leaves the parser layer.
+- Source spans use one-based lines, zero-based UTF-8 byte columns, and exclusive ends after tree-sitter data leaves the parser layer.
 - Supported scan targets are Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`).
 - `ast-grep`, structural rules, and source directives are Python-only until language-specific rule sets exist.
 - Parser-native data may live on parsed file artifacts for clone detection, but not in `ModuleIR`, `ProjectIR`, or structural rules.
 - `ast-grep` failure is non-fatal. `scb-check` tries a global `sg` binary first, then falls back to package-managed ast-grep executables next to Python if global `sg` is missing or fails. If no ast-grep binary succeeds, `OSError`, non-zero exits, or invalid JSON return no hits.
 - Source ignores and structural rules share one rule ID namespace, so `scbc ignore[...]` is never ambiguous.
 - Clone and erosion findings are not suppressible. `ast-grep` and structural findings are suppressible.
-- Immutable records cross module boundaries: frozen dataclasses and Pydantic models, with tuples instead of lists.
+- Immutable records cross module boundaries: frozen dataclasses and Pydantic models, tuples/frozensets, and privately owned read-only mappings including nested annotations and lookup indexes.
+- Retained entity facts serve analysis consumers and structural rules; metric populations and aggregate calculations stay outside the IR so retaining more declarations does not silently redefine metric membership.
 
 ## Scoring-sensitive surfaces
 
 Change these only with tests and documentation updates because they move user-visible scores:
 
-- `SLOC` exclusions in `tree_walking/languages/python.py` and `tree_walking/languages/generic.py`,
+- `SLOC` exclusions in `tree_walking/languages/python/parser.py` and `tree_walking/languages/generic.py`,
 - `CLONE_NODE_TYPES`, language clone configs, and clone normalization in `analysis/clones.py` plus `tree_walking/languages/*`,
-- cyclomatic and cognitive complexity node sets in `tree_walking/languages/python.py` and `tree_walking/languages/*`,
+- cyclomatic and cognitive complexity node sets in `tree_walking/languages/python/parser.py` and `tree_walking/languages/*`,
 - structural rule span selection and filtering in `rules/` and `pipeline.py`,
 - verbosity union in `metrics/verbosity.py` and complexity mass-share logic in `metrics/erosion.py`, `metrics/cog_erosion.py`, and private `metrics/_mass.py`,
 - field coverage and later-minus-earlier arithmetic in `reporting/comparison.py`.

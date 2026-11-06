@@ -36,12 +36,14 @@ def test_python_parser_builds_module_ir(tmp_path: Path) -> None:
     module = PythonParser().parse(file_path, source).module
 
     assert module.sloc_lines == frozenset({1, 2, 4, 5, 6, 7, 9, 10, 11, 12})
+    assert module.imports is not None
     assert tuple(import_.local_name for import_ in module.imports) == (
         "os",
         "mk",
         "Widget",
     )
     route = next(symbol for symbol in module.symbols if symbol.name == "route")
+    assert route.references is not None
     assert {
         "kind": route.kind,
         "qualified_name": route.qualified_name,
@@ -72,7 +74,9 @@ def test_python_parser_builds_module_ir(tmp_path: Path) -> None:
             ("Widget", "package.tools.Widget", "call"),
         ),
     }
-    returned = route.return_operations[0]
+    returns = route.return_operations
+    assert returns is not None
+    returned = returns[0]
     assert returned.kind is OperationKind.RETURN
     assert returned.value is not None
     assert returned.value.kind is ValueKind.INVOCATION
@@ -99,10 +103,14 @@ def test_python_parser_marks_required_api_roles(tmp_path: Path) -> None:
 
     module = PythonParser().parse(file_path, source).module
     roles_by_name = {symbol.qualified_name: symbol.roles for symbol in module.symbols}
-
-    assert SymbolRole.COMPUTED_ATTRIBUTE in roles_by_name["sample.Resource.identifier"]
-    assert SymbolRole.CONTRACT_MEMBER in roles_by_name["sample.Resource.__str__"]
-    assert SymbolRole.INHERITED_OVERRIDE in roles_by_name["sample.Encoder.default"]
+    for name, expected_role in {
+        "sample.Resource.identifier": SymbolRole.COMPUTED_ATTRIBUTE,
+        "sample.Resource.__str__": SymbolRole.CONTRACT_MEMBER,
+        "sample.Encoder.default": SymbolRole.INHERITED_OVERRIDE,
+    }.items():
+        roles = roles_by_name[name]
+        assert roles is not None
+        assert expected_role in roles
 
 
 def test_python_parser_rejects_syntax_errors(tmp_path: Path) -> None:

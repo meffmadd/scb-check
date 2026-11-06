@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections import Counter
-from itertools import groupby
+from collections.abc import Mapping
 from os.path import commonpath
 from pathlib import Path
 
+from scb_check.tree_walking.members import resolve_member_uses
 from scb_check.tree_walking.models import EffectIR
 from scb_check.tree_walking.models import EffectKind
 from scb_check.tree_walking.models import Language
@@ -15,11 +16,15 @@ from scb_check.tree_walking.models import OperationIR
 from scb_check.tree_walking.models import OperationKind
 from scb_check.tree_walking.models import ProjectIR
 from scb_check.tree_walking.models import ReferenceIR
+from scb_check.tree_walking.models import SourceSpan
+from scb_check.tree_walking.models import SourceUseIR
 from scb_check.tree_walking.models import SymbolIR
 from scb_check.tree_walking.models import SymbolKind
+from scb_check.tree_walking.models import SymbolLookup
 from scb_check.tree_walking.models import SymbolRole
 from scb_check.tree_walking.models import ValueIR
 from scb_check.tree_walking.models import ValueKind
+from scb_check.tree_walking.source_uses import resolve_project_references
 
 _RECEIVER_PARAMETER_NAMES = frozenset({"self", "cls"})
 _REQUIRED_API_ROLES = frozenset(
@@ -53,30 +58,37 @@ _GENERIC_LANGUAGES = frozenset(
     },
 )
 _FUNCTION_SYMBOL_KINDS = frozenset({SymbolKind.FUNCTION, SymbolKind.METHOD})
+type _UsesBySpan = Mapping[tuple[SourceSpan, str], SourceUseIR]
 
 
 def build_project(modules: tuple[ModuleIR, ...]) -> ProjectIR:
-    """Build project semantic indexes and derived effects from modules."""
-    modules = _with_unique_generic_function_names(modules)
+    """Build a project from fresh parser-output modules, not previously resolved modules."""
+    modules = resolve_project_references(_with_unique_generic_function_names(modules))
+    modules, member_lookup, class_member_lookup = resolve_member_uses(modules)
     symbols = tuple(symbol for module in modules for symbol in module.symbols)
     symbols_by_qualified_name = {
         symbol.qualified_name: symbol for symbol in symbols
     }
-    symbols_by_file = _symbols_by_file(symbols)
     module_name_by_file = {module.file: module.module_name for module in modules}
+    uses_by_span = {
+        (use.span, "call" if use.kind == "call" else "attribute"): use
+        for module in modules if module.source_uses is not None
+        for use in module.source_uses
+    }
     effects_by_symbol = {
-        symbol.qualified_name: _effects_for_symbol(
+        symbol.id: _effects_for_symbol(
             symbol,
             symbols_by_qualified_name,
             module_name_by_file,
+            uses_by_span,
         )
         for symbol in symbols
         if symbol.kind in {SymbolKind.FUNCTION, SymbolKind.METHOD}
     }
     return ProjectIR(
         modules=modules,
-        symbols_by_qualified_name=symbols_by_qualified_name,
-        symbols_by_file=symbols_by_file,
+        member_lookup=member_lookup,
+        class_member_lookup=class_member_lookup,
         effects_by_symbol=effects_by_symbol,
     )
 
@@ -167,20 +179,24 @@ class RuleContext:
         }
 
     def is_required_api_surface(self, symbol: SymbolIR) -> bool:
-        """Return True when `symbol` has a semantic keep reason."""
-        return bool(symbol.roles & _REQUIRED_API_ROLES)
+        """Return `True` when `symbol.roles` includes a role that requires keeping the symbol."""
+        return symbol.roles is not None and bool(symbol.roles & _REQUIRED_API_ROLES)
 
     def is_inherited_override(self, symbol: SymbolIR) -> bool:
         """Return True when `symbol` implements an inherited contract."""
-        return SymbolRole.INHERITED_OVERRIDE in symbol.roles
+        return symbol.roles is not None and SymbolRole.INHERITED_OVERRIDE in symbol.roles
 
     def is_computed_attribute(self, symbol: SymbolIR) -> bool:
         """Return True when `symbol` exposes a computed attribute."""
-        return SymbolRole.COMPUTED_ATTRIBUTE in symbol.roles
+        return symbol.roles is not None and SymbolRole.COMPUTED_ATTRIBUTE in symbol.roles
 
     def effects_for_symbol(self, symbol: SymbolIR) -> tuple[EffectIR, ...]:
-        """Return derived effects for `symbol`."""
-        return self.project.effects_by_symbol.get(symbol.qualified_name, ())
+        """Return effects for the declaration selected by `symbol.qualified_name`."""
+        # Retaining every declaration must not change same-name rule selection.
+        selected = self.project.symbols_by_qualified_name[symbol.qualified_name]
+        effects = self.project.effects_by_symbol.get(selected.id, ())
+        assert effects is not None  # noqa: S101 - Rules require supported effect extraction.
+        return effects
 
     def return_has_meaningful_effects(self, symbol: SymbolIR) -> bool:
         """Return True if the single returned value has meaningful effects."""
@@ -231,6 +247,7 @@ class RuleContext:
             for caller in self.project.symbols_by_qualified_name.values()
             if caller.kind in _FUNCTION_SYMBOL_KINDS
             and caller.qualified_name != target.qualified_name
+            and caller.references is not None
             for reference in caller.references
             if reference.kind == "call"
             and _reference_targets_symbol(
@@ -245,22 +262,14 @@ class RuleContext:
         return any(effect.kind is kind for effect in self.effects_for_symbol(symbol))
 
 
-def _symbols_by_file(symbols: tuple[SymbolIR, ...]) -> dict[Path, tuple[SymbolIR, ...]]:
-    sorted_symbols = sorted(symbols, key=lambda symbol: symbol.file.as_posix())
-    return {
-        file_path: tuple(file_symbols)
-        for file_path, file_symbols in groupby(
-            sorted_symbols,
-            key=lambda symbol: symbol.file,
-        )
-    }
-
-
 def _effects_for_symbol(
     symbol: SymbolIR,
-    symbols_by_qualified_name: dict[str, SymbolIR],
+    symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
-) -> tuple[EffectIR, ...]:
+    uses_by_span: _UsesBySpan,
+) -> tuple[EffectIR, ...] | None:
+    if symbol.body is None:
+        return None
     effects: list[EffectIR] = []
     for operation in symbol.body:
         effects.extend(
@@ -269,6 +278,7 @@ def _effects_for_symbol(
                 operation,
                 symbols_by_qualified_name,
                 module_name_by_file,
+                uses_by_span,
             ),
         )
     return tuple(effects)
@@ -277,8 +287,9 @@ def _effects_for_symbol(
 def _effects_for_operation(
     symbol: SymbolIR,
     operation: OperationIR,
-    symbols_by_qualified_name: dict[str, SymbolIR],
+    symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
+    uses_by_span: _UsesBySpan,
 ) -> tuple[EffectIR, ...]:
     if operation.kind is OperationKind.RAISE:
         return (
@@ -295,14 +306,16 @@ def _effects_for_operation(
         operation.value,
         symbols_by_qualified_name,
         module_name_by_file,
+        uses_by_span,
     )
 
 
 def _effects_for_value(
     symbol: SymbolIR,
     value: ValueIR,
-    symbols_by_qualified_name: dict[str, SymbolIR],
+    symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
+    uses_by_span: _UsesBySpan,
 ) -> tuple[EffectIR, ...]:
     child_effects = tuple(
         effect
@@ -312,9 +325,16 @@ def _effects_for_value(
             argument,
             symbols_by_qualified_name,
             module_name_by_file,
+            uses_by_span,
         )
     )
     if value.kind is ValueKind.INVOCATION:
+        use = uses_by_span[value.span, "call"]
+        # Operation shapes select rule eligibility; target spelling/identity comes
+        # from the canonical occurrence. Rules retain their historical name policy.
+        value = value.model_copy(update={"name": (
+            use.target_spelling if use.target_form != "expression" else None
+        )})
         target = _resolve_project_value(
             value,
             symbol,
@@ -344,7 +364,7 @@ def _effects_for_value(
                 symbol_qualified_name=symbol.qualified_name,
                 target_name=value.name,
             )
-        return (call_effect, *child_effects)
+        return (call_effect.model_copy(update={"source_use_id": use.id}), *child_effects)
     if value.kind in {ValueKind.SYMBOL_REFERENCE, ValueKind.MEMBER_ACCESS}:
         return (
             EffectIR(
@@ -353,6 +373,10 @@ def _effects_for_value(
                 symbol_qualified_name=symbol.qualified_name,
                 target_name=value.name,
                 target_qualified_name=value.resolved_name,
+                source_use_id=(
+                    uses_by_span[value.span, "attribute"].id
+                    if value.kind is ValueKind.MEMBER_ACCESS else None
+                ),
             ),
             *child_effects,
         )
@@ -360,6 +384,7 @@ def _effects_for_value(
 
 
 def _is_external_call(value: ValueIR, symbol: SymbolIR) -> bool:
+    # A rule keep-policy, not evidence of external resolution in SourceUseIR.
     return (
         value.resolved_name is not None
         and value.resolved_name != value.name
@@ -373,7 +398,7 @@ def _is_external_call(value: ValueIR, symbol: SymbolIR) -> bool:
 def _resolve_project_value(
     value: ValueIR,
     symbol: SymbolIR,
-    symbols_by_qualified_name: dict[str, SymbolIR],
+    symbols_by_qualified_name: SymbolLookup,
     module_name_by_file: dict[Path, str],
 ) -> SymbolIR | None:
     candidates = tuple(_candidate_qualified_names(value, symbol, module_name_by_file))
@@ -403,7 +428,7 @@ def _candidate_qualified_names(
 
 
 def _single_return_value(symbol: SymbolIR) -> ValueIR | None:
-    if len(symbol.body) != 1:
+    if symbol.body is None or len(symbol.body) != 1:
         return None
     operation = symbol.body[0]
     if operation.kind is not OperationKind.RETURN:
