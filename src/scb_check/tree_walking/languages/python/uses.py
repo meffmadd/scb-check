@@ -115,8 +115,9 @@ def python_facts(  # noqa: PLR0913 - Parser-local declaration nodes accompany le
         })
         for symbol in symbols
     )
+    declarations = declaration_index(symbols)
     attributes, uses = attribute_facts(
-        file, root, symbols, _collect_uses(file, root, module_id, declaration_index(symbols), scopes),
+        file, root, declarations, _collect_uses(file, root, module_id, declarations, scopes),
         resolve,
     )
     return PythonFacts(source_uses=uses, imports=imports, symbols=symbols, attributes=attributes)

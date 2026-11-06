@@ -140,6 +140,13 @@ class _MemberResolver:
             return self._selection(ids)
         return TargetResolutionIR(reason="unknown-member-order" if self.mros[class_id] is None else "missing-member")
 
+    def _lookup_member(self, class_id: str, name: str, *, class_object: bool = False) -> TargetResolutionIR:
+        lookup = self.class_lookup if class_object else self.lookup
+        resolution = lookup[class_id].get(name)
+        if resolution is not None:
+            return resolution
+        return self._member(class_id, name, class_object=class_object)
+
     def _annotation_fields(self, class_id: str, name: str) -> list[str]:
         # An annotation can type an instance field without creating a class binding.
         for owner in self.mros[class_id] or (class_id,):
@@ -179,7 +186,7 @@ class _MemberResolver:
         target = root.target_id
         for index, member in enumerate(receiver.member_path):
             if target in self.classes:
-                resolution = self._member(target, member, class_object=class_object)
+                resolution = self._lookup_member(target, member, class_object=class_object)
                 if index == len(receiver.member_path) - 1 and declared is not None:
                     dispatch_class = target
             elif target in self.entities and isinstance(self.entities[target], ModuleIR):
@@ -215,7 +222,7 @@ class _MemberResolver:
         complete = not selection.approximate_path
         candidates = [resolution]
         if dispatch_class is not None:
-            candidates = [self._member(class_id, selected.name, class_object=selection.class_object) for class_id, mro in self.mros.items()
+            candidates = [self._lookup_member(class_id, selected.name, class_object=selection.class_object) for class_id, mro in self.mros.items()
                           if mro is not None and dispatch_class in mro]
             # An unresolved hierarchy could hide a subclass or an override.
             complete = complete and all(mro is not None for mro in self.mros.values())

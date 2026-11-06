@@ -9,7 +9,6 @@ from pydantic import ValidationError
 
 from scb_check.pipeline import analyze_files
 from scb_check.rules.low_use_short_function import LowUseShortFunctionSettings
-from scb_check.tree_walking.semantic import build_project
 
 
 def test_calls_preserve_sites_recursion_and_nested_executable_syntax(tmp_path: Path) -> None:
@@ -374,15 +373,18 @@ def test_annotation_only_attribute_targets_are_not_writes(tmp_path: Path) -> Non
     }
 
 
-def test_rebuilding_project_resolution_reconsiders_current_snapshot_membership(tmp_path: Path) -> None:
-    """Retained modules cannot keep dangling targets or hide new name collisions."""
+def test_independent_analyses_resolve_current_snapshot_membership(tmp_path: Path) -> None:
+    """Each snapshot resolves fresh parser facts without changing retained results."""
     helper = tmp_path / "helper.py"
     helper.write_text("def work(): pass\n")
     source = tmp_path / "caller.py"
     source.write_text("from helper import work\nwork()\n")
     project = analyze_files((source, helper), disable_sg=True).project
-    caller_module = project.modules_by_file[source.resolve()]
-    removed_uses = build_project((caller_module,)).modules[0].source_uses
+    original_uses = project.modules_by_file[source.resolve()].source_uses
+    assert original_uses is not None
+    original = original_uses[0]
+    assert original.resolution.status == "project"
+    removed_uses = analyze_files((source,), disable_sg=True).project.modules[0].source_uses
     assert removed_uses is not None
     removed = removed_uses[0]
     assert removed.resolution.status == "external"
@@ -391,12 +393,14 @@ def test_rebuilding_project_resolution_reconsiders_current_snapshot_membership(t
     other_dir.mkdir()
     other = other_dir / "helper.py"
     other.write_text("def work(): pass\n")
-    other_module = analyze_files((other,), disable_sg=True).project.modules[0]
-    colliding_uses = build_project((*project.modules, other_module)).modules_by_file[source.resolve()].source_uses
+    colliding_uses = analyze_files((source, helper, other), disable_sg=True).project.modules_by_file[source.resolve()].source_uses
     assert colliding_uses is not None
     colliding = colliding_uses[0]
     assert colliding.resolution.status == "ambiguous"
     assert len(colliding.resolution.candidate_ids) == 2
+    assert original.id == removed.id == colliding.id
+    assert original.resolution.status == "project"
+    assert original.resolution.target_id in project.symbols_by_id
 
 
 def test_relative_import_projection_keeps_existing_multiple_name_rule_selection(tmp_path: Path) -> None:

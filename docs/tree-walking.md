@@ -220,7 +220,7 @@ Lambda bodies, comprehensions/generator expressions, type aliases, type-paramete
 - `unresolved`: no direct binding, parameter/local binding, dynamic target, or a receiver requiring member resolution.
 - `unsupported`: unsupported execution syntax, type-parameter bindings, star/unexpandable relative imports, or `global`/`nonlocal` scope directives.
 
-Bindings are collected lexically without evaluating control flow or statement order. Repeated declarations/rebindings can therefore be ambiguous rather than selecting a runtime winner. Function parameters (including typed variadics) and local bindings shadow outer names, including bindings in lambda defaults, comprehensions, and type aliases. Method/nested-class lookup skips the runtime class namespace as a closure scope; type-parameter bindings remain explicitly unsupported. Parenthesized direct targets resolve without dropping their original spelling. Import-qualified names match module-accessible declarations, not declarations nested inside function bodies; collisions remain ambiguous. Rebuilding a project reconsiders import resolution against its current modules. [Member resolution](#member-resolution-and-runtime-targets) uses additional receiver evidence, not dotted spelling alone. Assignment-alias propagation and general type inference remain unavailable.
+Bindings are collected lexically without evaluating control flow or statement order. Repeated declarations/rebindings can therefore be ambiguous rather than selecting a runtime winner. Function parameters (including typed variadics) and local bindings shadow outer names, including bindings in lambda defaults, comprehensions, and type aliases. Method/nested-class lookup skips the runtime class namespace as a closure scope; type-parameter bindings remain explicitly unsupported. Parenthesized direct targets resolve without dropping their original spelling. Import-qualified names match module-accessible declarations, not declarations nested inside function bodies; collisions remain ambiguous. `build_project()` accepts fresh parser-output modules; recomposing a project from already-resolved retained modules is unsupported. Each snapshot analysis parses and resolves its own inputs independently. [Member resolution](#member-resolution-and-runtime-targets) uses additional receiver evidence, not dotted spelling alone. Assignment-alias propagation and general type inference remain unavailable.
 
 ### Class, member, and declared-type facts
 
@@ -234,14 +234,13 @@ Bindings are collected lexically without evaluating control flow or statement or
 | --- | --- |
 | `declaring_class_id` | Immediate owning class for methods; `None` for functions, including functions nested inside methods |
 | `binding` | Syntactic `function`, `instance`, `class`, or `static`; recognized builtin `classmethod`/`staticmethod` bindings include import aliases |
-| `decorators` | Tuple of original decorator expression spellings, in source order, without `@` |
 | `is_abstract` | Recognized `abc.abstractmethod` binding evidence, including aliases; not a claim about runtime metaclass state |
 | `body_kind` | `empty` (docstring-only), `pass`, `ellipsis`, or `implemented`, after excluding an initial plain docstring and comments |
 | `body_span` | Source body location, including a docstring if present |
 | `implementation_id` | This callable's declaration ID for `implemented` bodies; `None` for the documented placeholder forms |
 | `dispatch_supported` | Only undecorated callables or recognized builtin class/static method and `abc.abstractmethod` decorators; custom decorators/properties do not establish runtime bodies |
 
-Abstract declarations can have implemented bodies. A raising body is implemented syntax; placeholder classification is not an assessment of useful behavior. Custom decorators/descriptors, runtime abstractness, overload/property-family grouping, and stub/implementation matching are not inferred. Decorator spellings and ownership remain available for subsequent resolvers. Existing `SymbolIR.body`, complexity, and rule roles are unchanged, including for placeholders.
+Abstract declarations can have implemented bodies. A raising body is implemented syntax; placeholder classification is not an assessment of useful behavior. Custom decorators/descriptors, runtime abstractness, overload/property-family grouping, and stub/implementation matching are not inferred. Decorator inspection produces binding, abstractness, and dispatch-support facts; callable records do not retain a separate decorator-spelling inventory. Entity-owned text fragments retain eligible decorator text. Existing `SymbolIR.body`, complexity, and rule roles are unchanged, including for placeholders.
 
 #### Canonical attributes
 

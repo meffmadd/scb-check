@@ -62,7 +62,7 @@ type _UsesBySpan = Mapping[tuple[SourceSpan, str], SourceUseIR]
 
 
 def build_project(modules: tuple[ModuleIR, ...]) -> ProjectIR:
-    """Build project semantic indexes and derived effects from modules."""
+    """Build a project from fresh parser-output modules, not previously resolved modules."""
     modules = resolve_project_references(_with_unique_generic_function_names(modules))
     modules, member_lookup, class_member_lookup = resolve_member_uses(modules)
     symbols = tuple(symbol for module in modules for symbol in module.symbols)

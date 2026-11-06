@@ -42,7 +42,6 @@ def callable_facts(
     parent = node.parent
     if parent is not None and parent.type == "decorated_definition":
         decorators = tuple(child for child in parent.named_children if child.type == "decorator")
-    spellings = tuple(text(decorator).removeprefix("@").strip() for decorator in decorators)
     names = {resolve(decorator.named_children[0], symbol.owner_id or "").qualified_name for decorator in decorators}
     binding = "function"
     if symbol.kind is SymbolKind.METHOD:
@@ -65,7 +64,7 @@ def callable_facts(
         kind = "ellipsis"
     return CallableIR(
         declaring_class_id=symbol.owner_id if binding != "function" else None,
-        binding=binding, decorators=spellings,
+        binding=binding,
         is_abstract="abc.abstractmethod" in names,
         body_kind=kind, body_span=node_span(file, body),
         implementation_id=symbol.id if kind == "implemented" else None,
@@ -85,11 +84,11 @@ def direct_bases(file: Path, node: Node, symbol: SymbolIR, resolve: NameResolver
 
 
 def attribute_facts(
-    file: Path, root: Node, symbols: tuple[SymbolIR, ...],
+    file: Path, root: Node, declarations: dict[tuple[int, int], SymbolIR],
     uses: tuple[SourceUseIR, ...], resolve: NameResolver,
 ) -> tuple[tuple[AttributeIR, ...], tuple[SourceUseIR, ...]]:
     """Collect one field per class and name, and link each supported write to its field."""
-    return _AttributeExtractor(file, resolve, declaration_index(symbols)).extract(root, uses)
+    return _AttributeExtractor(file, resolve, declarations).extract(root, uses)
 
 
 @dataclass(frozen=True, slots=True)

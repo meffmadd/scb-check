@@ -56,7 +56,7 @@ def test_callable_members_retain_declarations_and_only_their_own_bodies(tmp_path
     assert callables["make"].body_kind == "pass"
     assert callables["utility"].binding == "static"
     assert callables["utility"].body_kind == "ellipsis"
-    assert callables["value"].decorators == ("property",)
+    assert callables["value"].dispatch_supported is False
     assert callables["own"].declaring_class_id == child.id
     assert callables["local"].declaring_class_id is None
     assert callables["local"].binding == "function"
@@ -439,7 +439,7 @@ def test_callable_binding_and_placeholder_facts_use_lexical_evidence(tmp_path: P
 
 
 def test_parenthesized_decorators_keep_descriptor_and_abstract_evidence(tmp_path: Path) -> None:
-    """Grouping preserves direct decorator bindings without changing source spelling."""
+    """Grouping preserves semantic decorator evidence for binding and dispatch."""
     source = tmp_path / "grouped.py"
     source.write_text(dedent("""\
         from abc import abstractmethod
@@ -452,9 +452,10 @@ def test_parenthesized_decorators_keep_descriptor_and_abstract_evidence(tmp_path
     module = analyze_files((source,), disable_sg=True).project.modules[0]
     callables = {symbol.name: symbol.callable_facts for symbol in module.symbols if symbol.callable_facts is not None}
     assert callables["static"].binding == "static"
-    assert callables["static"].decorators == ("(staticmethod)",)
+    assert callables["static"].dispatch_supported is True
     assert callables["pending"].is_abstract
-    assert callables["pending"].decorators == ("((abstractmethod))",)
+    assert callables["pending"].dispatch_supported is True
+    assert callables["pending"].implementation_id is None
     assert module.attributes == ()
 
 

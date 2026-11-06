@@ -375,11 +375,10 @@ class AttributeIR(IRModel):
 
 
 class CallableIR(IRModel):
-    """One callable's declaring class, method binding, decorators, and body details."""
+    """One callable's declaring class, method binding, and body details."""
 
     declaring_class_id: str | None = None
     binding: CallableBinding
-    decorators: tuple[str, ...] = ()
     is_abstract: bool = False
     body_kind: CallableBodyKind
     body_span: SourceSpan

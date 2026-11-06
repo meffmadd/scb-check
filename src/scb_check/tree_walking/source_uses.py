@@ -19,7 +19,7 @@ _TYPING_FORMS = frozenset(f"{module}.{name}" for module in ("typing", "typing_ex
 
 
 def resolve_project_references(modules: tuple[ModuleIR, ...]) -> tuple[ModuleIR, ...]:
-    """Match imported names to analyzed modules and declarations without inferring types."""
+    """Resolve import evidence in fresh parser-output modules, without inferring types."""
     entities: dict[str, list[ModuleIR | SymbolIR]] = {}
     for module in modules:
         entities.setdefault(module.qualified_name, []).append(module)
@@ -29,9 +29,7 @@ def resolve_project_references(modules: tuple[ModuleIR, ...]) -> tuple[ModuleIR,
                 entities.setdefault(symbol.qualified_name, []).append(symbol)
 
     def resolve(resolution: TargetResolutionIR) -> TargetResolutionIR:
-        if resolution.reason not in {
-            "import-binding", "project-import-binding", "multiple-project-bindings", "unresolved-project-member", "self-type",
-        }:
+        if resolution.reason != "import-binding":
             return resolution
         name = resolution.qualified_name
         assert name is not None  # noqa: S101 - Import bindings always have a name.

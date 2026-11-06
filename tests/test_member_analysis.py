@@ -459,6 +459,30 @@ def test_nested_class_annotations_and_bases_match_imported_declaration_paths(tmp
     assert all(use.runtime_targets.status == "complete" for use in calls)
 
 
+def test_missing_and_private_member_uses_retain_resolution_limits(tmp_path: Path) -> None:
+    """Unknown and private names remain unavailable with or without lookup entries."""
+    source = tmp_path / "missing.py"
+    source.write_text(dedent("""\
+        class Known:
+            def __private(self): return 1
+        class Partial(Unknown): pass
+        Known.missing()
+        Known.__private()
+        Known.__absent()
+        Partial.missing()
+        """))
+    project = analyze_files((source,), disable_sg=True).project
+    calls = {use.target_spelling: use for use in project.source_uses_by_id.values() if use.kind == "call"}
+    assert calls["Known.missing"].resolution.reason == "missing-member"
+    assert calls["Partial.missing"].resolution.reason == "unknown-member-order"
+    for name in ("Known.__private", "Known.__absent"):
+        assert calls[name].resolution.status == "unsupported"
+        assert calls[name].resolution.reason == "private-member"
+    for use in calls.values():
+        assert use.resolution.target_id is None
+        assert use.runtime_targets.status == "unavailable"
+
+
 def test_annotation_only_class_fields_do_not_shadow_inherited_namespace_bindings(tmp_path: Path) -> None:
     """Annotations retain field evidence but create no runtime class namespace entry."""
     source = tmp_path / "annotations.py"
