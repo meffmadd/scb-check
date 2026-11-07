@@ -12,14 +12,16 @@ from scb_check.tree_walking.models import SymbolKind
 
 
 class CBO(Metric[[tuple[ModuleIR, ...]]]):
-    """Briand's ancestor-inclusive partner breadth, explicitly partial under IR limits.
+    """Count other project classes connected by method calls or attribute access.
+
+    Count each partner once, whichever class uses the other's members. Include
+    uses of inherited members, but exclude a class's use of its own members.
+    Results are partial: classes outside the analyzed project are excluded,
+    unknown references are skipped, and some call targets are estimates.
 
     Briand, Daly & Wüst (1999), "A unified framework for coupling measurement in
     object-oriented systems", Definitions 17 and 20:
     https://doi.org/10.1109/32.748920
-
-    Only retained project classes participate. Unknown outgoing uses and unobserved
-    incoming uses can hide partners for any class, so no result claims full CBO.
     """
 
     units: ClassVar[dict[str, Unit]] = {
