@@ -61,8 +61,8 @@ def test_repeated_sites_count_but_self_calls_do_not() -> None:
 
 
 @pytest.mark.parametrize("status", ["complete", "approximate"])
-def test_runtime_implementation_ids_count_once_per_site(status: str) -> None:
-    """A site with an own body and two external bodies contributes just one."""
+def test_static_target_ownership_ignores_runtime_implementations(status: str) -> None:
+    """Overrides cannot make an own static target external, or vice versa."""
     a = declaration("A", SymbolKind.CLASS, 1)
     b = declaration("B", SymbolKind.CLASS, 2)
     c = declaration("C", SymbolKind.CLASS, 3)
@@ -85,12 +85,12 @@ def test_runtime_implementation_ids_count_once_per_site(status: str) -> None:
             ),
         })),
     )
-    assert MPC().class_counts((module,)) == {a.id: 2, b.id: 0, c.id: 0}
-    # The named target is external, but the supplied runtime evidence is own-only.
+    assert MPC().class_counts((module,)) == {a.id: 0, b.id: 0, c.id: 0}
+    # An external static target counts even when runtime evidence is own-only.
     own_only = call(am, bm, 8).model_copy(update={"runtime_targets": RuntimeTargetsIR(
         status="complete", target_ids=(am.id,), assumption="closed-project-hierarchy",
     )})
-    assert MPC().class_counts((module.model_copy(update={"source_uses": (own_only,)}),))[a.id] == 0
+    assert MPC().class_counts((module.model_copy(update={"source_uses": (own_only,)}),))[a.id] == 1
 
 
 @pytest.mark.parametrize("context", ["class", "module", "unsupported", "lambda", "attribute", "nested"])

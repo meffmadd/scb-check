@@ -28,7 +28,7 @@ Implemented analysis paths:
 - Cyclomatic and cognitive erosion scores for all supported languages.
 - [Partial retained-project CBO](architecture.md#coupling-between-objects-cbo), with Python-first member use, possible polymorphic targets, separate immutable partner diagnostics, measured/unavailable populations, and independent check/diff reports.
 - [Direct RFC₁](architecture.md#direct-response-for-a-class-rfc₁): selected own/inherited methods plus one level of known possible method bodies, without static fallback or transitive expansion.
-- [Message Passing Coupling](architecture.md#message-passing-coupling-mpc): external implemented-method call occurrences, counted once per site rather than per possible target.
+- [Message Passing Coupling](architecture.md#message-passing-coupling-mpc): statically selected external implemented-method call occurrences, counted once per site regardless of possible runtime overrides.
 - [Distinct callers](architecture.md#distinct-callers): engineering-defined incoming callable counts from static project calls, including recursion and same-/cross-module partitions.
 - [Attribute-count DAC](architecture.md#data-abstraction-coupling-dac): canonical own fields with known outer retained-class types, not distinct types or flattened generic arguments.
 - All four expose partial measured/unavailable populations, separate read-only diagnostics, and independent check/diff reports. Their project summaries are analyzer conventions without quality thresholds; [Architecture](architecture.md#partial-metric-interpretation) owns precise population, dispatch, type, and uncertainty policies.

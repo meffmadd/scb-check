@@ -164,6 +164,33 @@ def test_unsupported_coupling_is_null_not_zero(
             )
 
 
+def test_mpc_subclass_override_does_not_change_static_call_volume(
+    coupling_trees: tuple[Path, Path],
+) -> None:
+    """Adding an override does not turn an own-method call into an external site."""
+    earlier, later = coupling_trees
+    prefix = (
+        "class A:\n    def run(self): return self.work()\n"
+        "    def work(self): return 1\nclass B(A):\n"
+    )
+    (earlier / "sample.py").write_text(prefix + "    pass\n", encoding="utf-8")
+    (later / "sample.py").write_text(
+        prefix + "    def work(self): return 2\n", encoding="utf-8",
+    )
+    payload = _diff(earlier, later)
+    for snapshot in ("before", "after"):
+        assert payload[snapshot]["mpc"] == {
+            "measured_classes": 2, "unavailable_classes": 0,
+            "partial_call_site_sum": 0, "partial_call_site_mean": 0.0,
+            "partial_call_site_max": 0,
+        }
+    assert payload["diff"]["mpc"] == {
+        "measured_classes": 0, "unavailable_classes": 0,
+        "partial_call_site_sum": 0, "partial_call_site_mean": 0.0,
+        "partial_call_site_max": 0,
+    }
+
+
 def test_callers_keep_recursion_and_module_partitions_in_cli_reports(
     coupling_trees: tuple[Path, Path],
 ) -> None:

@@ -53,10 +53,10 @@ class MPC(Metric[[tuple[ModuleIR, ...]]]):
     def class_counts(self, modules: tuple[ModuleIR, ...]) -> Mapping[str, int | None]:
         """Return read-only class-ID counts separately from numerical summaries.
 
-        Only retained project implementations are targets. Prefer the IR's known
-        runtime bodies, including approximate sets; otherwise use its statically
-        selected implemented method. A site counts once if any selected body is
-        implemented outside the source class. No resolution is performed here.
+        Only statically selected retained project implementations are targets.
+        A site counts once when that method is implemented outside the source
+        class. Possible runtime overrides do not change site eligibility.
+        No resolution is performed here.
 
         The population is every retained class declaration. Missing source-use or
         direct-base facts, or a declared method without callable facts, give `None`.
@@ -64,7 +64,7 @@ class MPC(Metric[[tuple[ModuleIR, ...]]]):
         functions, lambdas, and other unsupported execution contexts are excluded.
 
         Library, unresolved, and non-method targets are omitted, not complete zeros.
-        Approximate runtime sets and static fallback are not whole-program bounds.
+        Static selection does not establish whole-program runtime bounds.
         Incoming references do not contribute to this outgoing-only metric.
         """
         # Index implemented methods without copying inherited bodies into subclasses.
@@ -73,10 +73,6 @@ class MPC(Metric[[tuple[ModuleIR, ...]]]):
             for module in modules for symbol in module.symbols
             if symbol.kind == SymbolKind.METHOD and symbol.callable_facts is not None
             and symbol.callable_facts.implementation_id is not None
-        }
-        # Runtime targets name bodies, whereas static fallback names declarations.
-        implementation_classes = {
-            facts.implementation_id: facts.declaring_class_id for facts in methods.values()
         }
         # Keep unsupported class extraction distinct from observed partial zero.
         counts: dict[str, int | None] = {
@@ -102,14 +98,8 @@ class MPC(Metric[[tuple[ModuleIR, ...]]]):
                 count = counts.get(owner or "")
                 if owner is None or count is None:
                     continue
-                if use.runtime_targets.target_ids:
-                    target_owners = {
-                        implementation_classes.get(target) for target in use.runtime_targets.target_ids
-                    }
-                else:
-                    target = methods.get(use.resolution.target_id or "")
-                    target_owners = {target.declaring_class_id if target is not None else None}
-                if target_owners - {None, owner}:
+                target = methods.get(use.resolution.target_id or "")
+                if target is not None and target.declaring_class_id not in {None, owner}:
                     counts[owner] = count + 1
         # Own the outer mapping so callers cannot change a later computation.
         return MappingProxyType(counts)

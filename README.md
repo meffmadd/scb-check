@@ -10,7 +10,7 @@ Python CLI that reports SCBench verbosity and erosion composites for supported s
 - **Erosion**: share of function "mass" (`complexity * sqrt(sloc)`) concentrated in high-complexity functions (cyclomatic complexity > 10).
 - **Cognitive erosion**: same mass-share calculation using cognitive complexity > 10.
 - **Partial CBO**: distinct retained-project class partners from method/attribute use in either direction, with Python-first resolution and explicit availability counts. This is not a quality score.
-- **Partial RFC₁, MPC, distinct callers, and DAC**: direct response methods, external method call sites, distinct incoming callers, and class-typed attribute volume. These are descriptive measurements, not quality scores; see the [precise counting policies](docs/architecture.md#partial-metric-interpretation).
+- **Partial RFC₁, MPC, distinct callers, and DAC**: direct response methods, statically selected external method call sites, distinct incoming callers, and class-typed attribute volume. These are descriptive measurements, not quality scores; see the [precise counting policies](docs/architecture.md#partial-metric-interpretation).
 - **Metric deltas**: signed later-minus-earlier differences in scores, counts, and complexity masses from two full analyses.
 
 ## Install
