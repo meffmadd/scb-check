@@ -13,4 +13,8 @@ type Unit = Literal[
     "nodes",
     "classes",
     "partners",
+    "methods",
+    "call sites",
+    "callers",
+    "attributes",
 ]

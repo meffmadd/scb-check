@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import ClassVar
 
+from scb_check.metrics._counts import summarize_counts
 from scb_check.metrics.base import Metric
 from scb_check.metrics.units import Unit
 from scb_check.models import MetricResult
@@ -37,13 +38,14 @@ class CBO(Metric[[tuple[ModuleIR, ...]]]):
     def compute(self, modules: tuple[ModuleIR, ...]) -> MetricResult:
         """Summarize available partial class counts; an empty population is unavailable."""
         partners = self.partner_sets(modules)
-        counts = [len(value) for value in partners.values() if value is not None]
+        counts = tuple(len(value) for value in partners.values() if value is not None)
+        summary = summarize_counts(counts)
         return MappingProxyType({
             "measured_classes": len(counts),
             "unavailable_classes": len(partners) - len(counts),
-            "partial_partner_sum": sum(counts) if counts else None,
-            "partial_partner_mean": sum(counts) / len(counts) if counts else None,
-            "partial_partner_max": max(counts) if counts else None,
+            "partial_partner_sum": summary.total,
+            "partial_partner_mean": summary.mean,
+            "partial_partner_max": summary.maximum,
         })
 
     def partner_sets(
