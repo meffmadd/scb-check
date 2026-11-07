@@ -18,7 +18,7 @@ Implemented analysis paths:
 - Canonical Python call/attribute-access occurrences, scoped import bindings, direct lexical/import project resolution, and explicit ambiguous/unresolved/unsupported evidence; generic languages declare source uses unavailable. See [the source-use contract](tree-walking.md#canonical-source-uses-and-imports).
 - Python canonical attributes, callable declaration/body ownership, structured declared field types, and direct bases with conservative class/primitive/other/unknown resolution; generic languages expose unavailable semantic families. See [class/member facts](tree-walking.md#class-member-and-declared-type-facts).
 - Bounded Python C3 member lookup connects lexical/import and declared-receiver evidence to canonical declarations and separate possible implementation sets, with explicit completeness assumptions. The [candidate input matrix](architecture.md#metric-ready-analysis-data-flow) and source-to-analysis fixtures validate the IR-first metric gate.
-- Rule-facing reference/effect projections preserve existing structural decisions; retained facts add no metrics, report fields, or CLI changes.
+- Rule-facing reference/effect projections preserve existing structural decisions; metrics consume retained facts through explicit report composition.
 - Parser `SLOC` accounting shared by verbosity, clone line counts, and rule spans.
 - One full `pipeline.analyze()` workflow using the shared source reader and source indexes for both commands.
 - Data-only grouped reports, metric-owned calculations and units, and pure nullable snapshot comparison including dotted per-language syntax counts.
@@ -26,6 +26,12 @@ Implemented analysis paths:
 - Bundled Python `ast-grep` slop patterns, plus optional local rules from `SCB_CHECK_EXTRA_SLOP_RULES`.
 - Structural rules over `ProjectIR`; the current bundled Python rules are `trivial-wrapper` and opt-in `low-use-short-function`.
 - Cyclomatic and cognitive erosion scores for all supported languages.
+- [Partial retained-project CBO](architecture.md#coupling-between-objects-cbo), with Python-first member use, possible polymorphic targets, separate immutable partner diagnostics, measured/unavailable populations, and independent check/diff reports.
+- [Direct RFC₁](architecture.md#direct-response-for-a-class-rfc₁): selected own/inherited methods plus one level of known possible method bodies, without static fallback or transitive expansion.
+- [Message Passing Coupling](architecture.md#message-passing-coupling-mpc): statically selected external implemented-method call occurrences, counted once per site regardless of possible runtime overrides.
+- [Distinct callers](architecture.md#distinct-callers): engineering-defined incoming callable counts from static project calls, including recursion and same-/cross-module partitions.
+- [Attribute-count DAC](architecture.md#data-abstraction-coupling-dac): canonical own fields with known outer retained-class types, not distinct types or flattened generic arguments.
+- All four expose partial measured/unavailable populations, separate read-only diagnostics, and independent check/diff reports. Their project summaries are analyzer conventions without quality thresholds; [Architecture](architecture.md#partial-metric-interpretation) owns precise population, dispatch, type, and uncertainty policies.
 - Python source ignores for `ast-grep` and structural rule IDs.
 - Python boundary suppression for validation/normalization functions.
 
@@ -54,8 +60,8 @@ Implemented analysis paths:
 | Full snapshot analysis and source indexing | `src/scb_check/pipeline.py` |
 | Snapshot composition and serialization | `src/scb_check/reporting/score.py` |
 | Metric contract | `src/scb_check/metrics/base.py` (`Metric`) |
-| Metric calculations, fields, and units | `src/scb_check/metrics/verbosity.py`, `erosion.py`, `cog_erosion.py`, `syntax.py`, `units.py` |
-| Shared erosion arithmetic | `src/scb_check/metrics/_mass.py` |
+| Metric calculations, fields, and units | `src/scb_check/metrics/verbosity.py`, `erosion.py`, `cog_erosion.py`, `syntax.py`, `cbo.py`, `rfc.py`, `mpc.py`, `callers.py`, `dac.py`, `units.py` |
+| Shared metric arithmetic | `src/scb_check/metrics/_mass.py` (erosion), `_counts.py` (measured-count sum/mean/max) |
 | Report comparison and summary rendering | `src/scb_check/reporting/comparison.py` |
 | `ast-grep` integration | `src/scb_check/analysis/astgrep.py` and `src/scb_check/resources/slop_rules/` |
 | Structural rule behavior | `src/scb_check/rules/` |
@@ -127,10 +133,11 @@ Pay special attention to:
 ## Adding or extending a metric
 
 1. Add behavioral acceptance expectations through the Typer CLI for known scores and supporting values. Keep the [README schema reference](../README.md#check-json-report-fields) synchronized.
-2. Put a small metric class in its own `metrics/` module, subclassing `metrics.base.Metric` with its `compute()` input types (for example, `Syntax` uses `Metric[[tuple[LanguageSyntaxSummary, ...]]]`). Implement instance `compute()` and declare class-level `units`. Pass only the extracted facts it needs; keep parser traversal and complexity extraction in tree walking. Reuse private `metrics/_mass.py` arithmetic for the erosion variants.
+2. Put a small metric class in its own `metrics/` module, subclassing `metrics.base.Metric` with its `compute()` input types (for example, `Syntax` uses `Metric[[tuple[LanguageSyntaxSummary, ...]]]`). Implement instance `compute()` and declare class-level `units`. Pass only the extracted facts it needs; keep parser traversal and complexity extraction in tree walking. Reuse private `metrics/_mass.py` arithmetic for the erosion variants and `metrics/_counts.py`'s `summarize_counts` for measured-count aggregates. Concrete metrics still select populations and own fields and units.
 3. Return a read-only flat `MetricResult` of `int | float | None`. Own field names and units in the metric, including dynamic syntax fields. Return defined-but-unavailable fields as `None`; preserve existing zero-denominator results and let calculation errors surface.
 4. Explicitly compose the metric in `reporting.score.compute_report(AnalysisResult)` and associate its group with metric-owned units. Keep both mapping levels read-only. Use `serialize_report` for contract validation and fresh plain dictionaries; keep metadata outside numerical results.
-5. Update required-field/group validation and comparison coverage for the schema. Use flat numerical fields, not nested result objects. Add no registry, report class, or placeholder configuration; constructors are for real configuration requirements.
+5. For class/callable metrics, preserve the [partial/unavailable distinction](architecture.md#partial-metric-interpretation), explicit extraction gates, and narrow immutable inputs. Reuse retained member selections, source occurrences, and declared types rather than adding a resolver. Test known-value source cases: RFC₁ one-hop/inherited/bodyless methods; MPC repeated/loop sites and implementation ownership; callers recursion, initialization exclusion, and module partition reconciliation; DAC repeated field types, wrappers, and unknown annotations. Keep structured diagnostics outside numerical results. Document counting variants and citations without quality thresholds.
+6. Update required-field/group validation and comparison coverage for the schema. Use flat numerical fields, not nested result objects. Add no registry, report class, or placeholder configuration; constructors are for real configuration requirements.
 
 Keep `metrics/` independent of reporting and source IO. See the [ownership and interface explanation](architecture.md#report-comparison-interface).
 

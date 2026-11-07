@@ -26,6 +26,11 @@ _REPORT_KEYS = {
     "erosion",
     "cog_erosion",
     "syntax",
+    "cbo",
+    "rfc",
+    "mpc",
+    "callers",
+    "dac",
 }
 
 
@@ -134,6 +139,27 @@ def test_check_output_format_json(
             "node_count": 6,
             "python.tree_count": 1,
             "python.node_count": 6,
+        },
+        "cbo": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_partner_sum": None, "partial_partner_mean": None, "partial_partner_max": None,
+        },
+        "rfc": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_response_sum": None, "partial_response_mean": None, "partial_response_max": None,
+        },
+        "mpc": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_call_site_sum": None, "partial_call_site_mean": None, "partial_call_site_max": None,
+        },
+        "callers": {
+            "measured_callables": 0, "unavailable_callables": 0,
+            "partial_caller_sum": None, "partial_caller_mean": None, "partial_caller_max": None,
+            "partial_same_module_sum": None, "partial_cross_module_sum": None,
+        },
+        "dac": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
         },
     }
 

@@ -4,8 +4,13 @@ from collections.abc import Mapping
 from math import isfinite
 from types import MappingProxyType
 
+from scb_check.metrics.callers import DistinctCallers
+from scb_check.metrics.cbo import CBO
 from scb_check.metrics.cog_erosion import CognitiveErosion
+from scb_check.metrics.dac import DAC
 from scb_check.metrics.erosion import Erosion
+from scb_check.metrics.mpc import MPC
+from scb_check.metrics.rfc import RFC
 from scb_check.metrics.syntax import Syntax
 from scb_check.metrics.units import Unit
 from scb_check.metrics.verbosity import Verbosity
@@ -20,6 +25,11 @@ REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(
         "erosion": Erosion.units,
         "cog_erosion": CognitiveErosion.units,
         "syntax": Syntax.units,
+        "cbo": CBO.units,
+        "rfc": RFC.units,
+        "mpc": MPC.units,
+        "callers": DistinctCallers.units,
+        "dac": DAC.units,
     }
 )
 
@@ -40,6 +50,11 @@ def compute_report(analysis: AnalysisResult) -> Report:
                 findings.all_functions, findings.high_cog_functions
             ),
             "syntax": Syntax().compute(flags.syntax_by_language),
+            "cbo": CBO().compute(analysis.project.modules),
+            "rfc": RFC().compute(analysis.project),
+            "mpc": MPC().compute(analysis.project.modules),
+            "callers": DistinctCallers().compute(analysis.project.modules),
+            "dac": DAC().compute(analysis.project.modules),
         }
     )
 

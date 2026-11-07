@@ -99,12 +99,76 @@ def test_diff_compares_full_check_reports(trees: tuple[Path, Path]) -> None:
             "python.tree_count": 0,
             "python.node_count": 5,
         },
+        "cbo": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_partner_sum": None, "partial_partner_mean": None, "partial_partner_max": None,
+        },
+        "rfc": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_response_sum": None, "partial_response_mean": None, "partial_response_max": None,
+        },
+        "mpc": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_call_site_sum": None, "partial_call_site_mean": None, "partial_call_site_max": None,
+        },
+        "callers": {
+            "measured_callables": 0, "unavailable_callables": 0,
+            "partial_caller_sum": None, "partial_caller_mean": None, "partial_caller_max": None,
+            "partial_same_module_sum": None, "partial_cross_module_sum": None,
+        },
+        "dac": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
+        },
     }
     reverse = _json_diff((tree_b, tree_a))
     assert reverse["before"] == payload["after"]
     assert reverse["after"] == payload["before"]
     assert reverse["diff"]["verbosity"]["total_loc"] == -1
     assert reverse["diff"]["syntax"]["node_count"] == -5
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_cbo_diff_counts_partners_with_standalone_parity(
+    trees: tuple[Path, Path], *, reverse: bool,
+) -> None:
+    """One new undirected pair adds two class partner counts, not two use sites."""
+    tree_a, tree_b = trees
+    (tree_a / "sample.py").write_text("class A: pass\nclass B: pass\n")
+    (tree_b / "sample.py").write_text(
+        "class A:\n    value = 1\nclass B:\n"
+        "    def run(self, other: A):\n        return other.value\n"
+    )
+    if reverse:
+        trees = tree_b, tree_a
+    payload = _json_diff(trees)
+    assert payload["before"] == _json_check(trees[0])
+    assert payload["after"] == _json_check(trees[1])
+    assert payload["diff"]["cbo"] == {
+        "measured_classes": 0, "unavailable_classes": 0,
+        "partial_partner_sum": -2 if reverse else 2,
+        "partial_partner_mean": -1.0 if reverse else 1.0,
+        "partial_partner_max": -1 if reverse else 1,
+    }
+    assert _json_diff((tree_b, tree_b))["diff"]["cbo"]["partial_partner_sum"] == 0
+
+
+def test_cbo_unavailable_diff_does_not_zero_fill(trees: tuple[Path, Path]) -> None:
+    """Unsupported semantic extraction has no measured summary or fabricated zero."""
+    for tree in trees:
+        (tree / "sample.ts").write_text("class A {}\n")
+    payload = _json_diff(trees)
+    assert payload["before"] == _json_check(trees[0])
+    assert payload["after"] == _json_check(trees[1])
+    assert payload["before"]["cbo"] == {
+        "measured_classes": 0, "unavailable_classes": 1,
+        "partial_partner_sum": None, "partial_partner_mean": None, "partial_partner_max": None,
+    }
+    assert payload["diff"]["cbo"]["partial_partner_sum"] is None
+    rendered = _invoke_diff(trees)
+    assert rendered.exit_code == 0
+    assert "cbo.partial_partner_sum" in rendered.stdout
+    assert "unavailable" in rendered.stdout
 
 
 def test_diff_preserves_check_parity_for_entity_discovery_corrections(
@@ -157,7 +221,9 @@ def test_text_evidence_edits_preserve_scores_exits_and_snapshot_parity(
     assert payload["before"]["verbosity"]["structural_rule_loc"] == 2
     assert payload["before"]["verbosity"]["score"] == 1.0
     assert payload["before"]["erosion"]["total_mass"] == pytest.approx(math.sqrt(2))
-    assert all(value == 0 for group in payload["diff"].values() for value in group.values())
+    for group, result in payload["diff"].items():
+        for field, value in result.items():
+            assert value == (None if payload["before"][group][field] is None else 0)
 
 
 def test_diff_shows_ratio_decrease_despite_growing_flagged_count(
@@ -252,7 +318,7 @@ def test_diff_compares_complexity_counts_and_masses(
     reverse = _json_diff((tree_b, tree_a))
     for group, result in difference.items():
         for name, value in result.items():
-            assert reverse["diff"][group][name] == pytest.approx(-value)
+            assert reverse["diff"][group][name] == (None if value is None else pytest.approx(-value))
     human = _invoke_diff(trees)
     mass_rows = [row for row in human.stdout.splitlines() if "mass" in row]
     assert mass_rows
@@ -381,7 +447,8 @@ def test_diff_zero_deltas_measure_metrics_not_edit_volume(
     assert payload["diff"].keys() == payload["before"].keys()
     for group, result in payload["diff"].items():
         assert result.keys() == payload["before"][group].keys()
-        assert all(value == 0 for value in result.values())
+        for field, value in result.items():
+            assert value == (None if payload["before"][group][field] is None else 0)
     result = _invoke_diff(trees)
     assert result.exit_code == 0
     assert "+0.00 percentage points" in result.stdout
@@ -480,7 +547,7 @@ def test_diff_is_deterministic_finite_and_resolves_tree_context(
     assert payload["tree_b"] == str(trees[1])
     for name in ("before", "after", "diff"):
         assert all(
-            math.isfinite(value)
+            value is None or math.isfinite(value)
             for result in payload[name].values()
             for value in result.values()
         )

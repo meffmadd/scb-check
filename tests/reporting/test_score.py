@@ -38,8 +38,11 @@ def test_reports_are_read_only_and_serialization_is_independent(
     assert reports.keys() == {"before", "after", "diff"}
     assert reports["before"] == reports["after"] == compute_report(analysis)
     for report in reports.values():
-        assert list(report) == ["verbosity", "erosion", "cog_erosion", "syntax"]
-        assert len(report) == 4
+        assert list(report) == [
+            "verbosity", "erosion", "cog_erosion", "syntax", "cbo",
+            "rfc", "mpc", "callers", "dac",
+        ]
+        assert len(report) == 9
         # Intentionally bypass the read-only annotation to attempt runtime mutation.
         with pytest.raises(TypeError):
             cast("MutableMapping[str, MetricResult]", report)["verbosity"] = {}
@@ -63,6 +66,13 @@ def test_reports_are_read_only_and_serialization_is_independent(
         ("verbosity", "score"),
         ("erosion", "total_mass"),
         ("syntax", "python.node_count"),
+        ("cbo", "partial_partner_sum"),
+        ("rfc", "partial_response_sum"),
+        ("mpc", "partial_call_site_sum"),
+        ("callers", "partial_caller_sum"),
+        ("callers", "partial_same_module_sum"),
+        ("callers", "partial_cross_module_sum"),
+        ("dac", "partial_attribute_sum"),
     ],
 )
 def test_unknown_measurements_propagate_without_mutating_snapshots(
@@ -113,7 +123,10 @@ def test_only_absent_language_counts_are_zero_filled(*, reverse: bool) -> None:
 
 @pytest.mark.parametrize("side", ["before", "after"])
 @pytest.mark.parametrize(
-    "group", ["verbosity", "erosion", "cog_erosion", "syntax"]
+    "group", [
+        "verbosity", "erosion", "cog_erosion", "syntax", "cbo",
+        "rfc", "mpc", "callers", "dac",
+    ]
 )
 def test_missing_required_groups_and_fields_are_contract_errors(
     side: str, group: str
@@ -131,6 +144,8 @@ def test_missing_required_groups_and_fields_are_contract_errors(
             if side == "before"
             else (baseline, incomplete)
         )
+        with pytest.raises(ValueError, match="missing"):
+            serialize_report(incomplete)
         with pytest.raises(ValueError, match="missing"):
             compare_reports(before, after)
 

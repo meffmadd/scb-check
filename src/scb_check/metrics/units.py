@@ -11,4 +11,10 @@ type Unit = Literal[
     "mass",
     "trees",
     "nodes",
+    "classes",
+    "partners",
+    "methods",
+    "call sites",
+    "callers",
+    "attributes",
 ]
