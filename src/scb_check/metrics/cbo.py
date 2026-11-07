@@ -14,7 +14,9 @@ from scb_check.tree_walking.models import SymbolKind
 class CBO(Metric[[tuple[ModuleIR, ...]]]):
     """Count other project classes connected by method calls or attribute access.
 
-    Count each partner once, whichever class uses the other's members. Include
+    A partner is another class connected through a method call or attribute
+    access in either direction. If class `A` calls a method on class `B`, each
+    counts the other as one partner. Repeated calls still count once. Include
     uses of inherited members, but exclude a class's use of its own members.
     Results are partial: classes outside the analyzed project are excluded,
     unknown references are skipped, and some call targets are estimates.
