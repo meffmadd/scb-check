@@ -55,7 +55,9 @@ class CBO(Metric[[tuple[ModuleIR, ...]]]):
         Execution belongs to the nearest enclosing class, including nested functions;
         inherited bodies stay with their declaring class rather than being copied.
         """
+        # Index declarations so uses can be traced back to their enclosing class.
         symbols = {symbol.id: symbol for module in modules for symbol in module.symbols}
+        # Start supported classes with no partners; mark unsupported classes unavailable.
         partners: dict[str, set[str] | None] = {
             symbol.id: (
                 set() if module.source_uses is not None and module.attributes is not None
@@ -64,35 +66,39 @@ class CBO(Metric[[tuple[ModuleIR, ...]]]):
             for module in modules for symbol in module.symbols
             if symbol.kind == SymbolKind.CLASS
         }
+        # Map implemented methods to the classes that declare them.
         method_classes = {
             symbol.id: symbol.callable_facts.declaring_class_id
             for symbol in symbols.values()
             if symbol.kind == SymbolKind.METHOD and symbol.callable_facts is not None
             and symbol.callable_facts.implementation_id is not None
         }
+        # Map attributes to the classes that declare them.
         attribute_classes = {
             attribute.id: attribute.declaring_class_id
             for module in modules for attribute in module.attributes or ()
         }
+        # Visit each recorded call or attribute access.
         for module in modules:
             for use in module.source_uses or ():
+                # Find the nearest enclosing class, looking through nested functions.
                 owner_id = use.owner_id
                 while owner_id in symbols and owner_id not in partners:
                     owner_id = symbols[owner_id].owner_id
+                # Skip uses outside a supported class.
                 if owner_id is None:
                     continue
                 source = partners.get(owner_id)
                 if source is None:
                     continue
                 if use.kind == "call":
-                    # Possible implementation bodies take precedence over the static
-                    # declaration. Unavailable sets fall back to explicitly partial evidence.
+                    # Prefer possible method implementations; fall back to the named declaration.
                     targets = use.runtime_targets.target_ids or (use.resolution.target_id,)
                     target_classes = {method_classes.get(target) for target in targets if target is not None}
                 else:
-                    # A method's attribute-read accompanies a call but is not itself
-                    # a method invocation; only actual fields count as attribute use.
+                    # Count declared fields, not the method access that accompanies a call.
                     target_classes = {attribute_classes.get(use.resolution.target_id or "")}
+                # Link each pair both ways, excluding unknown targets and self-use.
                 for target_id in target_classes:
                     if target_id is None or target_id == owner_id:
                         continue
@@ -100,6 +106,7 @@ class CBO(Metric[[tuple[ModuleIR, ...]]]):
                     if destination is not None:
                         source.add(target_id)
                         destination.add(owner_id)
+        # Make the partner sets and outer mapping read-only, preserving unavailable values.
         return MappingProxyType({
             class_id: None if value is None else frozenset(value)
             for class_id, value in partners.items()
