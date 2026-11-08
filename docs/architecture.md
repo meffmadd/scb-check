@@ -52,7 +52,7 @@ Project aggregation is an **analyzer convention**, not a paper-defined project f
 
 ### Partial metric interpretation
 
-CBO, RFC₁, MPC, distinct callers, and DAC describe retained source, not whole-program behavior or code quality. Their project summaries are **analyzer conventions**, not paper-defined project formulas. Larger values do not imply sloppiness; these metrics introduce no quality thresholds, findings, or exit-code changes.
+CBO, RFC₁, MPC, distinct callers, DAC, Ca, and Ce describe retained source, not whole-program behavior or code quality. Their project summaries are **analyzer conventions**, not paper-defined project formulas. Larger values do not imply sloppiness; these metrics introduce no quality thresholds, findings, or exit-code changes.
 
 A **partial** measurement counts supported evidence, including an observed zero. An **unavailable** measurement means the entity lacks required extraction support; it is excluded from summary denominators rather than treated as zero. Measured and unavailable populations remain separate. Each snapshot models its own retained population; differences can reflect coverage changes as well as changed relationships.
 
@@ -99,6 +99,41 @@ Use only the outer declared type. A retained project generic class can count, bu
 Every retained class, including nested/repeated declarations, enters the population. Available module attribute extraction makes a class measurable; absent extraction makes it unavailable. Unannotated fields, unknown/unresolved types, unsupported assignments, and library types outside retained source are omitted within **partial** measurements, not classified as known nonclass types. Libraries contribute only when their classes are scanned as project source. Initializers do not infer types. Incoming uses do not add attributes, though writes outside supported declaring-class extraction can be missing.
 
 `partial_attribute_sum`, `partial_attribute_mean`, and `partial_attribute_max` summarize measured per-class field counts (unit: attributes); `measured_classes` and `unavailable_classes` use classes. Summaries are `None` with no measured classes. `DAC.attribute_sets()` exposes separate read-only diagnostics.
+
+### Category coupling (Ca and Ce)
+
+`ca` and `ce` preserve the class populations in [Robert C. Martin's 1994 manuscript, *OO Design Quality Metrics: An Analysis of Dependencies*](https://condor.depaul.edu/dmumaugh/OOT/Design-Principles/oodmetrc.pdf): categories are discussed on PDF p. 5, with dependency metrics on p. 6. No DOI is claimed for this manuscript. Briand, Daly & Wüst (1999), [DOI 10.1109/32.748920](https://doi.org/10.1109/32.748920), §4.2.1 (PDF p. 12 / printed p. 102), reproduces these populations and explicitly leaves the dependency predicate unspecified. The following shared policy is an **analyzer choice**, not a recovered primary-paper formalization.
+
+#### Shared measurement policy
+
+- **Category membership:** one class-bearing retained logical module per physical file, keyed by `ModuleIR.id`. Include every retained class declaration, including nested/repeated declarations; never merge categories or classes by qualified name. Modules in one package remain separate, including a class-bearing `__init__.py`. Classless modules add neither measured nor unavailable categories. Directories and namespace packages are not inferred categories.
+- **Directed dependency:** a class calls a statically resolved implemented method or accesses a canonical declared field of another retained class. Reads, writes, augmented writes, and deletes qualify. Use `SourceUseIR.resolution` with status `project` and canonical declaring owners; **do not expand possible runtime targets**. Inherited targets stay with their declaring class. Bodyless target methods supply no implementation dependency. Static declaration evidence is not a verified runtime relationship, including for decorated methods.
+- **Source ownership:** the nearest enclosing class of a supported execution owner supplies the client, including class initialization and functions nested inside methods. Nested classes supply their own clients. Inherited source bodies stay with their declaring class, not subclasses. Module/free-function uses and unsupported execution contexts supply no class client.
+- **Excluded evidence:** imports alone, inheritance alone, declared types alone, class construction alone (no inferred constructor call), bare method references, self-use, and unresolved/ambiguous/unsupported targets add no class dependency. Internal-only class dependencies remain in shared diagnostics but contribute to neither metric for that category.
+- **Scope:** only retained project classes participate. “Outside” means outside the category, not outside the project. Builtins and unscanned library classes have no invented class identities; libraries participate only when their source is included and parsed as project source. Failed parses, exclusions, and dynamic generation can hide classes and relations.
+
+`metrics.categories.category_dependencies(project)` projects the already-resolved immutable IR onto `CategoryDependencies`: read-only class-to-category membership, unavailable category IDs, and immutable directed class pairs. It performs no parsing, source IO, or language resolution. Reporting builds this projection once per snapshot and independently supplies it to `AfferentCoupling` and `EfferentCoupling`. Neither metric depends on the other or on CBO; the policy does not change existing metrics.
+
+#### Counting and project summaries
+
+For a category `K`:
+
+- **Ca:** count distinct client classes outside `K` with any qualifying dependency on a class inside `K`. Several external clients count separately, even within one module. One client using several internal classes/members or repeated sites counts once. Internal clients do not contribute.
+- **Ce:** count distinct source classes inside `K` with any qualifying dependency on a class outside `K`. One source depending on twenty outside classes contributes **one**, not twenty. External clients, outside target classes, and neighboring modules are not Ce's population. This historical source-class variant differs from tools that label outside target breadth “Ce”.
+
+Both groups expose `measured_categories` and `unavailable_categories` (unit: categories). Ca's `partial_client_sum`, `partial_client_mean`, and `partial_client_max` summarize measured category client-set sizes (unit: client classes). Ce's `partial_source_sum`, `partial_source_mean`, and `partial_source_max` summarize measured category source-set sizes (unit: source classes). Sums count category–client/source incidences, means divide by measured categories, and maxima select the largest per-category count. One Ca client can contribute to several destination categories; a Ce source belongs to exactly one category. These project aggregates are **analyzer conventions**, not paper-defined formulas.
+
+`AfferentCoupling.client_sets()` and `EfferentCoupling.source_sets()` expose separate read-only category-ID → class-ID-set diagnostics, with `None` for unavailable categories. Structured membership and class-pair diagnostics never enter numerical reports. The [source fixture](../tests/fixtures/category_coupling/) has four measured categories: Ca counts `3, 0, 1, 0` (sum `4`, mean `1`, maximum `3`); Ce counts `0, 2, 1, 0` (sum `3`, mean `0.75`, maximum `2`).
+
+#### Availability and interpretation
+
+A class-bearing category is unavailable if any internal class lacks direct-base extraction, its module lacks source-use or attribute extraction, or a declared method lacks callable facts. Generic-language class categories currently lack this support. An available tuple containing unresolved bases is still partial evidence, not missing extraction. A category is never silently measured using only its supported internal subset. Known edges involving an unavailable category can still inform other measured categories.
+
+Unknown relations are omitted within explicitly **partial** measurements. Unresolved outgoing uses can hide Ce sources; unmodeled libraries can hide outside dependencies. Unknown incoming uses or unavailable extraction **anywhere** can hide clients for any measured Ca category, even if every outgoing use in that category resolves. Choosing a predicate does not erase these source limitations. Static selection and unsupported dispatch/inference are not sound whole-program runtime bounds.
+
+An isolated supported category measures partial zero, not proven absence. Unavailable categories are excluded from denominators. If no categories are measured—including classless snapshots—all summary fields are `None`, not zero. Check and independent-snapshot diff use the same composition; deltas are signed later minus earlier, and any null operand yields a null delta, including two nulls. Coverage changes can change populations independently of observed relationships.
+
+Category size, grouping, and scanned context affect interpretation: Ce is bounded by the category's internal class count, while Ca is not; aggregating more classes or scanning more client/library source changes exposure. Neither larger values nor positive deltas imply sloppiness. No quality thresholds, findings, or score/exit-code changes are introduced. See the [glossary](../GLOSSARY.md) for counting terminology.
 
 ### Snapshot comparison
 
@@ -158,7 +193,7 @@ Each side must have successfully parsed eligible source; zero-SLOC files are val
 
 `models.py` defines `ReportValue = int | float | None`, `MetricResult = Mapping[str, ReportValue]`, and `Report = Mapping[str, MetricResult]`. These are data contracts, not runtime report classes. Computed reports expose read-only outer and inner mappings over privately owned dictionaries. Metric results are flat: booleans, strings, sequences, nested mappings, and non-finite numbers are not report values. The canonical groups and fields are in the [README schema reference](../README.md#check-json-report-fields).
 
-`reporting.score.compute_report(analysis: AnalysisResult)` explicitly composes `Verbosity`, `Erosion`, `CognitiveErosion`, `Syntax`, `CBO`, `RFC`, `MPC`, `DistinctCallers`, and `DAC` instances from the sibling `metrics/` package. Each metric's `compute()` receives narrowly scoped extracted facts and owns its field names, supporting counts, calculations, and units. The builder owns group names. Private `metrics/_mass.py` shares erosion arithmetic; `metrics/_counts.py` shares sum/mean/max arithmetic for measured CBO, RFC₁, MPC, callers, and DAC counts, returning `None` aggregates for an empty measured population. Concrete metrics retain population, field, and unit ownership. Tree walking owns complexity extraction, not mass calculations.
+`reporting.score.compute_report(analysis: AnalysisResult)` explicitly composes `Verbosity`, `Erosion`, `CognitiveErosion`, `Syntax`, `CBO`, `RFC`, `MPC`, `DistinctCallers`, `DAC`, `AfferentCoupling`, and `EfferentCoupling` instances from the sibling `metrics/` package. Each metric's `compute()` receives narrowly scoped extracted facts and owns its field names, supporting counts, calculations, and units. The builder owns group names. Private `metrics/_mass.py` shares erosion arithmetic; `metrics/_counts.py` shares sum/mean/max arithmetic for measured CBO, RFC₁, MPC, callers, DAC, Ca, and Ce counts, returning `None` aggregates for an empty measured population. Concrete metrics retain population, field, and unit ownership. Tree walking owns complexity extraction, not mass calculations.
 
 `metrics.base.Metric` is an abstract base with an abstract `compute()` method and class-declared `units`. Its parameter specification preserves each concrete metric's distinct input signature; it does not require a common analysis context or introduce a registry or dynamic discovery. Metrics do not import reporting.
 
@@ -223,7 +258,7 @@ The IR-first gate is validated at `analyze_files(...).project` by `tests/test_me
 | Method RIC | Target method/class identity; distinct executing method/class owners, including owner-class and comparison-class use | Pair population, user deduplication, denominator floor and ratio |
 | Multilevel CSE | Original `TextFragmentIR` text/spans and module/declaration owner tree, including nested owners | Method/class/file selection, document preprocessing, explicitly supplied local encoder and similarity |
 
-Implemented consumers and future candidates handle unavailable inventories and uncertain targets explicitly. Shared language resolution belongs here even when expensive; metric-specific graph traversal/counting and embedding computation do not. Fact extraction itself adds no scores, thresholds, or backend registry; implemented metrics explicitly compose their report fields. Existing verbosity/erosion, rule projections, CLI exits, and standalone-check/independent-diff contracts are unchanged.
+Implemented consumers and future candidates handle unavailable inventories and uncertain targets explicitly. Shared language resolution belongs here even when expensive; metric-specific graph traversal/counting and embedding computation do not. Fact extraction itself adds no scores, thresholds, or backend registry; implemented metrics explicitly compose their report fields. Ca/Ce select their shared category/dependency policy from these same retained facts; see [category coupling](#category-coupling-ca-and-ce). Existing verbosity/erosion, rule projections, CLI exits, and standalone-check/independent-diff contracts are unchanged.
 
 ## Layers
 

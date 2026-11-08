@@ -17,4 +17,7 @@ type Unit = Literal[
     "call sites",
     "callers",
     "attributes",
+    "categories",
+    "client classes",
+    "source classes",
 ]
