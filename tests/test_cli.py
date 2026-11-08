@@ -31,6 +31,7 @@ _REPORT_KEYS = {
     "mpc",
     "callers",
     "dac",
+    "cic",
 }
 
 
@@ -160,6 +161,10 @@ def test_check_output_format_json(
         "dac": {
             "measured_classes": 0, "unavailable_classes": 0,
             "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
+        },
+        "cic": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_occurrence_sum": None, "partial_occurrence_mean": None, "partial_occurrence_max": None,
         },
     }
 

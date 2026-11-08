@@ -39,6 +39,75 @@ def _diff(earlier: Path, later: Path) -> dict[str, Report]:
     return payload
 
 
+@pytest.mark.parametrize("direction", [-1, 0, 1])
+def test_cic_signed_and_zero_deltas_with_standalone_parity(
+    coupling_trees: tuple[Path, Path], direction: int,
+) -> None:
+    """Repeated calls/references retain volume and metric-owned units in both commands."""
+    earlier, later = coupling_trees
+    prefix = "class Root:\n    def work(self): return 1\nclass Child(Root):\n"
+    (earlier / "sample.py").write_text(prefix + "    pass\n", encoding="utf-8")
+    (later / "sample.py").write_text(
+        prefix + "    def run(self):\n        self.work()\n        return self.work\n",
+        encoding="utf-8",
+    )
+    if direction == -1:
+        earlier, later = later, earlier
+    elif direction == 0:
+        earlier = later
+    payload = _diff(earlier, later)
+    low = {
+        "measured_classes": 2, "unavailable_classes": 0,
+        "partial_occurrence_sum": 0, "partial_occurrence_mean": 0.0, "partial_occurrence_max": 0,
+    }
+    high = {
+        "measured_classes": 2, "unavailable_classes": 0,
+        "partial_occurrence_sum": 2, "partial_occurrence_mean": 1.0, "partial_occurrence_max": 2,
+    }
+    assert payload["before"]["cic"] == (low if direction == 1 else high)
+    assert payload["after"]["cic"] == (low if direction == -1 else high)
+    assert payload["diff"]["cic"] == {
+        "measured_classes": 0, "unavailable_classes": 0,
+        "partial_occurrence_sum": 2 * direction,
+        "partial_occurrence_mean": float(direction), "partial_occurrence_max": 2 * direction,
+    }
+    human = CliRunner().invoke(main, ["diff", str(earlier), str(later)])
+    assert human.exit_code == 0, human.output
+    assert any("cic.partial_occurrence_sum" in line and "occurrences" in line
+               for line in human.stdout.splitlines())
+
+
+@pytest.mark.parametrize("unavailable_sides", [(True, True), (True, False), (False, True)])
+@pytest.mark.parametrize("unavailable_source", ["ancestry", "extraction"])
+def test_cic_null_deltas_preserve_unavailability_and_standalone_parity(
+    coupling_trees: tuple[Path, Path], unavailable_sides: tuple[bool, bool], unavailable_source: str,
+) -> None:
+    """Unknown ancestry and unsupported extraction propagate null on either snapshot side."""
+    for tree, unavailable in zip(coupling_trees, unavailable_sides, strict=True):
+        name, source = "sample.py", "class Empty: pass\n"
+        if unavailable:
+            name, source = (
+                ("sample.py", "from library import External\nclass Child(External): pass\n")
+                if unavailable_source == "ancestry" else ("sample.ts", "class Empty {}\n")
+            )
+        (tree / name).write_text(source, encoding="utf-8")
+    payload = _diff(*coupling_trees)
+    for snapshot, unavailable in zip(("before", "after"), unavailable_sides, strict=True):
+        assert payload[snapshot]["cic"] == {
+            "measured_classes": 0 if unavailable else 1,
+            "unavailable_classes": 1 if unavailable else 0,
+            "partial_occurrence_sum": None if unavailable else 0,
+            "partial_occurrence_mean": None if unavailable else 0.0,
+            "partial_occurrence_max": None if unavailable else 0,
+        }
+    for field in ("partial_occurrence_sum", "partial_occurrence_mean", "partial_occurrence_max"):
+        assert payload["diff"]["cic"][field] is None
+    human = CliRunner().invoke(main, ["diff", *(str(tree) for tree in coupling_trees)])
+    assert human.exit_code == 0, human.output
+    assert any("cic.partial_occurrence_sum" in line and "unavailable" in line
+               for line in human.stdout.splitlines())
+
+
 def test_rfc_check_and_diff_include_own_method_population(
     coupling_trees: tuple[Path, Path],
 ) -> None:

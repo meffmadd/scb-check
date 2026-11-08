@@ -6,6 +6,7 @@ from types import MappingProxyType
 
 from scb_check.metrics.callers import DistinctCallers
 from scb_check.metrics.cbo import CBO
+from scb_check.metrics.cic import CIC
 from scb_check.metrics.cog_erosion import CognitiveErosion
 from scb_check.metrics.dac import DAC
 from scb_check.metrics.erosion import Erosion
@@ -30,6 +31,7 @@ REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(
         "mpc": MPC.units,
         "callers": DistinctCallers.units,
         "dac": DAC.units,
+        "cic": CIC.units,
     }
 )
 
@@ -55,6 +57,7 @@ def compute_report(analysis: AnalysisResult) -> Report:
             "mpc": MPC().compute(analysis.project.modules),
             "callers": DistinctCallers().compute(analysis.project.modules),
             "dac": DAC().compute(analysis.project.modules),
+            "cic": CIC().compute(analysis.project.modules),
         }
     )
 
