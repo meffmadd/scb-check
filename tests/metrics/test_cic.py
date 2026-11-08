@@ -11,6 +11,7 @@ from scb_check.tree_walking.models import AttributeIR
 from scb_check.tree_walking.models import CallableIR
 from scb_check.tree_walking.models import Language
 from scb_check.tree_walking.models import ModuleIR
+from scb_check.tree_walking.models import ReceiverIR
 from scb_check.tree_walking.models import RuntimeTargetsIR
 from scb_check.tree_walking.models import SourceSpan
 from scb_check.tree_walking.models import SourceUseIR
@@ -111,6 +112,31 @@ def test_call_target_access_deduplicates_but_receiver_field_and_repeated_sites_s
         use(method, field.id, 14).model_copy(update={"kind": "attribute-write"}),
     )).model_copy(update={"attributes": (field,)})
     assert CIC().class_counts((evidence,)) == {root.id: 0, child.id: 6}
+
+
+def test_parenthesized_call_and_its_target_access_are_one_occurrence() -> None:
+    """Wrapper spans differ, but the retained target still identifies one physical use."""
+    root = subclass("Root", 1)
+    child = subclass("Child", 2, root)
+    method = declaration("run", SymbolKind.METHOD, 3, child.id)
+    target = declaration("work", SymbolKind.METHOD, 4, root.id)
+    call = use(method, target.id, 10).model_copy(update={
+        "span": span(10, end=13), "target_span": span(10, end=11),
+        "target_spelling": "(self.work)", "target_form": "expression",
+        "receiver": ReceiverIR(
+            resolution=TargetResolutionIR(reason="parameter"), member_path=("work",),
+        ),
+    })
+    access = call.model_copy(update={
+        "kind": "attribute-read", "span": span(10, 1, 10), "target_span": span(10, 1, 10),
+        "target_spelling": "self.work", "target_form": "attribute",
+    })
+    evidence = module((root, child, method, target), (call, access))
+    assert CIC().class_counts((evidence,)) == {root.id: 0, child.id: 1}
+    assert CIC().compute((evidence,)) == {
+        "measured_classes": 2, "unavailable_classes": 0,
+        "partial_occurrence_sum": 1, "partial_occurrence_mean": 0.5, "partial_occurrence_max": 1,
+    }
 
 
 @pytest.mark.parametrize("missing", ["source_uses", "attributes", "direct_bases", "callable_facts"])

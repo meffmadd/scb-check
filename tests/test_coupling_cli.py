@@ -77,6 +77,32 @@ def test_cic_signed_and_zero_deltas_with_standalone_parity(
                for line in human.stdout.splitlines())
 
 
+@pytest.mark.parametrize("parenthesized", [
+    "(self.work)()", "((self.work))()", "(\n            self.work\n        )()",
+])
+def test_cic_parenthesized_call_has_zero_metric_delta_and_standalone_parity(
+    coupling_trees: tuple[Path, Path], parenthesized: str,
+) -> None:
+    """Adding call-target parentheses changes syntax, not CIC occurrence volume."""
+    earlier, later = coupling_trees
+    prefix = (
+        "class Root:\n    def work(self): return 1\n"
+        "class Child(Root):\n    def run(self):\n        "
+    )
+    (earlier / "sample.py").write_text(prefix + "self.work()\n", encoding="utf-8")
+    (later / "sample.py").write_text(prefix + parenthesized + "\n", encoding="utf-8")
+    payload = _diff(earlier, later)
+    for snapshot in ("before", "after"):
+        assert payload[snapshot]["cic"] == {
+            "measured_classes": 2, "unavailable_classes": 0,
+            "partial_occurrence_sum": 1, "partial_occurrence_mean": 0.5, "partial_occurrence_max": 1,
+        }
+    assert payload["diff"]["cic"] == {
+        "measured_classes": 0, "unavailable_classes": 0,
+        "partial_occurrence_sum": 0, "partial_occurrence_mean": 0.0, "partial_occurrence_max": 0,
+    }
+
+
 @pytest.mark.parametrize("unavailable_sides", [(True, True), (True, False), (False, True)])
 @pytest.mark.parametrize("unavailable_source", ["ancestry", "extraction"])
 def test_cic_null_deltas_preserve_unavailability_and_standalone_parity(

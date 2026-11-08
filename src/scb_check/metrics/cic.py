@@ -9,6 +9,8 @@ from scb_check.metrics.base import Metric
 from scb_check.metrics.units import Unit
 from scb_check.models import MetricResult
 from scb_check.tree_walking.models import ModuleIR
+from scb_check.tree_walking.models import ReceiverIR
+from scb_check.tree_walking.models import SourceSpan
 from scb_check.tree_walking.models import SourceUseIR
 from scb_check.tree_walking.models import SymbolIR
 from scb_check.tree_walking.models import SymbolKind
@@ -61,13 +63,12 @@ class CIC(Metric[[tuple[ModuleIR, ...]]]):
         receiver-field access remains a separate occurrence. Read-write is one site.
         """
         def supported_occurrences(module: ModuleIR) -> tuple[SourceUseIR, ...]:
-            # Only the target access duplicates a call, not other accesses in its receiver.
             uses = module.source_uses or ()
-            call_targets = {use.target_span for use in uses if use.kind == "call"}
+            target_accesses = self._call_target_accesses(uses)
             return tuple(
                 use for use in uses
                 if use.unsupported_context is None and use.execution_kind != "unsupported"
-                and (use.kind == "call" or use.span not in call_targets)
+                and use.id not in target_accesses
             )
 
         symbols = {symbol.id: symbol for module in modules for symbol in module.symbols}
@@ -107,6 +108,31 @@ class CIC(Metric[[tuple[ModuleIR, ...]]]):
                 if target_owner in (ancestry.get(owner) or ()):
                     counts[owner] = count + 1
         return MappingProxyType(counts)
+
+    @staticmethod
+    def _call_target_accesses(uses: tuple[SourceUseIR, ...]) -> frozenset[str]:
+        exact_targets: set[SourceSpan] = set()
+        calls_by_target: dict[tuple[str | None, str | None, ReceiverIR | None], list[SourceSpan]] = {}
+        for use in uses:
+            if use.kind != "call":
+                continue
+            exact_targets.add(use.target_span)
+            if use.resolution.status == "project" and use.receiver is not None:
+                key = (use.owner_id, use.resolution.target_id, use.receiver)
+                calls_by_target.setdefault(key, []).append(use.target_span)
+        # Parentheses enlarge the call target span, but preserve its selected target
+        # and receiver. Matching the full member path preserves independent prefixes,
+        # even when a receiver field and the called field share a canonical target ID.
+        return frozenset(
+            use.id for use in uses if use.kind == "attribute-read" and (
+                use.span in exact_targets or any(
+                    target.file_id == use.span.file_id
+                    and (target.start_line, target.start_col) <= (use.span.start_line, use.span.start_col)
+                    and (use.span.end_line, use.span.end_col) <= (target.end_line, target.end_col)
+                    for target in calls_by_target.get((use.owner_id, use.resolution.target_id, use.receiver), ())
+                )
+            )
+        )
 
 
 def _ancestor_sets(classes: Mapping[str, SymbolIR]) -> Mapping[str, frozenset[str] | None]:

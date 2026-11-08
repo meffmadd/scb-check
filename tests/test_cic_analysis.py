@@ -28,6 +28,60 @@ def test_proper_ancestors_repeated_sites_overrides_and_source_ownership(
     }
 
 
+@pytest.mark.parametrize("expression", [
+    "(self.work)()",
+    "((self.work))()",
+    "(\n            self.work\n        )()",
+    "(\n            ( # wrapper\n                self.work\n            )\n        )()",
+])
+def test_parenthesized_ancestor_call_counts_one_physical_occurrence(
+    tmp_path: Path, expression: str,
+) -> None:
+    """Call-target parentheses do not create a second ancestor method use."""
+    source = tmp_path / "parenthesized.py"
+    source.write_text(
+        "class Root:\n    def work(self): return 1\n"
+        "class Child(Root):\n    def run(self):\n        " + expression + "\n",
+        encoding="utf-8",
+    )
+    project = analyze_files((source,), disable_sg=True).project
+    source.unlink()
+    names = {symbol.id: symbol.name for symbol in project.symbols_by_id.values()}
+    assert {names[key]: count for key, count in CIC().class_counts(project.modules).items()} == {
+        "Root": 0, "Child": 1,
+    }
+    assert CIC().compute(project.modules) == {
+        "measured_classes": 2, "unavailable_classes": 0,
+        "partial_occurrence_sum": 1, "partial_occurrence_mean": 0.5, "partial_occurrence_max": 1,
+    }
+
+
+@pytest.mark.parametrize(("expression", "expected"), [
+    ("reference = (self.work)", 1),
+    ("(self.work)(); (self.work)()", 2),
+    ("(self.work)(self.work, (self.work))", 3),
+    ("(self.receiver.work)()", 2),
+    ("(self.receiver.receiver)()", 2),
+    ("(self.work if self.flag else self.work)()", 3),
+])
+def test_call_target_matching_preserves_independent_member_occurrences(
+    tmp_path: Path, expression: str, expected: int,
+) -> None:
+    """Arguments, receiver prefixes, and conditional targets are not duplicate accesses."""
+    source = tmp_path / "independent.py"
+    source.write_text(
+        "class Root:\n    receiver: 'Root'\n    flag = True\n"
+        "    def work(self, *args): return 1\n"
+        "class Child(Root):\n    def run(self):\n        " + expression + "\n",
+        encoding="utf-8",
+    )
+    project = analyze_files((source,), disable_sg=True).project
+    names = {symbol.id: symbol.name for symbol in project.symbols_by_id.values()}
+    assert {names[key]: count for key, count in CIC().class_counts(project.modules).items()} == {
+        "Root": 0, "Child": expected,
+    }
+
+
 def test_unresolved_ancestry_is_unavailable_but_unknown_members_are_partial(tmp_path: Path) -> None:
     """External/unknown bases propagate unavailability, not invented ancestor zeros."""
     source = tmp_path / "unknown.py"
