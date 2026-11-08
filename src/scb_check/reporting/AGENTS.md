@@ -4,11 +4,11 @@ Consumes shared `AnalysisResult` for metric reports and `Flags` for location-lev
 
 ## Ownership
 
-- `Verbosity`, `Erosion`, `CognitiveErosion`, `Syntax`, `CBO`, `RFC`, `MPC`, `DistinctCallers`, and `DAC` live in the sibling [`metrics/`](../metrics/AGENTS.md) package. Their `Metric` base declares the calculation contract; concrete classes own their narrow inputs, calculations, result fields, and units.
+- `Verbosity`, `Erosion`, `CognitiveErosion`, `Syntax`, `CBO`, `RFC`, `MPC`, `DistinctCallers`, `DAC`, and `ModuleCallDependencies` live in the sibling [`metrics/`](../metrics/AGENTS.md) package. Their `Metric` base declares the calculation contract; concrete classes own their narrow inputs, calculations, result fields, and units.
 - `compute_report(AnalysisResult)` owns explicit group composition. `Report` is a mapping alias, with read-only outer and inner mappings, not a runtime class. Keep units outside nullable numerical values.
 - Keep calculations and shared erosion arithmetic in `metrics/`. Complexity extraction stays in tree walking.
 - `serialize_report` validates contracts and creates fresh plain outer and inner dictionaries. Keep required-field and finite-value validation at the reporting boundary; reject booleans and nonnumeric/nested results.
-- Preserve the nine canonical groups in the README schema. RFC₁, MPC, callers, and DAC expose partial summaries plus measured/unavailable populations; calculations and structured diagnostics stay metric-owned. Keep unavailable summaries nullable through serialization and independent-snapshot subtraction. Read the [counting policies](../../../docs/architecture.md#partial-metric-interpretation) when changing these contracts.
+- Preserve the ten canonical groups in the README schema. RFC₁, MPC, callers, DAC, and module-call dependencies expose partial summaries plus measured/unavailable populations; calculations and structured diagnostics stay metric-owned. Keep unavailable summaries nullable through serialization and independent-snapshot subtraction. Read the [counting policies](../../../docs/architecture.md#partial-metric-interpretation) when changing these contracts.
 - Extend explicit composition for real metrics; keep the interface free of registries, dynamic discovery, and unused configuration.
 
 ## Scoring invariants

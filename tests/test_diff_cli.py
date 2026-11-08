@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 from typer.testing import CliRunner
@@ -51,6 +51,66 @@ def trees(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     tree_a.mkdir()
     tree_b.mkdir()
     return tree_a, tree_b
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_module_call_dependency_signed_and_zero_deltas_with_check_parity(
+    trees: tuple[Path, Path], *, reverse: bool,
+) -> None:
+    """One extra directional neighbor adds one incidence, regardless of site count."""
+    for tree in trees:
+        (tree / "target.py").write_text("def work():\n    return 1\n")
+        (tree / "source.py").write_text("from target import work\n")
+    (trees[1] / "source.py").write_text("from target import work\nwork()\nwork()\n")
+    ordered = trees[::-1] if reverse else trees
+    payload = _json_diff(ordered)
+    assert payload["before"] == _json_check(ordered[0])
+    assert payload["after"] == _json_check(ordered[1])
+    assert _json_check(trees[0])["module_call_dependencies"] == {
+        "measured_modules": 2, "unavailable_modules": 0,
+        "partial_incoming_sum": 0, "partial_incoming_mean": 0.0, "partial_incoming_max": 0,
+        "partial_outgoing_sum": 0, "partial_outgoing_mean": 0.0, "partial_outgoing_max": 0,
+    }
+    sign = -1 if reverse else 1
+    assert payload["diff"]["module_call_dependencies"] == {
+        "measured_modules": 0, "unavailable_modules": 0,
+        "partial_incoming_sum": sign, "partial_incoming_mean": sign * 0.5, "partial_incoming_max": sign,
+        "partial_outgoing_sum": sign, "partial_outgoing_mean": sign * 0.5, "partial_outgoing_max": sign,
+    }
+    assert set(_json_diff((trees[1], trees[1]))["diff"]["module_call_dependencies"].values()) == {0}
+    rendered = _invoke_diff(ordered)
+    assert rendered.exit_code == 0
+    assert "module_call_dependencies.partial_outgoing_sum" in rendered.stdout
+    assert f"{sign:+} module-neighbor incidences" in rendered.stdout
+
+
+@pytest.mark.parametrize("supported", ["neither", "before", "after", "mixed"])
+def test_module_call_dependency_unavailable_deltas_preserve_check_parity(
+    trees: tuple[Path, Path], supported: Literal["neither", "before", "after", "mixed"],
+) -> None:
+    """Unsupported extraction stays null, even against measured empty dependencies."""
+    for index, tree in enumerate(trees):
+        (tree / "sample.ts").write_text("export const value = 1;\n")
+        if supported in {"mixed", "before" if index == 0 else "after"}:
+            (tree / "empty.py").write_text("")
+    payload = _json_diff(trees)
+    assert payload["before"] == _json_check(trees[0])
+    assert payload["after"] == _json_check(trees[1])
+    for side in ("before", "after"):
+        group = payload[side]["module_call_dependencies"]
+        measured = supported in (side, "mixed")
+        assert group == {
+            "measured_modules": int(measured), "unavailable_modules": 1,
+            "partial_incoming_sum": 0 if measured else None,
+            "partial_incoming_mean": 0.0 if measured else None,
+            "partial_incoming_max": 0 if measured else None,
+            "partial_outgoing_sum": 0 if measured else None,
+            "partial_outgoing_mean": 0.0 if measured else None,
+            "partial_outgoing_max": 0 if measured else None,
+        }
+    difference = payload["diff"]["module_call_dependencies"]
+    assert difference["partial_incoming_sum"] == (0 if supported == "mixed" else None)
+    assert difference["partial_outgoing_sum"] == (0 if supported == "mixed" else None)
 
 
 def test_diff_compares_full_check_reports(trees: tuple[Path, Path]) -> None:
@@ -119,6 +179,11 @@ def test_diff_compares_full_check_reports(trees: tuple[Path, Path]) -> None:
         "dac": {
             "measured_classes": 0, "unavailable_classes": 0,
             "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
+        },
+        "module_call_dependencies": {
+            "measured_modules": 0, "unavailable_modules": 0,
+            "partial_incoming_sum": 0, "partial_incoming_mean": 0.0, "partial_incoming_max": 0,
+            "partial_outgoing_sum": 0, "partial_outgoing_mean": 0.0, "partial_outgoing_max": 0,
         },
     }
     reverse = _json_diff((tree_b, tree_a))

@@ -9,6 +9,7 @@ from scb_check.metrics.cbo import CBO
 from scb_check.metrics.cog_erosion import CognitiveErosion
 from scb_check.metrics.dac import DAC
 from scb_check.metrics.erosion import Erosion
+from scb_check.metrics.module_dependencies import ModuleCallDependencies
 from scb_check.metrics.mpc import MPC
 from scb_check.metrics.rfc import RFC
 from scb_check.metrics.syntax import Syntax
@@ -30,6 +31,7 @@ REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(
         "mpc": MPC.units,
         "callers": DistinctCallers.units,
         "dac": DAC.units,
+        "module_call_dependencies": ModuleCallDependencies.units,
     }
 )
 
@@ -55,6 +57,7 @@ def compute_report(analysis: AnalysisResult) -> Report:
             "mpc": MPC().compute(analysis.project.modules),
             "callers": DistinctCallers().compute(analysis.project.modules),
             "dac": DAC().compute(analysis.project.modules),
+            "module_call_dependencies": ModuleCallDependencies().compute(analysis.project.modules),
         }
     )
 

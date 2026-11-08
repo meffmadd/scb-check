@@ -31,6 +31,7 @@ _REPORT_KEYS = {
     "mpc",
     "callers",
     "dac",
+    "module_call_dependencies",
 }
 
 
@@ -160,6 +161,11 @@ def test_check_output_format_json(
         "dac": {
             "measured_classes": 0, "unavailable_classes": 0,
             "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
+        },
+        "module_call_dependencies": {
+            "measured_modules": 1, "unavailable_modules": 0,
+            "partial_incoming_sum": 0, "partial_incoming_mean": 0.0, "partial_incoming_max": 0,
+            "partial_outgoing_sum": 0, "partial_outgoing_mean": 0.0, "partial_outgoing_max": 0,
         },
     }
 
