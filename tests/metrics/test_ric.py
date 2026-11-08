@@ -1,8 +1,12 @@
 """Method RIC over narrow immutable facts, without parsing or resolution."""
 
+import sys
+import tracemalloc
+from collections.abc import Callable
 from collections.abc import MutableMapping
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from types import FrameType
 from typing import cast
 
 import pytest
@@ -54,6 +58,55 @@ def module(symbols: tuple[SymbolIR, ...], uses: tuple[SourceUseIR, ...] = ()) ->
     )
 
 
+def assert_aggregates_match_diagnostics(modules: tuple[ModuleIR, ...]) -> None:
+    """Compare sparse aggregate results with the public explicit all-pair view."""
+    diagnostics = RIC().pair_diagnostics(modules)
+    ratios = [pair.ratio for pair in diagnostics.values() if pair is not None]
+    assert RIC().compute(modules) == {
+        "measured_pairs": len(ratios), "unavailable_pairs": len(diagnostics) - len(ratios),
+        "partial_ratio_mean": sum(ratios) / len(ratios) if ratios else None,
+        "partial_ratio_max": max(ratios) if ratios else None,
+    }
+
+
+def test_zero_call_aggregate_has_linear_resource_budget() -> None:
+    """Zero-pair population size must not dictate aggregate storage or executed work."""
+    class_count = 200
+    symbols = []
+    for index in range(class_count):
+        owner = declaration(f"C{index}", index * 4 + 1)
+        symbols.append(owner)
+        symbols.extend(declaration(f"m{j}", index * 4 + j + 2, owner) for j in range(3))
+    modules = (module(tuple(symbols)),)
+    tracemalloc.start()
+    try:
+        result = RIC().compute(modules)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert result == {
+        "measured_pairs": 119400, "unavailable_pairs": 0,
+        "partial_ratio_mean": 0.0, "partial_ratio_max": 0.0,
+    }
+    # Generous linear budgets: the previous full-pair path used over 22 MiB.
+    assert peak < class_count * 8192
+    lines = 0
+
+    def count_lines(frame: FrameType, event: str, _arg: object) -> Callable[..., object]:
+        nonlocal lines
+        if event == "line" and frame.f_globals.get("__name__") == RIC.__module__:
+            lines += 1
+        return count_lines
+
+    previous_trace = sys.gettrace()
+    try:
+        sys.settrace(count_lines)
+        assert RIC().compute(modules) == result
+    finally:
+        sys.settrace(previous_trace)
+    assert lines < class_count * 400
+
+
 def test_all_pairs_deduplicate_users_and_preserve_zero_owner_use() -> None:
     """All pairs include zeros; the floor never overwrites raw owner use."""
     a, b, c = declaration("A", 1), declaration("B", 2), declaration("C", 3)
@@ -84,6 +137,7 @@ def test_recursion_and_multiple_owner_methods_supply_actual_denominator() -> Non
         call(first, target), call(second, target), call(third, target),
     )),)
     assert RIC().pair_diagnostics(modules)[target.id, b.id] == RICPair(3, 2, 2, 1.5)
+    assert_aggregates_match_diagnostics(modules)
 
 
 @pytest.mark.parametrize("missing", ["callable_facts", "source_uses", "direct_bases"])
@@ -107,6 +161,8 @@ def test_unavailable_class_or_method_extraction_is_not_measured_zero(missing: st
         "measured_pairs": 1, "unavailable_pairs": 3,
         "partial_ratio_mean": 0.0, "partial_ratio_max": 0.0,
     }
+    assert_aggregates_match_diagnostics(modules)
+    assert_aggregates_match_diagnostics((module((a, target)), unavailable))
     assert RIC().compute((module((a, target)), unavailable)) == {
         "measured_pairs": 0, "unavailable_pairs": 2,
         "partial_ratio_mean": None, "partial_ratio_max": None,
@@ -183,3 +239,39 @@ def test_no_pairs_has_null_summaries_and_diagnostics_are_read_only() -> None:
         setattr(value, field_name, 9)
     with pytest.raises(TypeError):
         cast("MutableMapping[str, int | float | None]", RIC().compute(modules))["partial_ratio_mean"] = 9
+
+
+@pytest.mark.parametrize(("scenario", "measured", "unavailable"), [
+    ("zero_use", 18, 0), ("owner_floor", 18, 0), ("recursion", 18, 0),
+    ("all_unavailable", 0, 18), ("mixed_unavailable", 5, 13), ("unknown_owner", 18, 4),
+    ("no_methods", 0, 0), ("one_class", 0, 0), ("empty", 0, 0),
+])
+def test_sparse_aggregates_equal_full_diagnostics(scenario: str, measured: int, unavailable: int) -> None:
+    """Arithmetic populations and sparse ratios exactly match the explicit all-pair view."""
+    a, b, c, empty = (declaration(name, line) for line, name in enumerate(("A", "B", "C", "Empty"), 1))
+    target, sibling, extra = (declaration(name, line, a) for line, name in enumerate(("target", "sibling", "extra"), 5))
+    first, second, third = declaration("first", 8, b), declaration("second", 9, b), declaration("third", 10, c)
+    # Reverse caller-class and target order to exercise canonical floating-point summation.
+    uses = (
+        call(third, sibling), call(third, target), call(second, target), call(first, target), call(first, target),
+    )
+    if scenario != "owner_floor":
+        uses += (call(target, target), call(target, target), call(sibling, target), call(extra, target))
+    if scenario == "zero_use":
+        uses = ()
+    modules = (module((a, target, sibling, extra), uses), module((b, first, second)), module((c, empty, third)))
+    if scenario == "all_unavailable":
+        modules = tuple(item.model_copy(update={"source_uses": None}) for item in modules)
+    orphan = declaration("orphan", 11, a).model_copy(update={"callable_facts": None, "owner_id": None})
+    variants = {
+        "unknown_owner": (*modules, module((orphan,))),
+        "mixed_unavailable": (*modules[:2], modules[2].model_copy(update={"source_uses": None})),
+        "no_methods": (module((a, b, c, empty)),),
+        "one_class": (module((a, target, sibling, extra), uses),),
+        "empty": (),
+    }
+    modules = variants.get(scenario, modules)
+    assert_aggregates_match_diagnostics(modules)
+    diagnostics = RIC().pair_diagnostics(modules)
+    assert sum(pair is not None for pair in diagnostics.values()) == measured
+    assert sum(pair is None for pair in diagnostics.values()) == unavailable

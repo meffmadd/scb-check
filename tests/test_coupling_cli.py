@@ -309,3 +309,30 @@ def test_ric_unavailable_pairs_propagate_null_not_zero(
     human = CliRunner().invoke(main, ["diff", *(str(tree) for tree in coupling_trees)])
     assert human.exit_code == 0, human.output
     assert any("ric.partial_ratio_max" in line and "unavailable" in line for line in human.stdout.splitlines())
+
+
+def test_ric_sparse_cli_counts_unused_and_unavailable_comparisons(
+    coupling_trees: tuple[Path, Path],
+) -> None:
+    """A new empty class adds measured zeros while unsupported pairs remain excluded."""
+    before, after = coupling_trees
+    prefix = "class A:\n    def target(self): return 1\nclass B:\n    def use(self, value: A):\n"
+    (before / "sample.py").write_text(prefix + "        return 2\n", encoding="utf-8")
+    (after / "sample.py").write_text(
+        prefix + "        return value.target() + value.target()\nclass Empty: pass\n", encoding="utf-8",
+    )
+    for tree in coupling_trees:
+        (tree / "unsupported.ts").write_text("class Unknown { work() { return 0; } }\n", encoding="utf-8")
+    payload = _diff(before, after)
+    assert payload["before"]["ric"] == {
+        "measured_pairs": 2, "unavailable_pairs": 4,
+        "partial_ratio_mean": 0.0, "partial_ratio_max": 0.0,
+    }
+    assert payload["after"]["ric"] == {
+        "measured_pairs": 4, "unavailable_pairs": 5,
+        "partial_ratio_mean": 0.25, "partial_ratio_max": 1.0,
+    }
+    assert payload["diff"]["ric"] == {
+        "measured_pairs": 2, "unavailable_pairs": 1,
+        "partial_ratio_mean": 0.25, "partial_ratio_max": 1.0,
+    }

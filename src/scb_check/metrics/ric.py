@@ -22,6 +22,81 @@ class RICPair:
     ratio: float
 
 
+@dataclass(frozen=True, slots=True)
+class _RICFacts:
+    """Shared availability, canonical ownership, and sparse distinct-user counts."""
+
+    classes: Mapping[str, bool]
+    owners: Mapping[str, str | None]
+    measured_owners: Mapping[str, str]
+    users: Mapping[tuple[str, str], int]
+
+    def pair(self, method_id: str, class_id: str) -> RICPair | None:
+        """Apply the same availability gate and formula for both public consumers."""
+        if method_id not in self.measured_owners or not self.classes[class_id]:
+            return None
+        owner_id = self.measured_owners[method_id]
+        owner_users = self.users.get((method_id, owner_id), 0)
+        denominator = max(1, owner_users)
+        external_users = self.users.get((method_id, class_id), 0)
+        return RICPair(external_users, owner_users, denominator, external_users / denominator)
+
+
+def _project_facts(modules: tuple[ModuleIR, ...]) -> _RICFacts:
+    """Project immutable retained evidence once without expanding comparison pairs."""
+    classes = {
+        symbol.id: module.source_uses is not None and symbol.direct_bases is not None
+        for module in modules for symbol in module.symbols if symbol.kind == SymbolKind.CLASS
+    }
+    methods = {
+        symbol.id: symbol
+        for module in modules for symbol in module.symbols if symbol.kind == SymbolKind.METHOD
+    }
+    owners = {
+        method.id: method.callable_facts.declaring_class_id if method.callable_facts else method.owner_id
+        for method in methods.values()
+    }
+    available_methods = {
+        symbol.id for module in modules if module.source_uses is not None
+        for symbol in module.symbols
+        if symbol.kind == SymbolKind.METHOD and symbol.callable_facts is not None
+        and symbol.callable_facts.declaring_class_id in classes
+    }
+    unavailable_owners = {owners[method_id] for method_id in methods.keys() - available_methods}
+    classes = {
+        class_id: available and class_id not in unavailable_owners
+        for class_id, available in classes.items()
+    }
+    measured_owners = {
+        method_id: owner_id for method_id in available_methods
+        if (owner_id := owners[method_id]) is not None and classes[owner_id]
+    }
+
+    # Keep distinct using methods, not repeated source sites or expanded dispatch.
+    users: dict[tuple[str, str], set[str]] = {}
+    for module in modules:
+        for use in module.source_uses or ():
+            if (use.kind != "call" or use.execution_kind != "function"
+                    or use.unsupported_context is not None or use.owner_id not in available_methods
+                    or use.resolution.status != "project"):
+                continue
+            target_id = use.resolution.target_id
+            caller_class = owners[use.owner_id]
+            if target_id in available_methods and caller_class is not None:
+                users.setdefault((target_id, caller_class), set()).add(use.owner_id)
+
+    # Preserve full diagnostics' summation order, omitting only zero contributions.
+    method_order = {method_id: index for index, method_id in enumerate(owners)}
+    class_order = {class_id: index for index, class_id in enumerate(classes)}
+    counts = {
+        key: len(users[key])
+        for key in sorted(users, key=lambda key: (method_order[key[0]], class_order[key[1]]))
+    }
+    return _RICFacts(
+        MappingProxyType(classes), MappingProxyType(owners), MappingProxyType(measured_owners), MappingProxyType(counts),
+    )
+
+
 class RIC(Metric[[tuple[ModuleIR, ...]]]):
     """Measure distinct external using methods / max(1, owner using methods).
 
@@ -53,73 +128,32 @@ class RIC(Metric[[tuple[ModuleIR, ...]]]):
     }
 
     def compute(self, modules: tuple[ModuleIR, ...]) -> MetricResult:
-        """Summarize measured pairs, including zeros; no population yields null ratios."""
-        diagnostics = self.pair_diagnostics(modules)
-        ratios = tuple(value.ratio for value in diagnostics.values() if value is not None)
+        """Count all pairs arithmetically and aggregate only sparse nonzero ratios."""
+        facts = _project_facts(modules)
+        total_pairs = sum(len(facts.classes) - (owner_id in facts.classes) for owner_id in facts.owners.values())
+        measured_pairs = len(facts.measured_owners) * max(0, sum(facts.classes.values()) - 1)
+        ratios = [
+            pair.ratio for method_id, class_id in facts.users
+            if class_id != facts.owners[method_id] and (pair := facts.pair(method_id, class_id)) is not None
+        ]
         return MappingProxyType({
-            "measured_pairs": len(ratios),
-            "unavailable_pairs": len(diagnostics) - len(ratios),
-            "partial_ratio_mean": sum(ratios) / len(ratios) if ratios else None,
-            "partial_ratio_max": max(ratios) if ratios else None,
+            "measured_pairs": measured_pairs,
+            "unavailable_pairs": total_pairs - measured_pairs,
+            "partial_ratio_mean": sum(ratios) / measured_pairs if measured_pairs else None,
+            "partial_ratio_max": max(ratios, default=0.0) if measured_pairs else None,
         })
 
     def pair_diagnostics(self, modules: tuple[ModuleIR, ...]) -> Mapping[tuple[str, str], RICPair | None]:
-        """Return read-only `(method_id, comparison_class_id)` diagnostics.
+        """Explicitly materialize read-only `(method_id, comparison_class_id)` pairs.
 
         Classes require source uses, direct-base facts, and callable extraction
         for all their declared methods. Targets also require callable extraction.
         An unsupported method uses retained lexical ownership only to enumerate
         unavailable pairs; it never supplies a measured caller or target.
         """
-        classes = {
-            symbol.id: module.source_uses is not None and symbol.direct_bases is not None
-            for module in modules for symbol in module.symbols if symbol.kind == SymbolKind.CLASS
-        }
-        methods = {
-            symbol.id: symbol
-            for module in modules for symbol in module.symbols if symbol.kind == SymbolKind.METHOD
-        }
-        owners = {
-            method.id: method.callable_facts.declaring_class_id if method.callable_facts else method.owner_id
-            for method in methods.values()
-        }
-        available_methods = {
-            symbol.id for module in modules if module.source_uses is not None
-            for symbol in module.symbols
-            if symbol.kind == SymbolKind.METHOD and symbol.callable_facts is not None
-            and symbol.callable_facts.declaring_class_id in classes
-        }
-        unavailable_owners = {owners[method_id] for method_id in methods.keys() - available_methods}
-        classes = {
-            class_id: available and class_id not in unavailable_owners
-            for class_id, available in classes.items()
-        }
-
-        # Invert static calls once, retaining distinct users partitioned by declaring class.
-        users: dict[tuple[str, str], set[str]] = {}
-        for module in modules:
-            for use in module.source_uses or ():
-                if (use.kind != "call" or use.execution_kind != "function"
-                        or use.unsupported_context is not None or use.owner_id not in available_methods
-                        or use.resolution.status != "project"):
-                    continue
-                target_id = use.resolution.target_id
-                caller_class = owners[use.owner_id]
-                if target_id in available_methods and caller_class is not None:
-                    users.setdefault((target_id, caller_class), set()).add(use.owner_id)
-
-        pairs: dict[tuple[str, str], RICPair | None] = {}
-        for method_id, owner_id in owners.items():
-            owner_users = len(users.get((method_id, owner_id), ())) if owner_id is not None else 0
-            denominator = max(1, owner_users)
-            for class_id, available in classes.items():
-                if class_id == owner_id:
-                    continue
-                key = (method_id, class_id)
-                if (not available or owner_id is None or not classes.get(owner_id, False)
-                        or method_id not in available_methods):
-                    pairs[key] = None
-                    continue
-                external_users = len(users.get(key, ()))
-                pairs[key] = RICPair(external_users, owner_users, denominator, external_users / denominator)
-        return MappingProxyType(pairs)
+        facts = _project_facts(modules)
+        return MappingProxyType({
+            (method_id, class_id): facts.pair(method_id, class_id)
+            for method_id, owner_id in facts.owners.items()
+            for class_id in facts.classes if class_id != owner_id
+        })
