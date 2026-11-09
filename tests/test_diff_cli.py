@@ -121,6 +121,14 @@ def test_diff_compares_full_check_reports(trees: tuple[Path, Path]) -> None:
             "measured_classes": 0, "unavailable_classes": 0,
             "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
         },
+        "cic": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_occurrence_sum": None, "partial_occurrence_mean": None, "partial_occurrence_max": None,
+        },
+        "ric": {
+            "measured_pairs": 0, "unavailable_pairs": 0,
+            "partial_ratio_mean": None, "partial_ratio_max": None,
+        },
         "ca": {
             "measured_categories": 0, "unavailable_categories": 0,
             "partial_client_sum": None, "partial_client_mean": None, "partial_client_max": None,
