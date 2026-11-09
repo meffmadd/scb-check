@@ -18,4 +18,6 @@ type Unit = Literal[
     "callers",
     "attributes",
     "occurrences",
+    "pairs",
+    "ratio",
 ]

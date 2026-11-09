@@ -124,6 +124,10 @@ def test_diff_compares_full_check_reports(trees: tuple[Path, Path]) -> None:
             "measured_classes": 0, "unavailable_classes": 0,
             "partial_occurrence_sum": None, "partial_occurrence_mean": None, "partial_occurrence_max": None,
         },
+        "ric": {
+            "measured_pairs": 0, "unavailable_pairs": 0,
+            "partial_ratio_mean": None, "partial_ratio_max": None,
+        },
     }
     reverse = _json_diff((tree_b, tree_a))
     assert reverse["before"] == payload["after"]
