@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from shutil import copytree
 from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
@@ -180,6 +181,22 @@ def test_diff_compares_full_check_reports(trees: tuple[Path, Path]) -> None:
             "measured_classes": 0, "unavailable_classes": 0,
             "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
         },
+        "cic": {
+            "measured_classes": 0, "unavailable_classes": 0,
+            "partial_occurrence_sum": None, "partial_occurrence_mean": None, "partial_occurrence_max": None,
+        },
+        "ric": {
+            "measured_pairs": 0, "unavailable_pairs": 0,
+            "partial_ratio_mean": None, "partial_ratio_max": None,
+        },
+        "ca": {
+            "measured_categories": 0, "unavailable_categories": 0,
+            "partial_client_sum": None, "partial_client_mean": None, "partial_client_max": None,
+        },
+        "ce": {
+            "measured_categories": 0, "unavailable_categories": 0,
+            "partial_source_sum": None, "partial_source_mean": None, "partial_source_max": None,
+        },
         "module_call_dependencies": {
             "measured_modules": 0, "unavailable_modules": 0,
             "partial_incoming_sum": 0, "partial_incoming_mean": 0.0, "partial_incoming_max": 0,
@@ -216,6 +233,114 @@ def test_cbo_diff_counts_partners_with_standalone_parity(
         "partial_partner_max": -1 if reverse else 1,
     }
     assert _json_diff((tree_b, tree_b))["diff"]["cbo"]["partial_partner_sum"] == 0
+
+
+@pytest.mark.parametrize("direction", [-1, 0, 1])
+def test_category_coupling_known_deltas_and_standalone_check_parity(
+    trees: tuple[Path, Path], direction: int,
+) -> None:
+    """Three outside clients and two outgoing sources do not collapse to file breadth."""
+    earlier, later = trees
+    fixtures = Path(__file__).parent / "fixtures" / "category_coupling"
+    for tree in trees:
+        copytree(fixtures, tree, dirs_exist_ok=True)
+    (earlier / "clients.py").write_text("class FirstClient: pass\nclass SecondClient: pass\n", encoding="utf-8")
+    (earlier / "other.py").write_text(
+        "class Utility:\n    def work(self): return 3\nclass ThirdClient: pass\n", encoding="utf-8",
+    )
+    if direction == -1:
+        earlier, later = later, earlier
+    elif direction == 0:
+        earlier = later
+    payload = _json_diff((earlier, later))
+    assert payload["before"] == _json_check(earlier)
+    assert payload["after"] == _json_check(later)
+    human = _invoke_diff((earlier, later))
+    assert human.exit_code == 0, human.output
+    for group, prefix, total, mean, maximum, unit in (
+        ("ca", "partial_client", 4, 1.0, 3, "client classes"),
+        ("ce", "partial_source", 3, 0.75, 2, "source classes"),
+    ):
+        high = {f"{prefix}_sum": total, f"{prefix}_mean": mean, f"{prefix}_max": maximum}
+        low = {f"{prefix}_sum": 0, f"{prefix}_mean": 0.0, f"{prefix}_max": 0}
+        first, second = (high, low) if direction == -1 else (low, high)
+        if direction == 0:
+            first = second = high
+        assert payload["before"][group] == {
+            "measured_categories": 4, "unavailable_categories": 0, **first,
+        }
+        assert payload["after"][group] == {
+            "measured_categories": 4, "unavailable_categories": 0, **second,
+        }
+        assert payload["diff"][group] == {
+            "measured_categories": 0, "unavailable_categories": 0,
+            f"{prefix}_sum": total * direction,
+            f"{prefix}_mean": mean * direction,
+            f"{prefix}_max": maximum * direction,
+        }
+        for field in high:
+            assert any(line.startswith(f"{group}.{field} |") and unit in line and "%" not in line
+                       for line in human.stdout.splitlines())
+
+
+@pytest.mark.parametrize("unsupported_sides", [(True, True), (True, False), (False, True)])
+def test_category_coupling_null_deltas_do_not_zero_fill(
+    trees: tuple[Path, Path], unsupported_sides: tuple[bool, bool],
+) -> None:
+    """Unknown remains null against another unknown or a supported partial zero."""
+    for tree, unsupported in zip(trees, unsupported_sides, strict=True):
+        file, source = ("sample.ts", "class Unknown {}\n") if unsupported else ("sample.py", "class Known: pass\n")
+        (tree / file).write_text(source, encoding="utf-8")
+    payload = _json_diff(trees)
+    assert payload["before"] == _json_check(trees[0])
+    assert payload["after"] == _json_check(trees[1])
+    human = _invoke_diff(trees)
+    assert human.exit_code == 0, human.output
+    for group, prefix in (("ca", "partial_client"), ("ce", "partial_source")):
+        for snapshot, unsupported in zip(("before", "after"), unsupported_sides, strict=True):
+            assert payload[snapshot][group] == {
+                "measured_categories": 0 if unsupported else 1,
+                "unavailable_categories": 1 if unsupported else 0,
+                f"{prefix}_sum": None if unsupported else 0,
+                f"{prefix}_mean": None if unsupported else 0.0,
+                f"{prefix}_max": None if unsupported else 0,
+            }
+        first, second = unsupported_sides
+        assert payload["diff"][group] == {
+            "measured_categories": int(first) - int(second),
+            "unavailable_categories": int(second) - int(first),
+            f"{prefix}_sum": None, f"{prefix}_mean": None, f"{prefix}_max": None,
+        }
+        assert any(line.startswith(f"{group}.{prefix}_sum |") and line.endswith("unavailable")
+                   for line in human.stdout.splitlines())
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_category_coupling_classless_and_mixed_coverage_snapshots(
+    trees: tuple[Path, Path], *, mixed: bool,
+) -> None:
+    """Classless files add no categories; unsupported ones do not dilute measured means."""
+    for tree in trees:
+        (tree / "empty.py").write_text("value = 1\n", encoding="utf-8")
+        if mixed:
+            (tree / "known.py").write_text("class Known: pass\n", encoding="utf-8")
+            (tree / "unknown.ts").write_text("class Unknown {}\n", encoding="utf-8")
+    payload = _json_diff(trees)
+    assert payload["before"] == _json_check(trees[0])
+    assert payload["after"] == _json_check(trees[1])
+    for group, prefix in (("ca", "partial_client"), ("ce", "partial_source")):
+        assert payload["before"][group] == payload["after"][group] == {
+            "measured_categories": int(mixed), "unavailable_categories": int(mixed),
+            f"{prefix}_sum": 0 if mixed else None,
+            f"{prefix}_mean": 0.0 if mixed else None,
+            f"{prefix}_max": 0 if mixed else None,
+        }
+        assert payload["diff"][group] == {
+            "measured_categories": 0, "unavailable_categories": 0,
+            f"{prefix}_sum": 0 if mixed else None,
+            f"{prefix}_mean": 0.0 if mixed else None,
+            f"{prefix}_max": 0 if mixed else None,
+        }
 
 
 def test_cbo_unavailable_diff_does_not_zero_fill(trees: tuple[Path, Path]) -> None:
