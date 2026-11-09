@@ -40,9 +40,9 @@ def test_reports_are_read_only_and_serialization_is_independent(
     for report in reports.values():
         assert list(report) == [
             "verbosity", "erosion", "cog_erosion", "syntax", "cbo",
-            "rfc", "mpc", "callers", "dac", "cic", "ric",
+            "rfc", "mpc", "callers", "dac", "cic", "ric", "ca", "ce",
         ]
-        assert len(report) == 11
+        assert len(report) == 13
         # Intentionally bypass the read-only annotation to attempt runtime mutation.
         with pytest.raises(TypeError):
             cast("MutableMapping[str, MetricResult]", report)["verbosity"] = {}
@@ -76,6 +76,12 @@ def test_reports_are_read_only_and_serialization_is_independent(
         ("cic", "partial_occurrence_sum"),
         ("ric", "partial_ratio_mean"),
         ("ric", "partial_ratio_max"),
+        ("ca", "partial_client_sum"),
+        ("ca", "partial_client_mean"),
+        ("ca", "partial_client_max"),
+        ("ce", "partial_source_sum"),
+        ("ce", "partial_source_mean"),
+        ("ce", "partial_source_max"),
     ],
 )
 def test_unknown_measurements_propagate_without_mutating_snapshots(
@@ -128,7 +134,7 @@ def test_only_absent_language_counts_are_zero_filled(*, reverse: bool) -> None:
 @pytest.mark.parametrize(
     "group", [
         "verbosity", "erosion", "cog_erosion", "syntax", "cbo",
-        "rfc", "mpc", "callers", "dac", "cic", "ric",
+        "rfc", "mpc", "callers", "dac", "cic", "ric", "ca", "ce",
     ]
 )
 def test_missing_required_groups_and_fields_are_contract_errors(

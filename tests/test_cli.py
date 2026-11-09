@@ -33,6 +33,8 @@ _REPORT_KEYS = {
     "dac",
     "cic",
     "ric",
+    "ca",
+    "ce",
 }
 
 
@@ -170,6 +172,14 @@ def test_check_output_format_json(
         "ric": {
             "measured_pairs": 0, "unavailable_pairs": 0,
             "partial_ratio_mean": None, "partial_ratio_max": None,
+        },
+        "ca": {
+            "measured_categories": 0, "unavailable_categories": 0,
+            "partial_client_sum": None, "partial_client_mean": None, "partial_client_max": None,
+        },
+        "ce": {
+            "measured_categories": 0, "unavailable_categories": 0,
+            "partial_source_sum": None, "partial_source_mean": None, "partial_source_max": None,
         },
     }
 

@@ -4,8 +4,11 @@ from collections.abc import Mapping
 from math import isfinite
 from types import MappingProxyType
 
+from scb_check.metrics.ca import AfferentCoupling
 from scb_check.metrics.callers import DistinctCallers
+from scb_check.metrics.categories import category_dependencies
 from scb_check.metrics.cbo import CBO
+from scb_check.metrics.ce import EfferentCoupling
 from scb_check.metrics.cic import CIC
 from scb_check.metrics.cog_erosion import CognitiveErosion
 from scb_check.metrics.dac import DAC
@@ -34,6 +37,8 @@ REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(
         "dac": DAC.units,
         "cic": CIC.units,
         "ric": RIC.units,
+        "ca": AfferentCoupling.units,
+        "ce": EfferentCoupling.units,
     }
 )
 
@@ -42,6 +47,7 @@ def compute_report(analysis: AnalysisResult) -> Report:
     """Calculate explicitly composed metrics from extracted facts, without IO."""
     flags = analysis.flags
     findings = flags.findings
+    dependencies = category_dependencies(analysis.project)
     return MappingProxyType(
         {
             "verbosity": Verbosity().compute(
@@ -61,6 +67,8 @@ def compute_report(analysis: AnalysisResult) -> Report:
             "dac": DAC().compute(analysis.project.modules),
             "cic": CIC().compute(analysis.project.modules),
             "ric": RIC().compute(analysis.project.modules),
+            "ca": AfferentCoupling().compute(dependencies),
+            "ce": EfferentCoupling().compute(dependencies),
         }
     )
 

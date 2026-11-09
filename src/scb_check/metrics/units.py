@@ -20,4 +20,7 @@ type Unit = Literal[
     "occurrences",
     "pairs",
     "ratio",
+    "categories",
+    "client classes",
+    "source classes",
 ]
