@@ -35,6 +35,7 @@ _REPORT_KEYS = {
     "ric",
     "ca",
     "ce",
+    "module_call_dependencies",
 }
 
 
@@ -180,6 +181,11 @@ def test_check_output_format_json(
         "ce": {
             "measured_categories": 0, "unavailable_categories": 0,
             "partial_source_sum": None, "partial_source_mean": None, "partial_source_max": None,
+        },
+        "module_call_dependencies": {
+            "measured_modules": 1, "unavailable_modules": 0,
+            "partial_incoming_sum": 0, "partial_incoming_mean": 0.0, "partial_incoming_max": 0,
+            "partial_outgoing_sum": 0, "partial_outgoing_mean": 0.0, "partial_outgoing_max": 0,
         },
     }
 

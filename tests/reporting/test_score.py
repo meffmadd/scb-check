@@ -41,8 +41,9 @@ def test_reports_are_read_only_and_serialization_is_independent(
         assert list(report) == [
             "verbosity", "erosion", "cog_erosion", "syntax", "cbo",
             "rfc", "mpc", "callers", "dac", "cic", "ric", "ca", "ce",
+            "module_call_dependencies",
         ]
-        assert len(report) == 13
+        assert len(report) == 14
         # Intentionally bypass the read-only annotation to attempt runtime mutation.
         with pytest.raises(TypeError):
             cast("MutableMapping[str, MetricResult]", report)["verbosity"] = {}
@@ -82,6 +83,8 @@ def test_reports_are_read_only_and_serialization_is_independent(
         ("ce", "partial_source_sum"),
         ("ce", "partial_source_mean"),
         ("ce", "partial_source_max"),
+        ("module_call_dependencies", "partial_incoming_sum"),
+        ("module_call_dependencies", "partial_outgoing_sum"),
     ],
 )
 def test_unknown_measurements_propagate_without_mutating_snapshots(
@@ -135,6 +138,7 @@ def test_only_absent_language_counts_are_zero_filled(*, reverse: bool) -> None:
     "group", [
         "verbosity", "erosion", "cog_erosion", "syntax", "cbo",
         "rfc", "mpc", "callers", "dac", "cic", "ric", "ca", "ce",
+        "module_call_dependencies",
     ]
 )
 def test_missing_required_groups_and_fields_are_contract_errors(

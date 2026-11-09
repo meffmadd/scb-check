@@ -23,4 +23,7 @@ type Unit = Literal[
     "categories",
     "client classes",
     "source classes",
+    "modules",
+    "module-neighbor incidences",
+    "neighbors per module",
 ]

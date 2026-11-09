@@ -52,7 +52,7 @@ Project aggregation is an **analyzer convention**, not a paper-defined project f
 
 ### Partial metric interpretation
 
-CBO, RFC₁, MPC, distinct callers, DAC, CIC, method RIC, Ca, and Ce describe retained source, not whole-program behavior or code quality. Their project summaries are **analyzer conventions**, not paper-defined project formulas. Larger values do not imply sloppiness; these metrics introduce no quality thresholds, findings, or exit-code changes.
+CBO, RFC₁, MPC, distinct callers, DAC, CIC, method RIC, Ca, Ce, and module-call dependencies describe retained source, not whole-program behavior or code quality. Their project summaries are **analyzer conventions**, not paper-defined project formulas. Larger values do not imply sloppiness; these metrics introduce no quality thresholds, findings, or exit-code changes.
 
 A **partial** measurement counts supported evidence, including an observed zero. An **unavailable** measurement means the entity lacks required extraction support; it is excluded from summary denominators rather than treated as zero. Measured and unavailable populations remain separate. Each snapshot models its own retained population; differences can reflect coverage changes as well as changed relationships.
 
@@ -172,6 +172,27 @@ An isolated supported category measures partial zero, not proven absence. Unavai
 
 Category size, grouping, and scanned context affect interpretation: Ce is bounded by the category's internal class count, while Ca is not; aggregating more classes or scanning more client/library source changes exposure. Neither larger values nor positive deltas imply sloppiness. No quality thresholds, findings, or score/exit-code changes are introduced. See the [glossary](../GLOSSARY.md) for counting terminology.
 
+### Module-call dependencies
+
+`module_call_dependencies` reports **static resolved-call logical-module neighbors**, an engineering-defined directed graph count. It is not Martin's class-population Ca/Ce or Henry–Kafura information flow. Briand, Daly & Wüst (1999), [DOI 10.1109/32.748920](https://doi.org/10.1109/32.748920), §§3.3, 3.7 and 4.2.2, and Martin's [1994 manuscript](https://condor.depaul.edu/dmumaugh/OOT/Design-Principles/oodmetrc.pdf), “Dependency Metrics,” supply background only, not defining provenance.
+
+Each successfully parsed physical file is one logical module identified by `ModuleIR.id`. Packages are not aggregated, and colliding descriptive module names do not merge files. Every retained module enters the population, including empty files. An available `source_uses` inventory makes a module measurable; `None` makes it unavailable. Currently Python supplies these facts; generic-language parsers do not supply call/import extraction.
+
+Select call occurrences with static `resolution.status == "project"` and a retained target module/declaration. The source module is the occurrence's containing module; the target is the declaration's module, including canonical inherited-member ownership. Supported function/method, module-initialization, class-initialization, and definition-header execution count; explicitly unsupported execution contexts do not. Class construction counts a call to the retained class declaration, without inventing an implicit constructor call. Placeholder/decorated callable declarations remain eligible targets. Imports, bare references, attribute accesses, inheritance/type evidence alone, and possible runtime bodies add no edges. This is one named relation, never an unlabeled union.
+
+Count distinct other modules separately for incoming and outgoing directions. Repeated bindings/sites/callables to one module add one neighbor; same-module calls and recursion add none. A mutual dependency contributes one neighbor per direction to each module. Retained targets remain eligible neighbors even if their own extraction is unavailable; their diagnostics still remain unavailable, not measured zero.
+
+Scope is retained project source only. Libraries participate only when explicitly scanned and parsed as source. Excluded/failed files and unknown, ambiguous, external, or unsupported targets contribute no invented neighbor. All supported measurements are **partial**, including zero. Unresolved outgoing calls and missing extraction can hide incoming neighbors for any measured destination, even one with completely resolved outgoing sites. Unscanned external callers can likewise hide incoming dependencies. Static declaration selection does not establish a whole-program runtime bound.
+
+Project summaries are **analyzer conventions**, not paper-defined formulas:
+
+- `measured_modules` / `unavailable_modules` count retained modules with/without source-use extraction (unit: modules).
+- `partial_incoming_sum` / `partial_outgoing_sum` add directional neighbor counts over measured modules (unit: module-neighbor incidences), not globally unique neighbors.
+- `partial_incoming_mean` / `partial_outgoing_mean` divide each sum by measured modules; `partial_incoming_max` / `partial_outgoing_max` select the largest measured directional count (units: neighbors per module).
+- All six summaries are `None` with no measured modules. Unavailable modules stay outside denominators. Directional sums match when all modules are measured, but can differ when known target modules are unavailable.
+
+`ModuleCallDependencies.neighbor_sets()` exposes a read-only module-ID mapping to frozen `ModuleNeighbors(incoming, outgoing)` sets, or `None` for unavailable modules, separately from flat numerical reports. The metric consumes immutable module facts without reparsing, IO, or duplicate resolution. `tests/fixtures/module_dependencies/` has four measured modules and edges A→B, A→C, B→A: each directional sum is `3`, mean `0.75`, incoming maximum `1`, outgoing maximum `2`. Larger breadth is not inherently worse; no findings, thresholds, or exit-code changes are introduced. Check and independent-snapshot diff explicitly compose this group, with signed/zero/null deltas and standalone parity.
+
 ### Snapshot comparison
 
 Each delta is the later measurement minus the earlier measurement, in its existing units. `diff` compares every numeric check report measurement: scores, scanned-file and SLOC counts, flagged-line and finding counts, function counts and masses, and syntax-tree/node counts including per-language counts. Only absent dotted per-language syntax fields contribute zero counts to subtraction; original snapshots keep their own language coverage. Explicit `None` propagates through subtraction, while missing required groups or fields are contract errors.
@@ -230,7 +251,7 @@ Each side must have successfully parsed eligible source; zero-SLOC files are val
 
 `models.py` defines `ReportValue = int | float | None`, `MetricResult = Mapping[str, ReportValue]`, and `Report = Mapping[str, MetricResult]`. These are data contracts, not runtime report classes. Computed reports expose read-only outer and inner mappings over privately owned dictionaries. Metric results are flat: booleans, strings, sequences, nested mappings, and non-finite numbers are not report values. The canonical groups and fields are in the [README schema reference](../README.md#check-json-report-fields).
 
-`reporting.score.compute_report(analysis: AnalysisResult)` explicitly composes `Verbosity`, `Erosion`, `CognitiveErosion`, `Syntax`, `CBO`, `RFC`, `MPC`, `DistinctCallers`, `DAC`, `CIC`, `RIC`, `AfferentCoupling`, and `EfferentCoupling` instances from the sibling `metrics/` package. Each metric's `compute()` receives narrowly scoped extracted facts and owns its field names, supporting counts, calculations, and units. The builder owns group names. Private `metrics/_mass.py` shares erosion arithmetic; `metrics/_counts.py` shares sum/mean/max arithmetic for measured CBO, RFC₁, MPC, callers, DAC, CIC, Ca, and Ce counts, returning `None` aggregates for an empty measured population. Concrete metrics retain population, field, and unit ownership. Tree walking owns complexity extraction, not mass calculations.
+`reporting.score.compute_report(analysis: AnalysisResult)` explicitly composes `Verbosity`, `Erosion`, `CognitiveErosion`, `Syntax`, `CBO`, `RFC`, `MPC`, `DistinctCallers`, `DAC`, `CIC`, `RIC`, `AfferentCoupling`, `EfferentCoupling`, and `ModuleCallDependencies` instances from the sibling `metrics/` package. Each metric's `compute()` receives narrowly scoped extracted facts and owns its field names, supporting counts, calculations, and units. The builder owns group names. Private `metrics/_mass.py` shares erosion arithmetic; `metrics/_counts.py` shares sum/mean/max arithmetic for measured CBO, RFC₁, MPC, callers, DAC, CIC, Ca, Ce, and directional module-neighbor counts, returning `None` aggregates for an empty measured population. Concrete metrics retain population, field, and unit ownership. Tree walking owns complexity extraction, not mass calculations.
 
 `metrics.base.Metric` is an abstract base with an abstract `compute()` method and class-declared `units`. Its parameter specification preserves each concrete metric's distinct input signature; it does not require a common analysis context or introduce a registry or dynamic discovery. Metrics do not import reporting.
 
@@ -290,7 +311,7 @@ The IR-first gate is validated at `analyze_files(...).project` by `tests/test_me
 | Distinct callers / callees | Callable IDs; execution owners; direct static/possible targets; module IDs; recursive/repeated sites | Relation inversion/deduplication, recursion and initializer policy |
 | DAC | Canonical fields, declaring classes, structured declared types and uncertainty | Attribute population, wrappers/union interpretation, primitives and library policy |
 | Ca/Ce class categories | Class/module ownership; resolved method/field uses, types and base relations as separately selectable evidence | Category grouping and dependency predicate; class populations, not module neighbors |
-| Module edges | Logical module/file mapping; import bindings or resolved calls; endpoint module IDs | Explicit relation selection, directions, external scope, neighbor deduplication |
+| Module-call dependencies | Logical module/file mapping; static resolved calls; endpoint module IDs | Directed neighbor sets, self exclusion, retained-project scope, partial coverage |
 | CIC | Direct bases; static member/field targets; canonical defining/implementation owners; actual sites | Proper-ancestor traversal/filter, inherited-source and dispatch policy, site counting |
 | Method RIC | Target method/class identity; distinct executing method/class owners, including owner-class and comparison-class use | Pair population, user deduplication, denominator floor and ratio |
 | Multilevel CSE | Original `TextFragmentIR` text/spans and module/declaration owner tree, including nested owners | Method/class/file selection, document preprocessing, explicitly supplied local encoder and similarity |

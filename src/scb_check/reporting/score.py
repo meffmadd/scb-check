@@ -13,6 +13,7 @@ from scb_check.metrics.cic import CIC
 from scb_check.metrics.cog_erosion import CognitiveErosion
 from scb_check.metrics.dac import DAC
 from scb_check.metrics.erosion import Erosion
+from scb_check.metrics.module_dependencies import ModuleCallDependencies
 from scb_check.metrics.mpc import MPC
 from scb_check.metrics.rfc import RFC
 from scb_check.metrics.ric import RIC
@@ -39,6 +40,7 @@ REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(
         "ric": RIC.units,
         "ca": AfferentCoupling.units,
         "ce": EfferentCoupling.units,
+        "module_call_dependencies": ModuleCallDependencies.units,
     }
 )
 
@@ -69,6 +71,7 @@ def compute_report(analysis: AnalysisResult) -> Report:
             "ric": RIC().compute(analysis.project.modules),
             "ca": AfferentCoupling().compute(dependencies),
             "ce": EfferentCoupling().compute(dependencies),
+            "module_call_dependencies": ModuleCallDependencies().compute(analysis.project.modules),
         }
     )
 
