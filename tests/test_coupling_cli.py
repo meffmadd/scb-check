@@ -252,3 +252,87 @@ def test_rfc_cli_uses_retained_inherited_method_selections(
         "measured_classes": 0, "unavailable_classes": 0,
         "partial_response_sum": 2, "partial_response_mean": 1.0, "partial_response_max": 1,
     }
+
+
+@pytest.mark.parametrize("direction", [-1, 0, 1])
+def test_ric_signed_and_zero_deltas_match_standalone_checks(
+    coupling_trees: tuple[Path, Path], direction: int,
+) -> None:
+    """Two sites add one user and preserve signed ratios, not percentages."""
+    before, after = coupling_trees
+    prefix = "class A:\n    def target(self): return 1\nclass B:\n    def use(self, value: A):\n"
+    (before / "sample.py").write_text(prefix + "        return 2\n", encoding="utf-8")
+    (after / "sample.py").write_text(prefix + "        return value.target() + value.target()\n", encoding="utf-8")
+    if direction == -1:
+        before, after = after, before
+    elif direction == 0:
+        before = after
+    payload = _diff(before, after)
+    low = {"measured_pairs": 2, "unavailable_pairs": 0, "partial_ratio_mean": 0.0, "partial_ratio_max": 0.0}
+    high = {"measured_pairs": 2, "unavailable_pairs": 0, "partial_ratio_mean": 0.5, "partial_ratio_max": 1.0}
+    assert payload["before"]["ric"] == (high if direction <= 0 else low)
+    assert payload["after"]["ric"] == (low if direction < 0 else high)
+    assert payload["diff"]["ric"] == {
+        "measured_pairs": 0, "unavailable_pairs": 0,
+        "partial_ratio_mean": direction * 0.5, "partial_ratio_max": direction * 1.0,
+    }
+    human = CliRunner().invoke(main, ["diff", str(before), str(after)])
+    assert human.exit_code == 0, human.output
+    assert any("ric.partial_ratio_mean" in line and "ratio" in line and "%" not in line
+               for line in human.stdout.splitlines())
+
+
+@pytest.mark.parametrize("unsupported_sides", [(True, True), (True, False), (False, True)])
+def test_ric_unavailable_pairs_propagate_null_not_zero(
+    coupling_trees: tuple[Path, Path], unsupported_sides: tuple[bool, bool],
+) -> None:
+    """Missing extraction yields null deltas, even against measured zero or null."""
+    for tree, unsupported in zip(coupling_trees, unsupported_sides, strict=True):
+        name, source = (
+            ("sample.ts", "class A { target() { return 1; } }\nclass B { use() { return 2; } }\n")
+            if unsupported else
+            ("sample.py", "class A:\n    def target(self): return 1\nclass B:\n    def use(self): return 2\n")
+        )
+        (tree / name).write_text(source, encoding="utf-8")
+    payload = _diff(*coupling_trees)
+    for snapshot, unsupported in zip(("before", "after"), unsupported_sides, strict=True):
+        assert payload[snapshot]["ric"] == {
+            "measured_pairs": 0 if unsupported else 2, "unavailable_pairs": 2 if unsupported else 0,
+            "partial_ratio_mean": None if unsupported else 0.0,
+            "partial_ratio_max": None if unsupported else 0.0,
+        }
+    assert payload["diff"]["ric"] == {
+        "measured_pairs": (0 if unsupported_sides[1] else 2) - (0 if unsupported_sides[0] else 2),
+        "unavailable_pairs": (2 if unsupported_sides[1] else 0) - (2 if unsupported_sides[0] else 0),
+        "partial_ratio_mean": None, "partial_ratio_max": None,
+    }
+    human = CliRunner().invoke(main, ["diff", *(str(tree) for tree in coupling_trees)])
+    assert human.exit_code == 0, human.output
+    assert any("ric.partial_ratio_max" in line and "unavailable" in line for line in human.stdout.splitlines())
+
+
+def test_ric_sparse_cli_counts_unused_and_unavailable_comparisons(
+    coupling_trees: tuple[Path, Path],
+) -> None:
+    """A new empty class adds measured zeros while unsupported pairs remain excluded."""
+    before, after = coupling_trees
+    prefix = "class A:\n    def target(self): return 1\nclass B:\n    def use(self, value: A):\n"
+    (before / "sample.py").write_text(prefix + "        return 2\n", encoding="utf-8")
+    (after / "sample.py").write_text(
+        prefix + "        return value.target() + value.target()\nclass Empty: pass\n", encoding="utf-8",
+    )
+    for tree in coupling_trees:
+        (tree / "unsupported.ts").write_text("class Unknown { work() { return 0; } }\n", encoding="utf-8")
+    payload = _diff(before, after)
+    assert payload["before"]["ric"] == {
+        "measured_pairs": 2, "unavailable_pairs": 4,
+        "partial_ratio_mean": 0.0, "partial_ratio_max": 0.0,
+    }
+    assert payload["after"]["ric"] == {
+        "measured_pairs": 4, "unavailable_pairs": 5,
+        "partial_ratio_mean": 0.25, "partial_ratio_max": 1.0,
+    }
+    assert payload["diff"]["ric"] == {
+        "measured_pairs": 2, "unavailable_pairs": 1,
+        "partial_ratio_mean": 0.25, "partial_ratio_max": 1.0,
+    }

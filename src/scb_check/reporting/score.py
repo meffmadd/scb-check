@@ -11,6 +11,7 @@ from scb_check.metrics.dac import DAC
 from scb_check.metrics.erosion import Erosion
 from scb_check.metrics.mpc import MPC
 from scb_check.metrics.rfc import RFC
+from scb_check.metrics.ric import RIC
 from scb_check.metrics.syntax import Syntax
 from scb_check.metrics.units import Unit
 from scb_check.metrics.verbosity import Verbosity
@@ -30,6 +31,7 @@ REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(
         "mpc": MPC.units,
         "callers": DistinctCallers.units,
         "dac": DAC.units,
+        "ric": RIC.units,
     }
 )
 
@@ -55,6 +57,7 @@ def compute_report(analysis: AnalysisResult) -> Report:
             "mpc": MPC().compute(analysis.project.modules),
             "callers": DistinctCallers().compute(analysis.project.modules),
             "dac": DAC().compute(analysis.project.modules),
+            "ric": RIC().compute(analysis.project.modules),
         }
     )
 

@@ -31,6 +31,7 @@ _REPORT_KEYS = {
     "mpc",
     "callers",
     "dac",
+    "ric",
 }
 
 
@@ -160,6 +161,10 @@ def test_check_output_format_json(
         "dac": {
             "measured_classes": 0, "unavailable_classes": 0,
             "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
+        },
+        "ric": {
+            "measured_pairs": 0, "unavailable_pairs": 0,
+            "partial_ratio_mean": None, "partial_ratio_max": None,
         },
     }
 

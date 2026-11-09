@@ -17,4 +17,6 @@ type Unit = Literal[
     "call sites",
     "callers",
     "attributes",
+    "pairs",
+    "ratio",
 ]
