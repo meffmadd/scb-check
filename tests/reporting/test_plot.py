@@ -24,6 +24,7 @@ class ReportPage(HTMLParser):
         self.plot_ids: list[str] = []
         self.cells: list[str] = []
         self.tables = 0
+        self.source_details: dict[str, str | None] | None = None
         self.payload: dict[str, Any] = {}
         self.active_script = False
         self.feed(html)
@@ -31,7 +32,7 @@ class ReportPage(HTMLParser):
     def handle_starttag(
         self, tag: str, attrs: list[tuple[str, str | None]]
     ) -> None:
-        """Collect accessible chart containers, table cells and embedded JSON."""
+        """Collect accessible charts, source-directory disclosure and embedded JSON."""
         attributes = dict(attrs)
         if tag == "script":
             self.scripts.append(attributes)
@@ -41,6 +42,8 @@ class ReportPage(HTMLParser):
             self.plot_ids.append(str(attributes["id"]))
         if tag == "table":
             self.tables += 1
+        if tag == "details" and attributes.get("id") == "source-directories":
+            self.source_details = attributes
 
     def handle_endtag(self, tag: str) -> None:
         """Stop treating script contents as JSON at the script boundary."""
@@ -55,7 +58,7 @@ class ReportPage(HTMLParser):
             self.cells.append(data)
 
 
-def test_offline_html_has_every_metric_both_plots_raw_context_and_readable_tables(
+def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -77,7 +80,12 @@ def test_offline_html_has_every_metric_both_plots_raw_context_and_readable_table
     assert page.payload["labels"] == ["1: same", "2: same"]
     assert page.payload["snapshots"] == [report, report]
     assert page.payload["comparisons"][0] is None
-    assert len(page.plot_ids) == len(trend.series) * 2 == page.tables
+    assert len(page.plot_ids) == len(trend.series) * 2
+    assert page.tables == 0
+    assert page.source_details is not None
+    assert "open" not in page.source_details
+    for path in paths:
+        assert page.cells.count(str(path)) == 1
     assert len(set(page.plot_ids)) == len(page.plot_ids)
     assert page.payload["series"][0] == {
         "metric": "verbosity.score",
@@ -85,10 +93,10 @@ def test_offline_html_has_every_metric_both_plots_raw_context_and_readable_table
         "values": [0.125, 0.125],
         "differences": [None, 0.0],
     }
-    assert "12.5%" in text
-    assert "+0 percentage points" in text
-    assert "2.5 mass" in text
-    assert "0.5 ratio" in text
+    assert "Values (percent)" in text
+    assert "Changes from previous (percentage points)" in text
+    assert "Values (mass)" in text
+    assert "Values (ratio)" in text
     assert "no previous snapshot" in text
     assert "unavailable" in text
     assert "All measurements unavailable" in text

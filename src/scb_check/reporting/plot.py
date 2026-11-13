@@ -1,4 +1,4 @@
-"""Render library-neutral trend data and numerical tables with packaged assets."""
+"""Render library-neutral trend data with packaged visualization assets."""
 
 import re
 from dataclasses import dataclass
@@ -11,7 +11,6 @@ from markupsafe import Markup
 
 from scb_check.models import Trend
 from scb_check.models import TrendSeries
-from scb_check.reporting.formatting import format_measurement
 from scb_check.reporting.score import REPORT_UNITS
 from scb_check.reporting.score import serialize_report
 
@@ -19,19 +18,10 @@ _SCRIPT_END = re.compile(r"</script", flags=re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
-class _Row:
-    index: int
-    path: str
-    previous_path: str
-    value_text: str
-
-
-@dataclass(frozen=True, slots=True)
 class _Plot:
     id: str
     title: str
     unit: str
-    rows: tuple[_Row, ...]
     all_unavailable: bool
 
 
@@ -77,7 +67,7 @@ def render_trend_html(trend: Trend) -> str:
     return environment.get_template("report.html.jinja").render(
         title="Snapshot metrics",
         sections=tuple(
-            _prepare_section(index, series, trend)
+            _prepare_section(index, series)
             for index, series in enumerate(trend.series)
         ),
         payload=payload,
@@ -89,7 +79,7 @@ def render_trend_html(trend: Trend) -> str:
     )
 
 
-def _prepare_section(index: int, series: TrendSeries, trend: Trend) -> _Section:
+def _prepare_section(index: int, series: TrendSeries) -> _Section:
     plots = []
     for difference, measurements in enumerate(
         (series.values, series.differences)
@@ -99,27 +89,11 @@ def _prepare_section(index: int, series: TrendSeries, trend: Trend) -> _Section:
             if series.unit == "fraction"
             else series.unit
         )
-        rows = tuple(
-            _Row(
-                index=input_index + 1,
-                path=str(path),
-                previous_path=str(trend.paths[input_index - 1])
-                if input_index
-                else "no previous snapshot",
-                value_text="no previous snapshot"
-                if difference and input_index == 0
-                else format_measurement(value, series.unit, difference=bool(difference)),
-            )
-            for input_index, (path, value) in enumerate(
-                zip(trend.paths, measurements, strict=True)
-            )
-        )
         plots.append(
             _Plot(
                 id=f"plot-{index}-{difference}",
                 title="Changes from previous" if difference else "Values",
                 unit=unit,
-                rows=rows,
                 all_unavailable=all(value is None for value in measurements),
             )
         )

@@ -13,8 +13,8 @@ def format_measurement(
 ) -> str:
     """Format unavailable values and units, optionally rounding fraction displays.
 
-    HTML tables retain full precision; the terminal comparison supplies its fixed
-    fractional `precision`. Raw reports are never changed by display conversion.
+    The terminal comparison supplies its fixed fractional `precision`.
+    Raw reports are never changed by display conversion.
     """
     if value is None:
         return "unavailable"

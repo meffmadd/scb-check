@@ -71,8 +71,8 @@ Implemented analysis paths:
 | Report comparison and summary rendering | `src/scb_check/reporting/comparison.py` |
 | Shared unit-aware text formatting | `src/scb_check/reporting/formatting.py` |
 | Ordered report composition | `src/scb_check/reporting/trend.py` (`build_trend`, caller-supplied snapshot loader) |
-| HTML data/table preparation and Jinja rendering | `src/scb_check/reporting/plot.py` |
-| HTML layout, tables, and JSON embedding | `src/scb_check/reporting/templates/report.html.jinja` |
+| HTML data/plot preparation and Jinja rendering | `src/scb_check/reporting/plot.py` |
+| HTML chart layout, source-directory disclosure, and JSON embedding | `src/scb_check/reporting/templates/report.html.jinja` |
 | Plotly charts and hover | `src/scb_check/reporting/static/plot.js` |
 | Pinned Plotly distribution, license, and update procedure | `src/scb_check/reporting/static/vendor/` |
 | `ast-grep` integration | `src/scb_check/analysis/astgrep.py` and `src/scb_check/resources/slop_rules/` |
@@ -165,11 +165,11 @@ Keep `metrics/` independent of reporting and source IO. See the [ownership and i
 
 ## Extending ordered HTML reporting
 
-Keep path/config validation, analysis, and atomic output IO in `commands/report.py`. `build_trend` consumes ordered paths and a loader returning ordinary reports; it preserves repetitions and delegates adjacent differences to `compare_reports`. Shared presentation contracts are immutable `Trend` and `TrendSeries` in `models.py`. Retain numerical snapshots for hover context rather than analysis IRs. Add fields through existing `compute_report` / `REPORT_UNITS` composition, not a plotting registry or renderer-side measurement calculation.
+Keep path/config validation, analysis, and atomic output IO in `commands/report.py`. `build_trend` consumes ordered paths and a loader returning ordinary reports; it preserves repetitions and delegates adjacent differences to `compare_reports`. Shared presentation contracts are immutable `Trend` and `TrendSeries` in `models.py`. Retain numerical snapshots as report data rather than analysis IRs. Add fields through existing `compute_report` / `REPORT_UNITS` composition, not a plotting registry or renderer-side measurement calculation.
 
-Use `tests/test_report_cli.py` for known-source standalone-check/diff parity, shared configuration/flags, unusable inputs, exit codes, and atomic publication failures. Use `tests/reporting/test_trend.py` and `test_plot.py` for complete field coverage, nullable deltas, units, safe embedded JSON, and accessible table contracts. Both value and adjacent-change plots are always included. Assert meaning rather than full-document layouts or call order.
+Use `tests/test_report_cli.py` for known-source standalone-check/diff parity, shared configuration/flags, unusable inputs, exit codes, and atomic publication failures. Use `tests/reporting/test_trend.py` and `test_plot.py` for complete field coverage, nullable deltas, units, safe embedded JSON, accessible chart labels, and a single collapsed source-directory list without per-plot tables. Both value and adjacent-change plots are always included. Assert meaning rather than full-document layouts or call order.
 
-For browser acceptance, run `tests/reporting/report_browser_smoke.py` with Chromium installed in a pinned, isolated Playwright tool environment. Verify real hover details, escaped labels, null gaps, isolated/zero/negative points, unclipped labels at narrow/wide widths, resizing, offline/no-network operation, and readable tables with JavaScript disabled. Keep browser tooling out of runtime dependencies.
+For browser acceptance, run `tests/reporting/report_browser_smoke.py` with Chromium installed in a pinned, isolated Playwright tool environment. Verify concise hover labels and measurements, escaped labels, null gaps, isolated/zero/negative points, unclipped labels at narrow/wide widths, responsive paired plots, resizing, offline/no-network operation, and a clear JavaScript requirement with accessible source directories when scripting is disabled. Keep browser tooling out of runtime dependencies.
 
 After runtime dependency changes, regenerate `uv.lock` and both [exported requirements locks](../README.md#install). Build wheel and sdist with `uv build`; inspect them for the Jinja template, chart adapter, and vendor asset/license/provenance files. Install the wheel in a clean environment, leave the checkout, and generate a report with `--disable-sg` to verify packaged asset loading is independent of cwd. When updating Plotly, follow the vendor provenance/update instructions and repeat packaging and offline browser checks.
 

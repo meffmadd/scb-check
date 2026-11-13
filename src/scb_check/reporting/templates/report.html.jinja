@@ -5,38 +5,56 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }}</title>
   <style>
-    body { font: 16px/1.5 system-ui, sans-serif; margin: 1rem auto; max-width: 80rem; padding: 0 1rem; color: #18212b; }
-    section { border-top: 1px solid #aaa; margin-top: 2rem; }
-    h2, td { overflow-wrap: anywhere; }
+    :root { color-scheme: light; font: 15px/1.5 system-ui, sans-serif; color: #18212b; background: #f5f7fa; }
+    body { margin: 0 auto; max-width: 90rem; padding: 2rem 1rem; }
+    header { margin-bottom: 2rem; }
+    h1 { margin: 0; font-size: 2rem; letter-spacing: -.04em; }
+    header p { margin: .5rem 0 1.25rem; color: #536273; }
+    details { margin: .75rem 0; }
+    summary { cursor: pointer; color: #46566a; }
+    li { padding: .25rem 0; }
+    code, h2 { overflow-wrap: anywhere; }
+    section { margin: 2rem 0; }
+    h2 { margin-bottom: .75rem; font: 600 1rem/1.5 ui-monospace, monospace; }
+    .plots { display: grid; gap: 1rem; }
+    .plot-card { min-width: 0; padding: 1rem .25rem .25rem; background: #fff; border: 1px solid #e0e5ec; border-radius: .75rem; }
+    h3 { margin: 0 1rem; font-size: .9rem; font-weight: 500; color: #536273; }
     .metric-plot { width: 100%; min-width: 0; height: 400px; }
-    table { border-collapse: collapse; width: 100%; margin: 1rem 0 2rem; table-layout: fixed; }
-    caption { text-align: left; font-weight: bold; }
-    th, td { border: 1px solid #aaa; padding: .4rem; text-align: left; vertical-align: top; }
-    th:first-child { width: 3rem; }
+    .plot-note { margin: 0 1rem 1rem; color: #536273; }
+    noscript { display: block; padding: 1rem; background: #fff0cf; }
     pre { white-space: pre-wrap; }
+    @media (min-width: 64rem) { .plots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   </style>
 </head>
 <body>
-  <h1>{{ title }}</h1>
-  <p>Inputs are evenly spaced in supplied order, not elapsed time. Changes are current minus previous,
-    not churn or quality judgments. Population and coverage changes can affect comparisons.
-    Missing measurements are unavailable, not zero; gaps are not interpolated.</p>
-  <noscript>Enable JavaScript for plots and hover details; all values remain in the tables below.</noscript>
+  <header>
+    <h1>{{ title }}</h1>
+    <p>{{ payload.paths | length }} snapshots · {{ sections | length }} metrics · values and changes from the previous input</p>
+    <details id="source-directories">
+      <summary>Source directories</summary>
+      <ol>{% for path in payload.paths %}<li><code>{{ path }}</code></li>{% endfor %}</ol>
+    </details>
+    <details>
+      <summary>About this report</summary>
+      <p>Inputs are evenly spaced in supplied order, not elapsed time. Changes are current minus previous;
+        the first input has no previous snapshot. Missing measurements are unavailable, not zero, and interrupt lines.
+        Fractions display as percentages; changes display as percentage points.</p>
+      <p>Changes are not churn or quality judgments. Population and coverage changes can affect comparisons.</p>
+    </details>
+  </header>
+  <noscript>Enable JavaScript to view the charts and hover measurements.</noscript>
   {% for section in sections %}
   <section>
     <h2>{{ section.metric }}</h2>
+    <div class="plots">
     {% for plot in section.plots %}
-    <h3 id="{{ plot.id }}-heading">{{ plot.title }} ({{ plot.unit }})</h3>
-    <div id="{{ plot.id }}" class="metric-plot" role="img" aria-labelledby="{{ plot.id }}-heading"></div>
-    {% if plot.all_unavailable %}<p>All measurements unavailable.</p>{% endif %}
-    <table>
-      <caption>{{ section.metric }}: {{ plot.title }} ({{ plot.unit }})</caption>
-      <thead><tr><th>Input</th><th>Path</th><th>Previous path</th><th>Measurement</th></tr></thead>
-      <tbody>{% for row in plot.rows %}
-        <tr><td>{{ row.index }}</td><td>{{ row.path }}</td><td>{{ row.previous_path }}</td><td>{{ row.value_text }}</td></tr>
-      {% endfor %}</tbody>
-    </table>
+      <div class="plot-card">
+        <h3 id="{{ plot.id }}-heading">{{ plot.title }} ({{ plot.unit }})</h3>
+        <div id="{{ plot.id }}" class="metric-plot" role="img" aria-labelledby="{{ plot.id }}-heading"></div>
+        {% if plot.all_unavailable %}<p class="plot-note">All measurements unavailable.</p>{% endif %}
+      </div>
     {% endfor %}
+    </div>
   </section>
   {% endfor %}
   <details><summary>Plotly.js license</summary><pre>{{ plotly_license }}</pre></details>

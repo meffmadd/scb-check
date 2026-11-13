@@ -37,6 +37,7 @@ def representative_trend() -> Trend:
         Path(f"/snapshots/{hostile}/{'long-directory-name-' * 3}{index}")
         for index in range(5)
     )
+    paths = (paths[0].with_name(paths[0].name + '<img src=x onerror="window.__injected=3"> & café'), *paths[1:])
     reports = []
     for index in range(5):
         report = serialize_report(compute_report(AnalysisResult(Flags(), {}, ProjectIR())))
@@ -82,7 +83,8 @@ def check_render(page: Any, trend: Trend) -> None:  # noqa: ANN401
         timeout=120_000,
     )
     assert page.locator(".metric-plot.js-plotly-plot").count() == expected
-    assert page.locator("table").count() == expected
+    assert page.locator("table").count() == 0
+    assert not page.locator("#source-directories").evaluate("element => element.open")
     assert page.locator("script[src], link[href], canvas, img, iframe").count() == 0
     assert page.locator("script").count() == 3
     assert page.evaluate("window.__injected === undefined")
@@ -103,43 +105,38 @@ def check_render(page: Any, trend: Trend) -> None:  # noqa: ANN401
 
 
 def check_hover(page: Any, trend: Trend) -> None:  # noqa: ANN401
-    """Hover exposes exact values, units, paths, supporting counts and coverage."""
+    """Hover shows only the input label and the plotted measurement with its unit."""
     score = plot_id(trend, "verbosity.score")
     text = hover(page, score, 0)
-    for expected in ("12.5%", "raw: 0.125", "no previous snapshot",
-                     "Current verbosity.total_loc: 3", "Current verbosity.flagged_loc: 0"):
-        assert expected in text, (expected, text)
+    assert text == f"1: {trend.paths[0].name}Value: 12.5%", text
+    assert str(trend.paths[0]) not in text
     assert page.locator(".hoverlayer script, .hoverlayer img, .hoverlayer a, .hoverlayer svg").count() == 0
     assert page.evaluate("window.__injected === undefined")
 
     count = plot_id(trend, "verbosity.total_loc", difference=True)
     text = hover(page, count, 1)
-    for expected in ("Previous path:", "Input 3:", "Change: -3 lines",
-                     "Previous verbosity.total_loc: 5", "Current verbosity.total_loc: 2"):
-        assert expected in text, (expected, text)
+    assert text == f"3: {trend.paths[2].name}Change: -3 lines", text
 
     for metric, expected in (("erosion.total_mass", "2.5 mass"),
                              ("ric.partial_ratio_mean", "0.5 ratio")):
         text = hover(page, plot_id(trend, metric), 0)
         assert expected in text, text
         assert "50%" not in text, text
-    text = hover(page, plot_id(trend, "ric.partial_ratio_mean"), 0)
-    assert "Current ric.measured_pairs: 2 pairs" in text, text
-    assert "Current ric.unavailable_pairs: 1 pairs" in text, text
     text = hover(page, plot_id(trend, "rfc.unavailable_classes"), 0)
-    assert "Current rfc.partial_response_sum: unavailable" in text, text
-    assert "Current rfc.unavailable_classes: 3 classes" in text, text
+    assert text == f"1: {trend.paths[0].name}Value: 3 classes", text
 
 
-def check_hostile_paths(page: Any, trend: Trend) -> None:  # noqa: ANN401
-    """Hostile full paths round-trip as literal hover text without creating markup."""
+def check_hostile_labels(page: Any, trend: Trend) -> None:  # noqa: ANN401
+    """Hostile basenames remain literal hover text; full paths stay in the disclosure."""
     text = hover(page, plot_id(trend, "verbosity.score"), 0)
     assert page.locator(".hoverlayer script, .hoverlayer img, .hoverlayer a").count() == 0
     assert page.evaluate("window.__injected === undefined")
-    assert str(trend.paths[0]) in text, text
-    text = hover(page, plot_id(trend, "verbosity.total_loc", difference=True), 1)
-    assert str(trend.paths[1]) in text, text
-    assert str(trend.paths[2]) in text, text
+    assert trend.paths[0].name in text, text
+    sources = page.locator("#source-directories")
+    sources.locator("summary").click()
+    assert sources.locator("li").all_text_contents() == [str(path) for path in trend.paths]
+    assert sources.locator("script, img, a").count() == 0
+    sources.locator("summary").click()
 
 
 def check_gaps_and_units(page: Any, trend: Trend) -> None:  # noqa: ANN401
@@ -152,7 +149,7 @@ def check_gaps_and_units(page: Any, trend: Trend) -> None:  # noqa: ANN401
         "paths => paths.every(p => p.getTotalLength() < 1)"
     )
     assert score.locator(".ytitle").text_content() == "percent"
-    assert "Value: 0% (raw: 0)" in hover(page, score.get_attribute("id"), 1)
+    assert "Value: 0%" in hover(page, score.get_attribute("id"), 1)
     change = page.locator(f"#{plot_id(trend, 'verbosity.total_loc', difference=True)}")
     assert change.evaluate("p => p.data[0].y") == [None, 2, -3, 0, 0]
     assert change.locator(".scatterlayer .point").count() == 4
@@ -196,40 +193,29 @@ def check_resize(page: Any, trend: Trend) -> None:  # noqa: ANN401
             assert label["text"] == f"{index + 1}: {trend.paths[index].name}"
         assert geometry["area"]["w"] >= 200, geometry
         assert geometry["area"]["h"] >= 120, geometry
+        value_box = chart.bounding_box()
+        change_box = page.locator(f"#{plot_id(trend, 'verbosity.total_loc', difference=True)}").bounding_box()
+        assert value_box is not None
+        assert change_box is not None
+        if width >= 1024:
+            assert change_box["x"] > value_box["x"]
+            assert abs(change_box["y"] - value_box["y"]) < 2
+        else:
+            assert change_box["y"] > value_box["y"] + value_box["height"]
         widths.append(geometry["width"])
     assert widths[1] < widths[0], widths
     assert abs(widths[0] - widths[2]) < 3, widths
 
 
-def check_tables(page: Any, trend: Trend) -> None:  # noqa: ANN401
-    """All numerical rows remain readable with JavaScript disabled."""
+def check_without_javascript(page: Any, trend: Trend) -> None:  # noqa: ANN401
+    """Without JavaScript, explain the requirement and keep source paths accessible."""
     assert page.locator(".main-svg").count() == 0
     assert page.locator("noscript").is_visible()
-    assert page.locator("table").count() == len(trend.series) * 2
-    assert page.locator("table tbody tr").count() == len(trend.series) * 2 * len(trend.paths)
-    for index, series in enumerate(trend.series):
-        for difference in (False, True):
-            table = page.locator("table").nth(index * 2 + int(difference))
-            assert series.metric in table.locator("caption").inner_text()
-            table.scroll_into_view_if_needed()
-            assert table.is_visible()
-            for position, path in enumerate(trend.paths):
-                cells = table.locator("tbody tr").nth(position).locator("td")
-                assert cells.nth(1).inner_text() == str(path)
-                text = cells.nth(3).inner_text()
-                raw = (series.differences if difference else series.values)[position]
-                if difference and position == 0:
-                    assert "no previous snapshot" in text
-                elif raw is None:
-                    assert "unavailable" in text
-                else:
-                    unit = ("percentage points" if difference else "%") if series.unit == "fraction" else series.unit
-                    assert text.endswith(unit), (series.metric, text, unit)
-                    number = text.removesuffix(unit).strip()
-                    assert float(number) == raw * (100 if series.unit == "fraction" else 1)
-                expected_previous = str(trend.paths[position - 1]) if position else "no previous snapshot"
-                assert cells.nth(2).inner_text() == expected_previous
-    assert page.locator("script").count() == 3
+    assert "Enable JavaScript" in page.locator("noscript").inner_text()
+    assert page.locator("table").count() == 0
+    sources = page.locator("#source-directories")
+    sources.locator("summary").click()
+    assert sources.locator("li").all_text_contents() == [str(path) for path in trend.paths]
     assert page.locator("img, iframe").count() == 0
 
 
@@ -261,7 +247,7 @@ def main() -> None:
             page.on("console", lambda message: errors.append(message.text)
                     if message.type == "error" else None)
             page.goto(artifact.as_uri(), wait_until="load", timeout=120_000)
-            checks = (check_render, check_hover, check_hostile_paths, check_gaps_and_units, check_resize) if javascript else (check_tables,)
+            checks = (check_render, check_hover, check_hostile_labels, check_gaps_and_units, check_resize) if javascript else (check_without_javascript,)
             for check in checks:
                 try:
                     check(page, trend)

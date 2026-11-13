@@ -19,29 +19,12 @@
     return number + (unit === "fraction" && !difference ? "%" : " " + displayUnit(unit, difference));
   }
 
-  function contextLines(report, group, label) {
-    return Object.entries(report[group]).map(([field, value]) => {
-      const unit = payload.units[group][group === "syntax" ? field.split(".").at(-1) : field];
-      return `${label} ${group}.${field}: ${measurement(value, unit)} (raw: ${value === null ? "unavailable" : value})`;
-    });
-  }
-
   function hoverText(series, input, difference) {
-    const group = series.metric.split(".")[0];
-    const value = series.values[input];
-    const delta = series.differences[input];
-    const lines = [
-      series.metric,
-      `Input ${input + 1}: ${payload.paths[input]}`,
-      input ? `Previous path: ${payload.paths[input - 1]}` : "no previous snapshot",
-      `Value: ${measurement(value, series.unit)} (raw: ${value === null ? "unavailable" : value})`,
-      input ? `Change: ${measurement(delta, series.unit, true)} (raw: ${delta === null ? "unavailable" : delta})` : "Change: no previous snapshot",
-      ...contextLines(payload.snapshots[input], group, "Current")
-    ];
-    if (difference && input) {
-      lines.push(...contextLines(payload.snapshots[input - 1], group, "Previous"));
-    }
-    return lines.map(escapeText).join("<br>");
+    const value = (difference ? series.differences : series.values)[input];
+    return [
+      payload.labels[input],
+      `${difference ? "Change" : "Value"}: ${measurement(value, series.unit, difference)}`
+    ].map(escapeText).join("<br>");
   }
 
   for (const [index, series] of payload.series.entries()) {
@@ -63,7 +46,7 @@
       }
       function fail(error) {
         const message = document.createElement("p");
-        message.textContent = `Plot unavailable: ${String(error)}. See the numerical table below.`;
+        message.textContent = `Plot unavailable: ${String(error)}.`;
         element.replaceChildren(message);
       }
       try {
