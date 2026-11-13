@@ -9,6 +9,7 @@ from jinja2 import PackageLoader
 from jinja2 import StrictUndefined
 from markupsafe import Markup
 
+from scb_check.models import AlignedTrend
 from scb_check.models import Trend
 from scb_check.models import TrendSeries
 from scb_check.reporting.score import REPORT_UNITS
@@ -39,51 +40,74 @@ class _Group:
     unchanged: bool
 
 
-def render_trend_html(trend: Trend) -> str:
+def render_trend_html(trend: Trend | AlignedTrend) -> str:
     """Produce self-contained HTML; user data is escaped in markup and JSON."""
     environment = Environment(
         loader=PackageLoader("scb_check.reporting", "templates"),
         autoescape=True,
         undefined=StrictUndefined,
     )
-    payload = {
-        "paths": tuple(str(path) for path in trend.paths),
-        "labels": tuple(
-            f"{index + 1}: {path.name}"
+    if isinstance(trend, Trend):
+        labels = tuple(
+            f"{index + 1}: {path.name if path is not None else 'missing'}"
             for index, path in enumerate(trend.paths)
-        ),
-        "series": tuple(
+        )
+        trend = AlignedTrend(labels, (trend,))
+    payload = {
+        "labels": trend.steps,
+        "runs": tuple(
             {
-                "metric": series.metric,
-                "unit": series.unit,
-                "values": series.values,
-                "differences": series.differences,
+                "name": run.name,
+                "paths": tuple(
+                    None if path is None else str(path) for path in run.paths
+                ),
+                "series": tuple(
+                    _series_payload(series) for series in run.series
+                ),
+                "snapshots": tuple(
+                    None if report is None else serialize_report(report)
+                    for report in run.snapshots
+                ),
+                "comparisons": tuple(
+                    None if report is None else serialize_report(report)
+                    for report in run.comparisons
+                ),
             }
-            for series in trend.series
+            for run in trend.trends
         ),
-        "snapshots": tuple(
-            serialize_report(report) for report in trend.snapshots
-        ),
-        "comparisons": tuple(
-            None if report is None else serialize_report(report)
-            for report in trend.comparisons
+        "mean": tuple(
+            {
+                **_series_payload(series),
+                "contributors": series.contributors,
+                "change_contributors": series.change_contributors,
+            }
+            for series in trend.mean
         ),
         "units": {
             group: dict(fields) for group, fields in REPORT_UNITS.items()
         },
     }
     sections_by_group: dict[str, list[_Section]] = {}
-    for index, series in enumerate(trend.series):
+    for index, series in enumerate(trend.trends[0].series):
         group = series.metric.partition(".")[0]
-        sections_by_group.setdefault(group, []).append(_prepare_section(index, series))
+        displayed = tuple(run.series[index] for run in trend.trends)
+        if trend.mean:
+            displayed = (*displayed, trend.mean[index])
+        sections_by_group.setdefault(group, []).append(
+            _prepare_section(index, displayed)
+        )
     groups = tuple(
-        _Group(name, tuple(sections), unchanged=all(section.unchanged for section in sections))
+        _Group(
+            name,
+            tuple(sections),
+            unchanged=all(section.unchanged for section in sections),
+        )
         for name, sections in sections_by_group.items()
     )
     return environment.get_template("report.html.jinja").render(
         title="Snapshot metrics",
         groups=groups,
-        metric_count=len(trend.series),
+        metric_count=len(trend.trends[0].series),
         payload=payload,
         plotly_js=_bundled_script("vendor/plotly-basic.min.js"),
         report_js=_bundled_script("plot.js"),
@@ -93,11 +117,26 @@ def render_trend_html(trend: Trend) -> str:
     )
 
 
-def _prepare_section(index: int, series: TrendSeries) -> _Section:
+def _series_payload(series: TrendSeries) -> dict[str, object]:
+    return {
+        "metric": series.metric,
+        "unit": series.unit,
+        "values": series.values,
+        "differences": series.differences,
+    }
+
+
+def _prepare_section(
+    index: int, displayed: tuple[TrendSeries, ...]
+) -> _Section:
+    series = displayed[0]
     plots = []
-    for difference, measurements in enumerate(
-        (series.values, series.differences)
-    ):
+    for difference in (False, True):
+        measurements = tuple(
+            value
+            for item in displayed
+            for value in (item.differences if difference else item.values)
+        )
         unit = (
             ("percentage points" if difference else "percent")
             if series.unit == "fraction"
@@ -105,7 +144,7 @@ def _prepare_section(index: int, series: TrendSeries) -> _Section:
         )
         plots.append(
             _Plot(
-                id=f"plot-{index}-{difference}",
+                id=f"plot-{index}-{int(difference)}",
                 title="Changes from previous" if difference else "Values",
                 unit=unit,
                 all_unavailable=all(value is None for value in measurements),
@@ -114,7 +153,9 @@ def _prepare_section(index: int, series: TrendSeries) -> _Section:
     return _Section(
         series.metric,
         tuple(plots),
-        unchanged=all(value == 0 for value in series.differences[1:]),
+        unchanged=all(
+            value == 0 for item in displayed for value in item.differences[1:]
+        ),
     )
 
 

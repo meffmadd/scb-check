@@ -8,10 +8,12 @@ from scb_check.models import AnalysisResult
 from scb_check.models import Flags
 from scb_check.models import Report
 from scb_check.models import ReportValue
+from scb_check.models import SnapshotSeries
 from scb_check.reporting.comparison import compare_reports
 from scb_check.reporting.score import REPORT_UNITS
 from scb_check.reporting.score import compute_report
 from scb_check.reporting.score import serialize_report
+from scb_check.reporting.trend import build_aligned_trend
 from scb_check.reporting.trend import build_trend
 from scb_check.tree_walking.models import ProjectIR
 
@@ -70,6 +72,96 @@ def test_ordered_values_and_adjacent_changes_cover_complete_reports() -> None:
     )
 
 
+def test_aligned_series_preserve_gaps_and_average_adjacent_deltas() -> None:
+    """Unequal coverage cannot change alignment or invent a delta population."""
+    reports = {}
+    for name, score, loc in (
+        ("a", 0.2, 10),
+        ("b", 0.4, 1000),
+        ("c", 0.8, 20),
+        ("d", 0.9, 30),
+    ):
+        report = serialize_report(
+            compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
+        )
+        report["verbosity"].update(score=score, total_loc=loc)
+        reports[Path(name)] = report
+    trend = build_aligned_trend(
+        ("third", "first", "last", "empty"),
+        (
+            SnapshotSeries("problem-a", (Path("a"), None, Path("c"), None)),
+            SnapshotSeries("problem-b", (Path("b"), Path("d"), None, None)),
+        ),
+        reports.__getitem__,
+        aggregate="mean",
+    )
+    a, b = trend.trends
+    score_a = next(s for s in a.series if s.metric == "verbosity.score")
+    score_b = next(s for s in b.series if s.metric == "verbosity.score")
+    assert score_a.values == (0.2, None, 0.8, None)
+    assert score_a.differences == (None, None, None, None)
+    assert score_b.values == (0.4, 0.9, None, None)
+    assert score_b.differences == (None, 0.5, None, None)
+    assert a.snapshots[1] is None
+    mean = next(s for s in trend.mean if s.metric == "verbosity.score")
+    assert mean.values[:3] == pytest.approx((0.3, 0.9, 0.8))
+    assert mean.values[3] is None
+    assert mean.differences == (None, 0.5, None, None)
+    assert mean.contributors == (2, 1, 1, 0)
+    assert mean.change_contributors == (0, 1, 0, 0)
+    unavailable = next(
+        s for s in trend.mean if s.metric == "rfc.partial_response_sum"
+    )
+    assert unavailable.values == (None,) * 4
+    assert unavailable.contributors == (0,) * 4
+
+
+def test_mean_changes_average_series_deltas_not_step_means() -> None:
+    """Different contributor populations yield mean deltas of 60 and -3 lines."""
+    reports = {}
+    for name, loc in (
+        ("a", 10),
+        ("b", 30),
+        ("c", 20),
+        ("d", 1000),
+        ("e", 1100),
+        ("f", 1),
+        ("g", 5),
+    ):
+        report = serialize_report(
+            compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
+        )
+        report["verbosity"]["total_loc"] = loc
+        reports[Path(name)] = report
+    reports[Path("g")]["syntax"].update(
+        {"rust.node_count": 7, "rust.tree_count": 1}
+    )
+    sources = (
+        SnapshotSeries("a", (Path("a"), Path("b"), Path("c"))),
+        SnapshotSeries("b", (Path("d"), Path("e"), None)),
+        SnapshotSeries("c", (None, Path("f"), Path("g"))),
+    )
+    trend = build_aligned_trend(
+        ("1", "2", "3"), sources, reports.__getitem__, aggregate="mean"
+    )
+    mean = next(s for s in trend.mean if s.metric == "verbosity.total_loc")
+    assert mean.values == (505, 377, 12.5)
+    assert mean.differences == (None, 60, -3)
+    assert mean.contributors == (2, 3, 2)
+    assert mean.change_contributors == (0, 2, 2)
+    for run in trend.trends:
+        rust = next(
+            s for s in run.series if s.metric == "syntax.rust.node_count"
+        )
+        if run.name != "c":
+            assert rust.values == (None, None, None)
+            assert rust.differences == (None, None, None)
+    assert (
+        build_aligned_trend(("1", "2", "3"), sources, reports.__getitem__).mean
+        == ()
+    )
+
+
 @pytest.mark.parametrize("paths", [(), (Path("only"),)])
 def test_too_few_paths_rejected_before_loading(paths: tuple[Path, ...]) -> None:
     """An invalid series cannot invoke source loading."""
@@ -98,6 +190,7 @@ def test_retained_context_is_read_only_and_independent_of_loader() -> None:
     )
     trend = build_trend((Path("a"), Path("b")), lambda _path: report)
     report["verbosity"]["score"] = 9
+    assert trend.snapshots[0] is not None
     assert trend.snapshots[0]["verbosity"]["score"] == 0
     with pytest.raises(TypeError):
         cast(

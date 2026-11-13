@@ -31,16 +31,36 @@ class TrendSeries:
     unit: Unit
     values: tuple[ReportValue, ...]
     differences: tuple[ReportValue, ...]
+    contributors: tuple[int, ...] = ()
+    change_contributors: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotSeries:
+    """Named source directories aligned to shared steps; `None` means omitted."""
+
+    name: str
+    paths: tuple[Path | None, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class Trend:
     """Ordered numerical snapshots and context, without analysis IR or chart options."""
 
-    paths: tuple[Path, ...]
+    paths: tuple[Path | None, ...]
     series: tuple[TrendSeries, ...]
-    snapshots: tuple[Report, ...]
+    snapshots: tuple[Report | None, ...]
     comparisons: tuple[Report | None, ...]
+    name: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class AlignedTrend:
+    """Independent named trends on one ordered categorical axis, with optional means."""
+
+    steps: tuple[str, ...]
+    trends: tuple[Trend, ...]
+    mean: tuple[TrendSeries, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
