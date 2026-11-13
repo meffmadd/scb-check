@@ -2,13 +2,14 @@
 
 from types import MappingProxyType
 
-from scb_check.metrics.units import Unit
 from scb_check.models import AnalysisResult
 from scb_check.models import MetricResult
 from scb_check.models import Report
 from scb_check.models import ReportValue
+from scb_check.reporting.formatting import format_measurement
 from scb_check.reporting.score import REPORT_UNITS
 from scb_check.reporting.score import compute_report
+from scb_check.reporting.score import report_unit
 from scb_check.reporting.score import validate_report
 
 
@@ -70,23 +71,9 @@ def render_comparison(before: Report, after: Report, diff: Report) -> str:
     rows = ["metric | before | after | diff (after - before)"]
     for group, result in diff.items():
         for field, difference in result.items():
-            unit = REPORT_UNITS[group][
-                field.rsplit(".", 1)[-1] if group == "syntax" else field
-            ]
+            unit = report_unit(group, field)
             earlier, later = before[group].get(field), after[group].get(field)
             rows.append(
-                f"{group}.{field} | {_format(earlier, unit)} | {_format(later, unit)} | {_format(difference, unit, difference=True)}"
+                f"{group}.{field} | {format_measurement(earlier, unit, precision=2)} | {format_measurement(later, unit, precision=2)} | {format_measurement(difference, unit, difference=True, precision=2)}"
             )
     return "\n".join(rows)
-
-
-def _format(value: ReportValue, unit: Unit, *, difference: bool = False) -> str:
-    if value is None:
-        return "unavailable"
-    if unit == "fraction":
-        return (
-            f"{value * 100:+.2f} percentage points"
-            if difference
-            else f"{value:.2%}"
-        )
-    return f"{value:+} {unit}" if difference else f"{value} {unit}"

@@ -1,6 +1,6 @@
 # Architecture
 
-`scb-check check` reports composite scores plus location-level flags explaining a source codebase's current state. `scb-check diff` compares two independently computed check reports: snapshot metric deltas, not code churn.
+`scb-check check` reports composite scores plus location-level flags explaining a source codebase's current state. `scb-check diff` compares two independently computed check reports: snapshot metric deltas, not code churn. `scb-check report` plots full reports and adjacent differences across an ordered list of source trees.
 
 ## Metrics
 
@@ -201,7 +201,7 @@ Absolute ratio differences avoid division by a zero baseline. JSON retains fract
 
 ## Shared source loading
 
-`pipeline.analyze(path, config)` is the full snapshot-analysis workflow used by both commands. It calls `analysis.source.read_and_parse_source` directly, with UTF-8 replacement fallback and warn-and-skip read/parse failures. Successful artifacts feed `_index_check_sources`, which builds rendering, language, SLOC, and syntax-count indexes.
+`pipeline.analyze(path, config)` is the full snapshot-analysis workflow used by `check`, `diff`, and `report`. It calls `analysis.source.read_and_parse_source` directly, with UTF-8 replacement fallback and warn-and-skip read/parse failures. Successful artifacts feed `_index_check_sources`, which builds rendering, language, SLOC, and syntax-count indexes.
 
 Each comparison side has its own full project context: semantic indexes, clone detection, rules, directives, finding filtering, and scoring. A failed file affects only its own analysis. Files are neither paired across trees nor filtered by textual changes.
 
@@ -260,6 +260,18 @@ Each side must have successfully parsed eligible source; zero-SLOC files are val
 The two-analysis builder leaves room for a future pairwise measurement without defining all comparisons as subtraction. It currently implements only snapshot differences, with no file pairing, source rereading, or churn calculation.
 
 `score.serialize_report(report)` validates the report contract and creates fresh plain outer and inner dictionaries; changing serialized data cannot change a computed report. `None` becomes JSON `null`. Tree paths remain command-owned context outside numerical reports. `render_comparison(before, after, diff)` uses metric-owned units: fractional scores become percentages, score differences become percentage points, counts and masses keep their units, and unavailable values are explicit. Unit metadata is not embedded in report values.
+
+### Ordered plot reports
+
+`commands/report.py` supplies a configured snapshot loader to `reporting.trend.build_trend(paths, load_report)`. The loader runs ordinary analysis, validates usable source, and returns `compute_report` output for each position. One cwd-discovered or explicit configuration and equal analysis flags apply to every input. Only numerical reports are retained across snapshots, not whole-project IRs. Commands own validation and atomic artifact publication; rendering performs no source reads.
+
+Immutable `Trend` and `TrendSeries` preserve supplied order and repeated paths. Every canonical field and the union of observed language fields produce value and adjacent-change series. Differences delegate to `compare_reports`; there is no alternative subtraction policy. Snapshot language fields absent from an input remain unavailable. Syntax-only zero-filling belongs to comparison; a language absent from both adjacent reports has no delta field. Explicit nulls remain gaps, while zero and isolated values remain visible observations. The first input has no preceding difference.
+
+`reporting/plot.py` prepares library-neutral raw numerical/context data and static tables. Full read-only snapshots and comparisons support hover details, including exact values, full paths, and same-group supporting counts and coverage. The packaged Jinja template owns layout/tables and embeds data using `tojson`; `static/plot.js` alone translates it into Plotly SVG scatter traces, axes, and tooltips. Chart options stay outside Python models and numerical reports. Metric-owned units convert only for display: fractions become percentages, differences become percentage points, and dimensionless ratios remain ratios.
+
+Package loaders/resources find templates and assets independently of cwd. The pinned basic Plotly distribution is embedded once, with attribution, so reports need no server or network. JavaScript enables plots/hover; complete numerical tables remain readable without scripting. Jinja autoescape protects page text, `StrictUndefined` catches missing context, and only fixed bundled scripts become trusted markup after script-end-tag escaping. Hover text is escaped separately because Plotly supports HTML-like formatting.
+
+Input order is categorical, not chronology or elapsed time. Adjacent differences are not churn or quality judgments: changes in retained populations, scanned context, or extraction coverage can change summaries without changing existing relationships. Read [partial metric interpretation](#partial-metric-interpretation) alongside supporting measured/unavailable counts. CLI syntax, options, defaults, and failure behavior are canonical in [README](../README.md#plot-reports).
 
 ### Text evidence boundary
 
@@ -322,7 +334,7 @@ Implemented consumers and future candidates handle unavailable inventories and u
 
 - Boundary: `cli.py`, `commands/`, `config.py`, `walker.py`, and `logging.py` parse arguments, load configuration, walk paths, and wire logging. They do not score code.
 - Tree walking: `tree_walking/` parses already-read supported source, computes `SLOC`, parses Python source directives, emits language-agnostic IR, and builds semantic project context. See [Tree walking](tree-walking.md).
-- Pipeline: `pipeline.py` owns full snapshot analysis, source indexing, and finding construction for both check and diff.
+- Pipeline: `pipeline.py` owns full snapshot analysis, source indexing, and finding construction for check, diff, and report.
 - Analysis: `analysis/` owns `ast-grep` subprocess execution, clone hashing, and shared source IO/parse warnings.
 - Rules: `rules/` owns structural rule classes, their registry, metadata, and the runner.
 - Metrics: `metrics/` owns metric classes, the `Metric` abstract base, calculation helpers, and units. It consumes extracted facts without source IO or reporting dependencies.

@@ -4,11 +4,12 @@ This guide summarizes the current implementation status and the preferred approa
 
 ## Current status
 
-`scb-check` is a Python CLI with three public commands:
+`scb-check` is a Python CLI with four public commands:
 
 - `scb-check check PATH` reports human-readable flags or JSON scores.
 - `scb-check rule RULE_ID` prints bundled `ast-grep` YAML or structural rule metadata.
 - `scb-check diff TREE_A TREE_B` reports before/after/signed metric deltas between directories.
+- `scb-check report PATH...` creates offline HTML plots of every metric's values and adjacent changes; see [CLI options and defaults](../README.md#plot-reports).
 
 Implemented analysis paths:
 
@@ -20,7 +21,7 @@ Implemented analysis paths:
 - Bounded Python C3 member lookup connects lexical/import and declared-receiver evidence to canonical declarations and separate possible implementation sets, with explicit completeness assumptions. The [candidate input matrix](architecture.md#metric-ready-analysis-data-flow) and source-to-analysis fixtures validate the IR-first metric gate.
 - Rule-facing reference/effect projections preserve existing structural decisions; metrics consume retained facts through explicit report composition.
 - Parser `SLOC` accounting shared by verbosity, clone line counts, and rule spans.
-- One full `pipeline.analyze()` workflow using the shared source reader and source indexes for both commands.
+- One full `pipeline.analyze()` workflow using the shared source reader and source indexes for check, diff, and report.
 - Data-only grouped reports, metric-owned calculations and units, and pure nullable snapshot comparison including dotted per-language syntax counts.
 - Duplicate-structure detection by normalized AST hashing for all supported languages.
 - Bundled Python `ast-grep` slop patterns, plus optional local rules from `SCB_CHECK_EXTRA_SLOP_RULES`.
@@ -41,9 +42,9 @@ Implemented analysis paths:
 
 ## Runtime contracts
 
-- `check` exits `0` without findings and `1` with findings; `diff` exits `0` on success regardless of findings or delta signs.
+- `check` exits `0` without findings and `1` with findings; `diff` and `report` exit `0` on success regardless of findings or delta signs.
 - Exit `2` is for user-facing failures such as bad config, bad paths, unknown rules, invalid directives, or an empty eligible/parseable source set.
-- Individual read/parse failures warn and skip within their own analysis. In `diff`, each side must have at least one successfully parsed eligible file; parsed zero-SLOC files remain valid. A failure produces no partial comparison payload.
+- Individual read/parse failures warn and skip within their own analysis. In `diff` and `report`, every snapshot must have at least one successfully parsed eligible file; parsed zero-SLOC files remain valid. A failure produces no partial comparison payload or HTML artifact. Report publication is atomic and preserves existing output on failure.
 - Non-Python files skip Python ast-grep rules, structural rules, and source directives until language-specific rules exist.
 - Config discovery and source-directive behavior are user-facing; keep README examples synchronized when they change.
 
@@ -68,6 +69,12 @@ Implemented analysis paths:
 | Shared Ca/Ce policy and immutable projection | `src/scb_check/metrics/categories.py` (class-bearing module membership, static directed method/field dependencies, category availability) |
 | Shared metric arithmetic | `src/scb_check/metrics/_mass.py` (erosion), `_counts.py` (measured-count sum/mean/max) |
 | Report comparison and summary rendering | `src/scb_check/reporting/comparison.py` |
+| Shared unit-aware text formatting | `src/scb_check/reporting/formatting.py` |
+| Ordered report composition | `src/scb_check/reporting/trend.py` (`build_trend`, caller-supplied snapshot loader) |
+| HTML data/table preparation and Jinja rendering | `src/scb_check/reporting/plot.py` |
+| HTML layout, tables, and JSON embedding | `src/scb_check/reporting/templates/report.html.jinja` |
+| Plotly charts and hover | `src/scb_check/reporting/static/plot.js` |
+| Pinned Plotly distribution, license, and update procedure | `src/scb_check/reporting/static/vendor/` |
 | `ast-grep` integration | `src/scb_check/analysis/astgrep.py` and `src/scb_check/resources/slop_rules/` |
 | Structural rule behavior | `src/scb_check/rules/` |
 | JSON scores or human rendering | `src/scb_check/reporting/` |
@@ -154,7 +161,17 @@ Keep `metrics/` independent of reporting and source IO. See the [ownership and i
 4. Add CLI coverage in `tests/test_diff_cli.py`: standalone-check parity plus independently known positive, negative, and zero differences, argument reversal, language additions/removals, exits, and stderr. Cover read-only behavior, fresh serialization, null propagation, and malformed report contracts at the public reporting seam where real-source CLI fixtures cannot produce them.
 5. Check observable unit formatting: fractional JSON scores and differences, human percentages and percentage points, count/mass units, explicit unavailable values, and visible zero differences. Retain location-level human check findings.
 
-Commands still run two independent full analyses with one configuration and equal options. Preserve walker exclusions and independent parse-failure handling, without file pairing or source rereading. Monkeypatch `scb_check.pipeline.run_sg` for controlled tooling output. This reporting contract does not implement churn or a quality gate.
+`diff` runs two independent full analyses with one configuration and equal options. Preserve walker exclusions and independent parse-failure handling, without file pairing or source rereading. Monkeypatch `scb_check.pipeline.run_sg` for controlled tooling output. This reporting contract does not implement churn or a quality gate.
+
+## Extending ordered HTML reporting
+
+Keep path/config validation, analysis, and atomic output IO in `commands/report.py`. `build_trend` consumes ordered paths and a loader returning ordinary reports; it preserves repetitions and delegates adjacent differences to `compare_reports`. Shared presentation contracts are immutable `Trend` and `TrendSeries` in `models.py`. Retain numerical snapshots for hover context rather than analysis IRs. Add fields through existing `compute_report` / `REPORT_UNITS` composition, not a plotting registry or renderer-side measurement calculation.
+
+Use `tests/test_report_cli.py` for known-source standalone-check/diff parity, shared configuration/flags, unusable inputs, exit codes, and atomic publication failures. Use `tests/reporting/test_trend.py` and `test_plot.py` for complete field coverage, nullable deltas, units, safe embedded JSON, and accessible table contracts. Both value and adjacent-change plots are always included. Assert meaning rather than full-document layouts or call order.
+
+For browser acceptance, run `tests/reporting/report_browser_smoke.py` with Chromium installed in a pinned, isolated Playwright tool environment. Verify real hover details, escaped labels, null gaps, isolated/zero/negative points, unclipped labels at narrow/wide widths, resizing, offline/no-network operation, and readable tables with JavaScript disabled. Keep browser tooling out of runtime dependencies.
+
+After runtime dependency changes, regenerate `uv.lock` and both [exported requirements locks](../README.md#install). Build wheel and sdist with `uv build`; inspect them for the Jinja template, chart adapter, and vendor asset/license/provenance files. Install the wheel in a clean environment, leave the checkout, and generate a report with `--disable-sg` to verify packaged asset loading is independent of cwd. When updating Plotly, follow the vendor provenance/update instructions and repeat packaging and offline browser checks.
 
 ## Verification
 

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 1rem auto; max-width: 80rem; padding: 0 1rem; color: #18212b; }
+    section { border-top: 1px solid #aaa; margin-top: 2rem; }
+    h2, td { overflow-wrap: anywhere; }
+    .metric-plot { width: 100%; min-width: 0; height: 400px; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0 2rem; table-layout: fixed; }
+    caption { text-align: left; font-weight: bold; }
+    th, td { border: 1px solid #aaa; padding: .4rem; text-align: left; vertical-align: top; }
+    th:first-child { width: 3rem; }
+    pre { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>{{ title }}</h1>
+  <p>Inputs are evenly spaced in supplied order, not elapsed time. Changes are current minus previous,
+    not churn or quality judgments. Population and coverage changes can affect comparisons.
+    Missing measurements are unavailable, not zero; gaps are not interpolated.</p>
+  <noscript>Enable JavaScript for plots and hover details; all values remain in the tables below.</noscript>
+  {% for section in sections %}
+  <section>
+    <h2>{{ section.metric }}</h2>
+    {% for plot in section.plots %}
+    <h3 id="{{ plot.id }}-heading">{{ plot.title }} ({{ plot.unit }})</h3>
+    <div id="{{ plot.id }}" class="metric-plot" role="img" aria-labelledby="{{ plot.id }}-heading"></div>
+    {% if plot.all_unavailable %}<p>All measurements unavailable.</p>{% endif %}
+    <table>
+      <caption>{{ section.metric }}: {{ plot.title }} ({{ plot.unit }})</caption>
+      <thead><tr><th>Input</th><th>Path</th><th>Previous path</th><th>Measurement</th></tr></thead>
+      <tbody>{% for row in plot.rows %}
+        <tr><td>{{ row.index }}</td><td>{{ row.path }}</td><td>{{ row.previous_path }}</td><td>{{ row.value_text }}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+    {% endfor %}
+  </section>
+  {% endfor %}
+  <details><summary>Plotly.js license</summary><pre>{{ plotly_license }}</pre></details>
+  <script id="report-data" type="application/json">{{ payload | tojson }}</script>
+  <script>{{ plotly_js }}</script>
+  <script>{{ report_js }}</script>
+</body>
+</html>

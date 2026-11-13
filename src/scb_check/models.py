@@ -10,6 +10,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
 
+from scb_check.metrics.units import Unit
 from scb_check.tree_walking.models import Language
 from scb_check.tree_walking.models import ProjectIR
 from scb_check.tree_walking.models import RuleFinding
@@ -20,6 +21,26 @@ type ReportValue = int | float | None
 type MetricResult = Mapping[str, ReportValue]
 type Report = Mapping[str, MetricResult]
 type SourceLines = Mapping[Path, tuple[str, ...]]
+
+
+@dataclass(frozen=True, slots=True)
+class TrendSeries:
+    """Raw values and adjacent differences for one fully qualified metric field."""
+
+    metric: str
+    unit: Unit
+    values: tuple[ReportValue, ...]
+    differences: tuple[ReportValue, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Trend:
+    """Ordered numerical snapshots and context, without analysis IR or chart options."""
+
+    paths: tuple[Path, ...]
+    series: tuple[TrendSeries, ...]
+    snapshots: tuple[Report, ...]
+    comparisons: tuple[Report | None, ...]
 
 
 @dataclass(frozen=True, slots=True)

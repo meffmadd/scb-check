@@ -18,11 +18,19 @@ from scb_check.reporting.comparison import compare_reports
 from scb_check.reporting.comparison import compute_diff_report
 from scb_check.reporting.comparison import render_comparison
 from scb_check.reporting.score import compute_report
+from scb_check.reporting.score import report_unit
 from scb_check.reporting.score import serialize_report
 from scb_check.tree_walking.models import ProjectIR
 from scb_check.tree_walking.models import SourceSpan
 from scb_check.tree_walking.models import SymbolIR
 from scb_check.tree_walking.models import SymbolKind
+
+
+def test_report_unit_supports_declared_and_language_fields() -> None:
+    """Renderers share metric-owned units without treating ratios as percentages."""
+    assert report_unit("verbosity", "score") == "fraction"
+    assert report_unit("syntax", "python.node_count") == "nodes"
+    assert report_unit("ric", "partial_ratio_mean") == "ratio"
 
 
 def test_reports_are_read_only_and_serialization_is_independent(
