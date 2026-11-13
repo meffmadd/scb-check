@@ -25,6 +25,9 @@ class ReportPage(HTMLParser):
         self.cells: list[str] = []
         self.tables = 0
         self.sections: list[dict[str, str | None]] = []
+        self.groups: dict[str, dict[str, str | None]] = {}
+        self.group_plots: dict[str, list[str]] = {}
+        self.active_group: str | None = None
         self.source_details: dict[str, str | None] | None = None
         self.payload: dict[str, Any] = {}
         self.active_script = False
@@ -41,17 +44,25 @@ class ReportPage(HTMLParser):
         if tag == "div" and attributes.get("role") == "img":
             assert attributes.get("aria-labelledby")
             self.plot_ids.append(str(attributes["id"]))
+            if self.active_group is not None:
+                self.group_plots[self.active_group].append(str(attributes["id"]))
         if tag == "table":
             self.tables += 1
         if tag == "section":
             self.sections.append(attributes)
         if tag == "details" and attributes.get("id") == "source-directories":
             self.source_details = attributes
+        if tag == "details" and (group_id := attributes.get("id", "")) and group_id.startswith("metric-group-"):
+            self.active_group = group_id.removeprefix("metric-group-")
+            self.groups[self.active_group] = attributes
+            self.group_plots[self.active_group] = []
 
     def handle_endtag(self, tag: str) -> None:
         """Stop treating script contents as JSON at the script boundary."""
         if tag == "script":
             self.active_script = False
+        if tag == "details":
+            self.active_group = None
 
     def handle_data(self, data: str) -> None:
         """Decode raw numerical payload and retain readable page content."""
@@ -108,6 +119,25 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
     assert "Plotly.js license" in text
     assert "Copyright" in text
     assert render_trend_html(trend) == html
+
+
+def test_metric_groups_are_native_expanded_disclosures_in_report_order() -> None:
+    """Every plot belongs to exactly one collapsible top-level metric group."""
+    report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
+    trend = build_trend((Path("a"), Path("b")), lambda _path: report)
+    page = ReportPage(render_trend_html(trend))
+
+    assert tuple(page.groups) == tuple(report)
+    assert all("open" in attrs for attrs in page.groups.values())
+    assert page.group_plots["syntax"] == [
+        f"plot-{index}-{difference}"
+        for index, series in enumerate(trend.series)
+        if series.metric.startswith("syntax.")
+        for difference in (0, 1)
+    ]
+    assert [plot for plots in page.group_plots.values() for plot in plots] == page.plot_ids
+    assert page.groups["verbosity"]["data-unchanged"] == "true"
+    assert page.groups["rfc"]["data-unchanged"] == "false"
 
 
 def test_only_fully_known_zero_deltas_are_unchanged() -> None:

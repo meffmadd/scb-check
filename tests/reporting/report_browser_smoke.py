@@ -236,6 +236,40 @@ def check_unchanged_toggle(page: Any, trend: Trend) -> None:  # noqa: ANN401
     page.set_viewport_size({"width": 1280, "height": 1000})
 
 
+def check_metric_groups(page: Any, trend: Trend) -> None:  # noqa: ANN401
+    """Native disclosures collapse whole groups and cooperate with filtering and resize."""
+    groups = page.locator("details.metric-group")
+    assert groups.count() == 14
+    group = page.locator("#metric-group-syntax")
+    summary = group.locator("summary")
+    chart_id = plot_id(trend, "syntax.python.node_count")
+    chart = page.locator(f"#{chart_id}")
+    assert group.evaluate("element => element.open")
+    summary.press("Enter")
+    assert not group.evaluate("element => element.open")
+    assert not chart.is_visible()
+    assert page.locator(f"#{plot_id(trend, 'verbosity.total_loc')}").is_visible()
+    page.set_viewport_size({"width": 480, "height": 1000})
+    summary.press("Enter")
+    assert chart.is_visible()
+    if chart.locator(".main-svg").count():
+        wait_for_chart_width(page, chart_id)
+    toggle = page.get_by_label("Hide unchanged metrics", exact=True)
+    toggle.check()
+    assert not page.locator("#metric-group-cog_erosion").is_visible()
+    assert summary.is_visible()
+    assert chart.is_visible()
+    assert not page.locator(f"#{plot_id(trend, 'syntax.node_count')}").is_visible()
+    toggle.uncheck()
+    assert page.locator("#metric-group-cog_erosion").is_visible()
+    summary.press("Enter")
+    toggle.check()
+    toggle.uncheck()
+    assert not group.evaluate("element => element.open")
+    summary.press("Enter")
+    page.set_viewport_size({"width": 1280, "height": 1000})
+
+
 def check_without_javascript(page: Any, trend: Trend) -> None:  # noqa: ANN401
     """Without JavaScript, explain the requirement and keep source paths accessible."""
     assert page.locator(".main-svg").count() == 0
@@ -276,7 +310,7 @@ def main() -> None:
             page.on("console", lambda message: errors.append(message.text)
                     if message.type == "error" else None)
             page.goto(artifact.as_uri(), wait_until="load", timeout=120_000)
-            checks = (check_render, check_hover, check_hostile_labels, check_gaps_and_units, check_unchanged_toggle, check_resize) if javascript else (check_without_javascript, check_unchanged_toggle)
+            checks = (check_render, check_hover, check_hostile_labels, check_gaps_and_units, check_unchanged_toggle, check_metric_groups, check_resize) if javascript else (check_without_javascript, check_unchanged_toggle, check_metric_groups)
             for check in checks:
                 try:
                     check(page, trend)

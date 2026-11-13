@@ -67,11 +67,15 @@
             automargin: true, rangemode: "tozero", zeroline: true
           }
         }, {responsive: true, displayModeBar: false}).catch(fail);
-        window.addEventListener("resize", () => {
+        function resize() {
+          // Closed native disclosures have no chart layout; redraw when reopened instead.
+          if (!element.clientWidth) return;
           Plotly.relayout(element, {
             "xaxis.ticktext": labels(), width: element.clientWidth, height: element.clientHeight
           }).catch(fail);
-        });
+        }
+        window.addEventListener("resize", resize);
+        element.closest(".metric-group").addEventListener("toggle", resize);
       } catch (error) {
         fail(error);
       }

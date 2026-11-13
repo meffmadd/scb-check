@@ -13,19 +13,23 @@
     details { margin: .75rem 0; }
     summary { cursor: pointer; color: #46566a; }
     li { padding: .25rem 0; }
-    code, h2 { overflow-wrap: anywhere; }
-    section { margin: 2rem 0; }
+    code, h2, h3 { overflow-wrap: anywhere; }
+    .metric-group { margin: 1.5rem 0; border-top: 1px solid #d8e0e9; }
+    .metric-group > summary { padding: 1rem 0; }
+    .metric-group > summary h2 { display: inline; font-size: 1.2rem; color: #18212b; }
+    .group-count { margin-left: .75rem; font-size: .85rem; color: #536273; }
+    section { margin: 1rem 0 2rem; }
     .report-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin: 1rem 0; }
     .report-controls label { cursor: pointer; }
     .report-controls small { color: #536273; }
     /* Retain horizontal layout while hidden so Plotly can resize without toggle JavaScript. */
-    body:has(#hide-unchanged:checked) section[data-unchanged="true"] {
-      height: 0; overflow: hidden; margin: 0; visibility: hidden;
+    body:has(#hide-unchanged:checked) :is(section, .metric-group)[data-unchanged="true"] {
+      height: 0; overflow: hidden; margin: 0; border: 0; visibility: hidden;
     }
-    h2 { margin-bottom: .75rem; font: 600 1rem/1.5 ui-monospace, monospace; }
+    section > h3 { margin-bottom: .75rem; font: 600 1rem/1.5 ui-monospace, monospace; }
     .plots { display: grid; gap: 1rem; }
     .plot-card { min-width: 0; padding: 1rem .25rem .25rem; background: #fff; border: 1px solid #e0e5ec; border-radius: .75rem; }
-    h3 { margin: 0 1rem; font-size: .9rem; font-weight: 500; color: #536273; }
+    h4 { margin: 0 1rem; font-size: .9rem; font-weight: 500; color: #536273; }
     .metric-plot { width: 100%; min-width: 0; height: 400px; }
     .plot-note { margin: 0 1rem 1rem; color: #536273; }
     noscript { display: block; padding: 1rem; background: #fff0cf; }
@@ -36,7 +40,7 @@
 <body>
   <header>
     <h1>{{ title }}</h1>
-    <p>{{ payload.paths | length }} snapshots · {{ sections | length }} metrics · values and changes from the previous input</p>
+    <p>{{ payload.paths | length }} snapshots · {{ metric_count }} metrics · values and changes from the previous input</p>
     <div class="report-controls">
       <label><input id="hide-unchanged" type="checkbox" aria-describedby="unchanged-help"> Hide unchanged metrics</label>
       <small id="unchanged-help">All adjacent changes must be zero; unavailable changes stay visible.</small>
@@ -54,19 +58,24 @@
     </details>
   </header>
   <noscript>Enable JavaScript to view the charts and hover measurements.</noscript>
-  {% for section in sections %}
-  <section data-unchanged="{{ 'true' if section.unchanged else 'false' }}">
-    <h2>{{ section.metric }}</h2>
+  {% for group in groups %}
+  <details id="metric-group-{{ group.name }}" class="metric-group" data-unchanged="{{ 'true' if group.unchanged else 'false' }}" open>
+    <summary><h2>{{ group.name }}<span class="group-count">{{ group.sections | length }} metrics</span></h2></summary>
+    {% for section in group.sections %}
+    <section data-unchanged="{{ 'true' if section.unchanged else 'false' }}">
+    <h3>{{ section.metric }}</h3>
     <div class="plots">
     {% for plot in section.plots %}
       <div class="plot-card">
-        <h3 id="{{ plot.id }}-heading">{{ plot.title }} ({{ plot.unit }})</h3>
+        <h4 id="{{ plot.id }}-heading">{{ plot.title }} ({{ plot.unit }})</h4>
         <div id="{{ plot.id }}" class="metric-plot" role="img" aria-labelledby="{{ plot.id }}-heading"></div>
         {% if plot.all_unavailable %}<p class="plot-note">All measurements unavailable.</p>{% endif %}
       </div>
     {% endfor %}
     </div>
-  </section>
+    </section>
+    {% endfor %}
+  </details>
   {% endfor %}
   <details><summary>Plotly.js license</summary><pre>{{ plotly_license }}</pre></details>
   <script id="report-data" type="application/json">{{ payload | tojson }}</script>

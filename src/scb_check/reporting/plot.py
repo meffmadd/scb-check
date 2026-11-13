@@ -32,6 +32,13 @@ class _Section:
     unchanged: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _Group:
+    name: str
+    sections: tuple[_Section, ...]
+    unchanged: bool
+
+
 def render_trend_html(trend: Trend) -> str:
     """Produce self-contained HTML; user data is escaped in markup and JSON."""
     environment = Environment(
@@ -65,12 +72,18 @@ def render_trend_html(trend: Trend) -> str:
             group: dict(fields) for group, fields in REPORT_UNITS.items()
         },
     }
+    sections_by_group: dict[str, list[_Section]] = {}
+    for index, series in enumerate(trend.series):
+        group = series.metric.partition(".")[0]
+        sections_by_group.setdefault(group, []).append(_prepare_section(index, series))
+    groups = tuple(
+        _Group(name, tuple(sections), unchanged=all(section.unchanged for section in sections))
+        for name, sections in sections_by_group.items()
+    )
     return environment.get_template("report.html.jinja").render(
         title="Snapshot metrics",
-        sections=tuple(
-            _prepare_section(index, series)
-            for index, series in enumerate(trend.series)
-        ),
+        groups=groups,
+        metric_count=len(trend.series),
         payload=payload,
         plotly_js=_bundled_script("vendor/plotly-basic.min.js"),
         report_js=_bundled_script("plot.js"),
