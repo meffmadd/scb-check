@@ -45,6 +45,11 @@ REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(
 )
 
 
+def report_unit(group: str, field: str) -> Unit:
+    """Look up metric-owned units, including dotted per-language syntax fields."""
+    return REPORT_UNITS[group][field.rsplit(".", 1)[-1] if group == "syntax" else field]
+
+
 def compute_report(analysis: AnalysisResult) -> Report:
     """Calculate explicitly composed metrics from extracted facts, without IO."""
     flags = analysis.flags

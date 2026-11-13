@@ -1,6 +1,6 @@
 # scb-check
 
-Python CLI that reports SCBench verbosity and erosion composites for supported source codebases, and compares snapshot metrics between source trees.
+Python CLI that reports SCBench verbosity and erosion composites for supported source codebases, compares snapshot metrics between source trees, and plots ordered snapshots as offline HTML.
 
 - [Paper](https://arxiv.org/abs/2603.24755)
 - [Source](https://github.com/gabeorlanski/scb-check)
@@ -67,9 +67,11 @@ scb-check rule RULE_ID                  # print YAML or metadata for a specific 
 scb-check diff TREE_A TREE_B            # before / after / signed metric deltas
 scb-check diff TREE_A TREE_B --output-format json  # structured metric comparison
 scb-check diff TREE_A TREE_B --config FILE --disable-sg  # shared options for both analyses
+scb-check report TREE_A TREE_B TREE_C   # write report.html in the current directory
+scb-check report TREE_A TREE_B TREE_C --output changes.html
 ```
 
-`PATH` may be a file or directory. Directories are walked for supported source files: Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). Directory discovery respects `.gitignore` globs by default; use `--include-all` to scan gitignored supported files too.
+For `check`, `PATH` may be a file or directory; `diff` and `report` accept directories only. Directories are walked for supported source files: Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). Directory discovery respects `.gitignore` globs by default; use `--include-all` to scan gitignored supported files too.
 
 Python declarations inside control-flow wrappers participate in ordinary metrics and structural rules. Same-named functions in different files count independently; repeated Python definitions within one file retain last-definition metric selection. These extraction/counting corrections can change scores without changing metric formulas or the JSON schema. Maintainer-facing immutable entity facts are described in the [IR contract](docs/tree-walking.md#retained-entity-contract), including [Python entity-owned source text fragments](docs/tree-walking.md#source-text-fragments). Internal analysis also retains [Python call/access occurrences and scoped import bindings](docs/tree-walking.md#canonical-source-uses-and-imports), with execution ownership and conservative direct-resolution evidence, plus [class/member declarations, structured field types, and direct bases](docs/tree-walking.md#class-member-and-declared-type-facts). [Bounded Python member resolution](docs/tree-walking.md#member-resolution-and-runtime-targets) connects those facts to canonical declarations and separate possible implementation sets with explicit uncertainty; the [candidate input matrix](docs/architecture.md#metric-ready-analysis-data-flow) describes metric consumers. Unavailable internal fact inventories are `None`, distinct from successfully extracted empty facts; parser-supported subsets are documented in the [availability contract](docs/tree-walking.md#fact-availability-and-parser-support). CBO, RFC₁, MPC, distinct callers, DAC, CIC, method RIC, Ca, Ce, and module-call dependencies consume these retained facts without changing verbosity, erosion, structural-rule policies, or independent snapshot analysis.
 
@@ -130,11 +132,40 @@ Individual read/parse failures warn and skip within their own analysis, without 
 
 This measures snapshot changes, **not code churn**: literal edits or renames that preserve ordinary reports yield zero deltas. Zero aggregate deltas do not prove unchanged code or rule out offsetting local changes. A positive delta means a larger measurement, not necessarily a regression. See [Architecture](docs/architecture.md#snapshot-comparison) for interpretation and the pure Python report-comparison interface.
 
+### Plot reports
+
+`scb-check report PATH... [OPTIONS]` creates a self-contained HTML report from at least two source directories in supplied order. Inputs are source trees, not saved JSON or Git revisions. Repeated paths remain separate positions; inputs are neither sorted nor deduplicated.
+
+| Option | Behavior |
+| --- | --- |
+| `--output PATH` | HTML destination; defaults to `report.html` in the current directory. |
+| `--config FILE` | Shared settings file; otherwise discover settings from the current directory. |
+| `--include-all` | Include gitignored files and normally suppressed findings for every input. |
+| `--disable-sg` | Skip ast-grep checks for every input. |
+| `-v` / `--verbosity` | Info logging; repeat as `-vv` for debug logging. |
+| `--help` | Show usage. |
+
+One configuration and equal analysis flags apply to every snapshot, with ordinary `check`/`diff` semantics. Tree-local configs are not loaded separately. By default, exclusions and suppressions apply and ast-grep runs normally. `--include-all` includes ignored, informational, and boundary-suppressed findings, but configured excludes and default excluded directories still apply.
+
+Every field in the full [check report](#check-json-report-fields), including counts and per-language fields, gets separate value and adjacent-change line plots. Changes are **current minus previous**, positioned at the later input; the first input has no previous difference. The x-axis is an evenly spaced input index, not elapsed time. Labels include index and directory basename. Hover shows only the input label and the plotted value or signed change, with its unit. Full resolved paths appear once in a collapsed **Source directories** list; there are no per-plot tables. Value and change plots sit side by side on wide screens and stack on narrow screens.
+
+Metrics are organized into collapsible groups such as `syntax`, containing fields such as `syntax.python.node_count`. Groups start expanded; click the group heading (or use the keyboard) to collapse or reopen the whole group. These native disclosures work without JavaScript; charts still require it.
+
+Use **Hide unchanged metrics** to hide both plots for metrics whose adjacent changes are all exactly zero. The checkbox is off by default and works through CSS, without toggle JavaScript. Metrics with any unavailable change stay visible; offsetting changes are not treated as unchanged. Groups with no remaining metrics are hidden too, without changing their expanded/collapsed state.
+
+Unavailable values are gaps, not zeros or interpolated lines; isolated observations remain dots. Language fields cover the union of inputs, but absent snapshot language counts remain unavailable. Only subtraction zero-fills absent dotted syntax counts; a language absent from both adjacent snapshots has no change measurement. Explicit `null` propagates. Fractions display as percentages and their changes as percentage points; counts, masses, and dimensionless ratios retain metric-owned units.
+
+Plotly.js is embedded once, with no CDN or network requirement. Plots and hover require JavaScript; without it, the page explains this requirement and source directories remain accessible. Output is always HTML, with all metrics and both plots: there is no metric selection, mode switch, `--output-format`, `--report` alias, `--min-duplicate-lines`, threshold gate, Git traversal, or browser launch.
+
+Every input needs successfully parsed eligible source; parsed zero-SLOC files are valid. Individual read/parse failures warn and skip normally, but an unusable snapshot is never silently dropped. Only complete HTML is published, atomically; failure preserves any existing artifact. The output parent must already exist. See [ordered plot reports](docs/architecture.md#ordered-plot-reports) for interpretation and partial-coverage limits.
+
 ### Exit codes
 
 `scb-check check` exits `0` when no findings are reported, `1` when any finding is present (clones, ast-grep hits, structural findings, or high-complexity functions), and `2` for usage errors (bad path, missing config, invalid directives).
 
 `scb-check diff` exits `0` on success regardless of findings or delta signs, and `2` for invalid paths/config/options/directives or a side with no successfully parsed eligible files. Failures print to stderr without a partial comparison on stdout. It never exits `1`.
+
+`scb-check report` exits `0` after successful generation, regardless of findings, and `2` for usage, input, configuration, or output errors. It never exits `1`.
 
 Clone detection only emits duplicated syntax blocks with at least two executable body statements. Function signatures, comments, blanks, and Python docstrings do not satisfy that threshold; displayed clone line counts and `--min-duplicate-lines` still use duplicated `SLOC` in the clone span.
 

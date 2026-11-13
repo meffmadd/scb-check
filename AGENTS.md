@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`scb-check` is a Python CLI that reports **verbosity** (clone + slop-pattern LOC share) and **erosion** (high-complexity function mass share) for supported source codebases, and compares snapshot metrics between source trees. Entrypoints: `scb-check check PATH` and `scb-check diff TREE_A TREE_B` → [`src/scb_check/cli.py`](src/scb_check/cli.py).
+`scb-check` is a Python CLI that reports **verbosity** (clone + slop-pattern LOC share) and **erosion** (high-complexity function mass share) for supported source codebases, and compares snapshot metrics between source trees. Entrypoints: `scb-check check PATH`, `scb-check diff TREE_A TREE_B`, and `scb-check report PATH...` → [`src/scb_check/cli.py`](src/scb_check/cli.py).
 
 See [README.md](README.md) for user-facing usage.
 
@@ -19,6 +19,7 @@ Keep these docs up to date. When behavior, scoring, CLI contracts, source direct
 - **Verbosity is a union**, not a sum. Clone lines ∪ ast-grep lines per file, intersected with SLOC lines. Don't double-count. Non-Python languages currently contribute clone LOC only.
 - **Reports are read-only data.** `AnalysisResult` is the pipeline output; `Report` and `MetricResult` are mapping aliases with flat `int | float | None` values. Metric classes in `metrics/` subclass `Metric` and own calculations, fields, and units; reporting explicitly composes them. See the [report-comparison interface](docs/architecture.md#report-comparison-interface) when changing reporting contracts and the [README schema](README.md#check-json-report-fields) for canonical fields.
 - **Diff compares full check reports.** Commands run independent `analyze` calls with one config and equal options; `compute_diff_report` composes `before` / `after` / `diff` reports. Deltas are signed later minus earlier, not churn. Only absent dotted per-language syntax fields zero-fill; explicit `None` propagates and missing required fields are errors. Each side needs successfully parsed eligible files; failures skip independently, and zero-SLOC files remain valid. Keep standalone-check parity and known-delta CLI coverage current in `tests/test_diff_cli.py`.
+- **Ordered HTML reports** plot every metric's values and adjacent signed changes. Commands own path/config validation, snapshot analysis, and atomic artifact IO; reporting owns trend composition and rendering. Apply one configuration and equal analysis flags to every input. Generation exits `0`/`2`, regardless of findings. See [CLI defaults](README.md#plot-reports) and [reporting boundaries](docs/architecture.md#ordered-plot-reports) when changing this feature.
 - **Dataclasses are `frozen=True, slots=True`** (see [`src/scb_check/models.py`](src/scb_check/models.py)). Pass tuples across module boundaries, not lists.
 
 ## Workflow (every change)

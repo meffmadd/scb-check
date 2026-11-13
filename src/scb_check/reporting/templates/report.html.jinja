@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    :root { color-scheme: light; font: 15px/1.5 system-ui, sans-serif; color: #18212b; background: #f5f7fa; }
+    body { margin: 0 auto; max-width: 90rem; padding: 2rem 1rem; }
+    header { margin-bottom: 2rem; }
+    h1 { margin: 0; font-size: 2rem; letter-spacing: -.04em; }
+    header p { margin: .5rem 0 1.25rem; color: #536273; }
+    details { margin: .75rem 0; }
+    summary { cursor: pointer; color: #46566a; }
+    li { padding: .25rem 0; }
+    code, h2, h3 { overflow-wrap: anywhere; }
+    .metric-group { margin: 1.5rem 0; border-top: 1px solid #d8e0e9; }
+    .metric-group > summary { padding: 1rem 0; }
+    .metric-group > summary h2 { display: inline; font-size: 1.2rem; color: #18212b; }
+    .group-count { margin-left: .75rem; font-size: .85rem; color: #536273; }
+    section { margin: 1rem 0 2rem; }
+    .report-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin: 1rem 0; }
+    .report-controls label { cursor: pointer; }
+    .report-controls small { color: #536273; }
+    /* Retain horizontal layout while hidden so Plotly can resize without toggle JavaScript. */
+    body:has(#hide-unchanged:checked) :is(section, .metric-group)[data-unchanged="true"] {
+      height: 0; overflow: hidden; margin: 0; border: 0; visibility: hidden;
+    }
+    section > h3 { margin-bottom: .75rem; font: 600 1rem/1.5 ui-monospace, monospace; }
+    .plots { display: grid; gap: 1rem; }
+    .plot-card { min-width: 0; padding: 1rem .25rem .25rem; background: #fff; border: 1px solid #e0e5ec; border-radius: .75rem; }
+    h4 { margin: 0 1rem; font-size: .9rem; font-weight: 500; color: #536273; }
+    .metric-plot { width: 100%; min-width: 0; height: 400px; }
+    .plot-note { margin: 0 1rem 1rem; color: #536273; }
+    noscript { display: block; padding: 1rem; background: #fff0cf; }
+    pre { white-space: pre-wrap; }
+    @media (min-width: 64rem) { .plots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{ title }}</h1>
+    <p>{{ payload.paths | length }} snapshots · {{ metric_count }} metrics · values and changes from the previous input</p>
+    <div class="report-controls">
+      <label><input id="hide-unchanged" type="checkbox" aria-describedby="unchanged-help"> Hide unchanged metrics</label>
+      <small id="unchanged-help">All adjacent changes must be zero; unavailable changes stay visible.</small>
+    </div>
+    <details id="source-directories">
+      <summary>Source directories</summary>
+      <ol>{% for path in payload.paths %}<li><code>{{ path }}</code></li>{% endfor %}</ol>
+    </details>
+    <details>
+      <summary>About this report</summary>
+      <p>Inputs are evenly spaced in supplied order, not elapsed time. Changes are current minus previous;
+        the first input has no previous snapshot. Missing measurements are unavailable, not zero, and interrupt lines.
+        Fractions display as percentages; changes display as percentage points.</p>
+      <p>Changes are not churn or quality judgments. Population and coverage changes can affect comparisons.</p>
+    </details>
+  </header>
+  <noscript>Enable JavaScript to view the charts and hover measurements.</noscript>
+  {% for group in groups %}
+  <details id="metric-group-{{ group.name }}" class="metric-group" data-unchanged="{{ 'true' if group.unchanged else 'false' }}" open>
+    <summary><h2>{{ group.name }}<span class="group-count">{{ group.sections | length }} metrics</span></h2></summary>
+    {% for section in group.sections %}
+    <section data-unchanged="{{ 'true' if section.unchanged else 'false' }}">
+    <h3>{{ section.metric }}</h3>
+    <div class="plots">
+    {% for plot in section.plots %}
+      <div class="plot-card">
+        <h4 id="{{ plot.id }}-heading">{{ plot.title }} ({{ plot.unit }})</h4>
+        <div id="{{ plot.id }}" class="metric-plot" role="img" aria-labelledby="{{ plot.id }}-heading"></div>
+        {% if plot.all_unavailable %}<p class="plot-note">All measurements unavailable.</p>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+    </section>
+    {% endfor %}
+  </details>
+  {% endfor %}
+  <details><summary>Plotly.js license</summary><pre>{{ plotly_license }}</pre></details>
+  <script id="report-data" type="application/json">{{ payload | tojson }}</script>
+  <script>{{ plotly_js }}</script>
+  <script>{{ report_js }}</script>
+</body>
+</html>
