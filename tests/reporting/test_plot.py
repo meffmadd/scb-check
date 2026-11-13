@@ -24,6 +24,7 @@ class ReportPage(HTMLParser):
         self.plot_ids: list[str] = []
         self.cells: list[str] = []
         self.tables = 0
+        self.sections: list[dict[str, str | None]] = []
         self.source_details: dict[str, str | None] | None = None
         self.payload: dict[str, Any] = {}
         self.active_script = False
@@ -42,6 +43,8 @@ class ReportPage(HTMLParser):
             self.plot_ids.append(str(attributes["id"]))
         if tag == "table":
             self.tables += 1
+        if tag == "section":
+            self.sections.append(attributes)
         if tag == "details" and attributes.get("id") == "source-directories":
             self.source_details = attributes
 
@@ -105,6 +108,32 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
     assert "Plotly.js license" in text
     assert "Copyright" in text
     assert render_trend_html(trend) == html
+
+
+def test_only_fully_known_zero_deltas_are_unchanged() -> None:
+    """Unknowns, tiny changes and offsetting changes must not be hidden as unchanged."""
+    reports = []
+    for index in range(3):
+        report = serialize_report(compute_report(AnalysisResult(Flags(), {}, ProjectIR())))
+        report["verbosity"]["score"] = 0.1
+        report["verbosity"]["total_loc"] = (1, 2, 1)[index]
+        report["ric"]["partial_ratio_mean"] = (1, 1 + 1e-10, 1 + 1e-10)[index]
+        report["ric"]["partial_ratio_max"] = (None, 0, 0)[index]
+        reports.append(report)
+    reports[2]["syntax"]["python.node_count"] = 5
+    inputs = iter(reports)
+    trend = build_trend((Path("a"), Path("b"), Path("c")), lambda _path: next(inputs))
+    page = ReportPage(render_trend_html(trend))
+    states = {series.metric: section["data-unchanged"]
+        for series, section in zip(trend.series, page.sections, strict=True)}
+
+    assert states["verbosity.score"] == "true"
+    assert states["verbosity.flagged_loc"] == "true"
+    assert states["verbosity.total_loc"] == "false"
+    assert states["ric.partial_ratio_mean"] == "false"
+    assert states["ric.partial_ratio_max"] == "false"
+    assert states["rfc.partial_response_sum"] == "false"
+    assert states["syntax.python.node_count"] == "false"
 
 
 def test_untrusted_paths_round_trip_without_script_or_markup_injection() -> (

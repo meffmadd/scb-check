@@ -29,6 +29,7 @@ class _Plot:
 class _Section:
     metric: str
     plots: tuple[_Plot, ...]
+    unchanged: bool
 
 
 def render_trend_html(trend: Trend) -> str:
@@ -97,7 +98,11 @@ def _prepare_section(index: int, series: TrendSeries) -> _Section:
                 all_unavailable=all(value is None for value in measurements),
             )
         )
-    return _Section(series.metric, tuple(plots))
+    return _Section(
+        series.metric,
+        tuple(plots),
+        unchanged=all(value == 0 for value in series.differences[1:]),
+    )
 
 
 def _bundled_script(relative_path: str) -> Markup:

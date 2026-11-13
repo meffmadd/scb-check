@@ -165,16 +165,21 @@ def check_gaps_and_units(page: Any, trend: Trend) -> None:  # noqa: ANN401
     assert late.evaluate("p => p.data[0].y") == [None, None, None, None, 7]
 
 
+def wait_for_chart_width(page: Any, chart_id: str) -> None:  # noqa: ANN401
+    """Wait until the rendered SVG fits its responsive chart container."""
+    page.wait_for_function("""id => {
+      const p = document.getElementById(id);
+      return Math.abs(p.querySelector('.main-svg').getBoundingClientRect().width - p.clientWidth) < 3;
+    }""", arg=chart_id)
+
+
 def check_resize(page: Any, trend: Trend) -> None:  # noqa: ANN401
     """Wrapped long tick labels stay inside SVG bounds with useful plotting area."""
     chart_id = plot_id(trend, "verbosity.total_loc")
     widths = []
     for width in (1280, 480, 1280):
         page.set_viewport_size({"width": width, "height": 1000})
-        page.wait_for_function("""id => {
-          const p = document.getElementById(id);
-          return Math.abs(p.querySelector('.main-svg').getBoundingClientRect().width - p.clientWidth) < 3;
-        }""", arg=chart_id)
+        wait_for_chart_width(page, chart_id)
         chart = page.locator(f"#{chart_id}")
         chart.scroll_into_view_if_needed()
         geometry = chart.evaluate("""p => {
@@ -205,6 +210,30 @@ def check_resize(page: Any, trend: Trend) -> None:  # noqa: ANN401
         widths.append(geometry["width"])
     assert widths[1] < widths[0], widths
     assert abs(widths[0] - widths[2]) < 3, widths
+
+
+def check_unchanged_toggle(page: Any, trend: Trend) -> None:  # noqa: ANN401
+    """CSS alone hides unchanged pairs, preserves unknowns, and restores resized charts."""
+    toggle = page.get_by_label("Hide unchanged metrics", exact=True)
+    assert not toggle.is_checked()
+    stable = ("ric.partial_ratio_mean", "verbosity.flagged_loc")
+    kept = ("verbosity.total_loc", "verbosity.score", "rfc.partial_response_sum")
+    toggle.check()
+    for metric in stable:
+        for difference in (False, True):
+            assert not page.locator(f"#{plot_id(trend, metric, difference=difference)}").is_visible()
+    for metric in kept:
+        for difference in (False, True):
+            assert page.locator(f"#{plot_id(trend, metric, difference=difference)}").is_visible()
+    page.set_viewport_size({"width": 480, "height": 1000})
+    toggle.uncheck()
+    for metric in stable:
+        chart_id = plot_id(trend, metric)
+        chart = page.locator(f"#{chart_id}")
+        assert chart.is_visible()
+        if chart.locator(".main-svg").count():
+            wait_for_chart_width(page, chart_id)
+    page.set_viewport_size({"width": 1280, "height": 1000})
 
 
 def check_without_javascript(page: Any, trend: Trend) -> None:  # noqa: ANN401
@@ -247,7 +276,7 @@ def main() -> None:
             page.on("console", lambda message: errors.append(message.text)
                     if message.type == "error" else None)
             page.goto(artifact.as_uri(), wait_until="load", timeout=120_000)
-            checks = (check_render, check_hover, check_hostile_labels, check_gaps_and_units, check_resize) if javascript else (check_without_javascript,)
+            checks = (check_render, check_hover, check_hostile_labels, check_gaps_and_units, check_unchanged_toggle, check_resize) if javascript else (check_without_javascript, check_unchanged_toggle)
             for check in checks:
                 try:
                     check(page, trend)
