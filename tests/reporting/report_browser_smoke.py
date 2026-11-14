@@ -92,6 +92,23 @@ def hover(page: Any, chart_id: str, marker: int) -> str:  # noqa: ANN401
     return label.text_content() or ""
 
 
+def check_collapsed_defaults(page: Any, trend: Trend | AlignedTrend) -> None:  # noqa: ANN401
+    """Groups start closed; their native headings reveal all metric pairs."""
+    first = trend.trends[0] if isinstance(trend, AlignedTrend) else trend
+    groups = page.locator("details.metric-group")
+    assert groups.count() == len(
+        {series.metric.partition(".")[0] for series in first.series}
+    )
+    assert page.locator("details.metric-group[open]").count() == 0
+    assert page.locator(".metric-plot:visible").count() == 0
+    for group in groups.all():
+        summary = group.locator("summary")
+        assert summary.is_visible()
+        summary.click()
+        assert group.evaluate("element => element.open")
+    check_all_metrics_shown(page, trend)
+
+
 def check_render(page: Any, trend: Trend) -> None:  # noqa: ANN401
     """Every metric renders both SVG charts with finite axes and no external assets."""
     expected = len(trend.series) * 2
@@ -276,7 +293,7 @@ def check_resize(page: Any, trend: Trend) -> None:  # noqa: ANN401
 
 
 def check_all_metrics_shown(page: Any, trend: Trend | AlignedTrend) -> None:  # noqa: ANN401
-    """All value/change pairs are visible by default, without metric-filter controls."""
+    """Expanded groups reveal all value/change pairs without metric-filter controls."""
     first = trend.trends[0] if isinstance(trend, AlignedTrend) else trend
     assert page.get_by_role("checkbox").count() == 0
     assert page.locator("section:visible").count() == len(first.series)
@@ -351,6 +368,7 @@ def representative_aligned_trend() -> AlignedTrend:
 
 def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN401
     """Offline charts expose every named series, gaps, aggregate counts and resizing."""
+    check_collapsed_defaults(page, trend)
     first = trend.trends[0]
     page.wait_for_function(
         "() => document.querySelector('#plot-0-0').data?.length === 3"
@@ -454,6 +472,7 @@ def main() -> None:
             page.goto(artifact.as_uri(), wait_until="load", timeout=120_000)
             checks = (
                 (
+                    check_collapsed_defaults,
                     check_render,
                     check_hover,
                     check_hostile_labels,
@@ -464,6 +483,7 @@ def main() -> None:
                 )
                 if javascript
                 else (
+                    check_collapsed_defaults,
                     check_without_javascript,
                     check_all_metrics_shown,
                     check_metric_groups,

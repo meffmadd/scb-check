@@ -54,7 +54,7 @@
   </header>
   <noscript>Enable JavaScript to view the charts and hover measurements.</noscript>
   {% for group in groups %}
-  <details id="metric-group-{{ group.name }}" class="metric-group" open>
+  <details id="metric-group-{{ group.name }}" class="metric-group">
     <summary><h2>{{ group.name }}<span class="group-count">{{ group.sections | length }} metrics</span></h2></summary>
     {% for section in group.sections %}
     <section>

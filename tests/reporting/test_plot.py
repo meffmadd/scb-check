@@ -130,7 +130,7 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
     assert render_trend_html(trend) == html
 
 
-def test_metric_groups_are_native_expanded_disclosures_in_report_order() -> (
+def test_metric_groups_are_native_collapsed_disclosures_in_report_order() -> (
     None
 ):
     """Every plot belongs to exactly one collapsible top-level metric group."""
@@ -139,7 +139,7 @@ def test_metric_groups_are_native_expanded_disclosures_in_report_order() -> (
     page = ReportPage(render_trend_html(trend))
 
     assert tuple(page.groups) == tuple(report)
-    assert all("open" in attrs for attrs in page.groups.values())
+    assert all("open" not in attrs for attrs in page.groups.values())
     assert page.group_plots["syntax"] == [
         f"plot-{index}-{difference}"
         for index, series in enumerate(trend.series)
