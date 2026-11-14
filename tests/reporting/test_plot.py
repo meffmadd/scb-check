@@ -184,6 +184,61 @@ def test_only_fully_known_zero_deltas_are_unchanged() -> None:
     assert states["syntax.python.node_count"] == "false"
 
 
+@pytest.mark.parametrize("aggregate", [False, True])
+@pytest.mark.parametrize(
+    ("paths", "unchanged"),
+    [
+        ((Path("a"), Path("a"), None), "true"),
+        ((None, Path("a"), Path("a")), "true"),
+        ((Path("a"), None, Path("a")), "false"),
+    ],
+)
+def test_unchanged_filter_ignores_padding_but_not_internal_gaps(
+    paths: tuple[Path | None, ...],
+    unchanged: str,
+    *,
+    aggregate: bool,
+) -> None:
+    """Shorter series do not defeat filtering; gaps within observed spans still do."""
+    report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
+    trend = build_aligned_trend(
+        ("1", "2", "3"),
+        (
+            SnapshotSeries("short", paths),
+            SnapshotSeries("full", (Path("b"),) * 3),
+        ),
+        lambda _path: report,
+        aggregate="mean" if aggregate else None,
+    )
+    page = ReportPage(render_trend_html(trend))
+    states = {
+        series.metric: section["data-unchanged"]
+        for series, section in zip(
+            trend.trends[0].series, page.sections, strict=True
+        )
+    }
+    assert states["verbosity.score"] == unchanged
+    assert states["rfc.partial_response_sum"] == "false"
+
+
+@pytest.mark.parametrize("paths", [(Path("a"),), (None,), (Path("a"), None)])
+def test_no_comparisons_do_not_establish_unchanged(
+    paths: tuple[Path | None, ...],
+) -> None:
+    """An isolated snapshot or empty series provides no evidence of zero changes."""
+    report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
+    trend = build_aligned_trend(
+        tuple(str(index) for index in range(len(paths))),
+        (SnapshotSeries("isolated", paths),),
+        lambda _path: report,
+        aggregate="mean",
+    )
+    page = ReportPage(render_trend_html(trend))
+    assert all(
+        section["data-unchanged"] == "false" for section in page.sections
+    )
+
+
 def test_multiseries_payload_keeps_steps_means_and_unavailable_changes_visible() -> (
     None
 ):

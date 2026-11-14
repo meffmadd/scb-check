@@ -448,6 +448,25 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
     assert page.locator("img, iframe, script[src]").count() == 0
 
 
+def check_padded_series_filter(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN401
+    """Unequal series lengths must not make the unchanged toggle a no-op."""
+    first = trend.trends[0]
+    known_id = plot_id(first, "verbosity.score")
+    unknown_id = plot_id(first, "rfc.partial_response_sum")
+    page.wait_for_function(
+        "() => document.querySelector('#plot-0-0').data?.length === 3"
+    )
+    toggle = page.get_by_label("Hide unchanged metrics", exact=True)
+    assert page.locator(f"#{known_id}").is_visible()
+    toggle.check()
+    assert not page.locator(f"#{known_id}").is_visible()
+    assert not page.locator("#metric-group-verbosity").is_visible()
+    assert page.locator(f"#{unknown_id}").is_visible()
+    toggle.uncheck()
+    assert page.locator(f"#{known_id}").is_visible()
+    wait_for_chart_width(page, known_id)
+
+
 def main() -> None:
     """Install no dependencies; exercise the pinned tool environment and fail loudly."""
     assert version("playwright") == PLAYWRIGHT_VERSION, (
@@ -522,17 +541,35 @@ def main() -> None:
                     stdout.write(f"PASS {check.__name__}\n")
             if javascript:
                 aligned = representative_aligned_trend()
-                artifact.write_text(
-                    render_trend_html(aligned), encoding="utf-8"
+                report = compute_report(
+                    AnalysisResult(Flags(), {}, ProjectIR())
                 )
-                page.goto(artifact.as_uri(), wait_until="load", timeout=120_000)
-                try:
-                    check_aligned_series(page, aligned)
-                except (AssertionError, api.Error) as error:
-                    failures.append(f"check_aligned_series: {error}")
-                    stdout.write(f"FAIL {failures[-1]}\n")
-                else:
-                    stdout.write("PASS check_aligned_series\n")
+                padded = build_aligned_trend(
+                    ("1", "2", "3"),
+                    (
+                        SnapshotSeries("full", (Path("a"),) * 3),
+                        SnapshotSeries("short", (Path("b"), Path("b"), None)),
+                    ),
+                    lambda _path, report=report: report,
+                    aggregate="mean",
+                )
+                for fixture, check in (
+                    (aligned, check_aligned_series),
+                    (padded, check_padded_series_filter),
+                ):
+                    artifact.write_text(
+                        render_trend_html(fixture), encoding="utf-8"
+                    )
+                    page.goto(
+                        artifact.as_uri(), wait_until="load", timeout=120_000
+                    )
+                    try:
+                        check(page, fixture)
+                    except (AssertionError, api.Error) as error:
+                        failures.append(f"{check.__name__}: {error}")
+                        stdout.write(f"FAIL {failures[-1]}\n")
+                    else:
+                        stdout.write(f"PASS {check.__name__}\n")
                 artifact.write_text(render_trend_html(trend), encoding="utf-8")
             context.close()
         browser.close()

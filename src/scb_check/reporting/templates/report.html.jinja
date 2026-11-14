@@ -43,7 +43,7 @@
     <p>{{ payload.labels | length }} steps · {{ payload.runs | length }} series · {{ metric_count }} metrics · values and adjacent changes</p>
     <div class="report-controls">
       <label><input id="hide-unchanged" type="checkbox" aria-describedby="unchanged-help"> Hide unchanged metrics</label>
-      <small id="unchanged-help">All adjacent changes must be zero; unavailable changes stay visible.</small>
+      <small id="unchanged-help">Changes within observed series spans must be zero; outer missing steps are ignored. Internal gaps and unavailable changes stay visible.</small>
     </div>
     <details id="source-directories">
       <summary>Source directories</summary>
