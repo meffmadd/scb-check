@@ -275,40 +275,16 @@ def check_resize(page: Any, trend: Trend) -> None:  # noqa: ANN401
     assert abs(widths[0] - widths[2]) < 3, widths
 
 
-def check_unchanged_toggle(page: Any, trend: Trend) -> None:  # noqa: ANN401
-    """CSS alone hides unchanged pairs, preserves unknowns, and restores resized charts."""
-    toggle = page.get_by_label("Hide unchanged metrics", exact=True)
-    assert not toggle.is_checked()
-    stable = ("ric.partial_ratio_mean", "verbosity.flagged_loc")
-    kept = (
-        "verbosity.total_loc",
-        "verbosity.score",
-        "rfc.partial_response_sum",
-    )
-    toggle.check()
-    for metric in stable:
-        for difference in (False, True):
-            assert not page.locator(
-                f"#{plot_id(trend, metric, difference=difference)}"
-            ).is_visible()
-    for metric in kept:
-        for difference in (False, True):
-            assert page.locator(
-                f"#{plot_id(trend, metric, difference=difference)}"
-            ).is_visible()
-    page.set_viewport_size({"width": 480, "height": 1000})
-    toggle.uncheck()
-    for metric in stable:
-        chart_id = plot_id(trend, metric)
-        chart = page.locator(f"#{chart_id}")
-        assert chart.is_visible()
-        if chart.locator(".main-svg").count():
-            wait_for_chart_width(page, chart_id)
-    page.set_viewport_size({"width": 1280, "height": 1000})
+def check_all_metrics_shown(page: Any, trend: Trend | AlignedTrend) -> None:  # noqa: ANN401
+    """All value/change pairs are visible by default, without metric-filter controls."""
+    first = trend.trends[0] if isinstance(trend, AlignedTrend) else trend
+    assert page.get_by_role("checkbox").count() == 0
+    assert page.locator("section:visible").count() == len(first.series)
+    assert page.locator(".metric-plot:visible").count() == len(first.series) * 2
 
 
 def check_metric_groups(page: Any, trend: Trend) -> None:  # noqa: ANN401
-    """Native disclosures collapse whole groups and cooperate with filtering and resize."""
+    """Native disclosures collapse whole groups and preserve chart sizing on reopen."""
     groups = page.locator("details.metric-group")
     assert groups.count() == 14
     group = page.locator("#metric-group-syntax")
@@ -327,21 +303,6 @@ def check_metric_groups(page: Any, trend: Trend) -> None:  # noqa: ANN401
     assert chart.is_visible()
     if chart.locator(".main-svg").count():
         wait_for_chart_width(page, chart_id)
-    toggle = page.get_by_label("Hide unchanged metrics", exact=True)
-    toggle.check()
-    assert not page.locator("#metric-group-cog_erosion").is_visible()
-    assert summary.is_visible()
-    assert chart.is_visible()
-    assert not page.locator(
-        f"#{plot_id(trend, 'syntax.node_count')}"
-    ).is_visible()
-    toggle.uncheck()
-    assert page.locator("#metric-group-cog_erosion").is_visible()
-    summary.press("Enter")
-    toggle.check()
-    toggle.uncheck()
-    assert not group.evaluate("element => element.open")
-    summary.press("Enter")
     page.set_viewport_size({"width": 1280, "height": 1000})
 
 
@@ -432,11 +393,7 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
     assert "percentage points" in hover(page, change_id, 0)
     unknown = page.locator(f"#{plot_id(first, 'rfc.partial_response_sum')}")
     assert unknown.evaluate("p => p.data[2].y") == [None] * 3
-    page.get_by_label("Hide unchanged metrics", exact=True).check()
-    assert (
-        chart.is_visible()
-    )  # Sparse adjacent changes cannot be hidden as unchanged.
-    page.get_by_label("Hide unchanged metrics", exact=True).uncheck()
+    check_all_metrics_shown(page, trend)
     group = page.locator("#metric-group-verbosity")
     group.locator("summary").click()
     page.set_viewport_size({"width": 480, "height": 1000})
@@ -446,25 +403,6 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
     assert "Contributors: 2" in hover(page, chart_id, 5)
     assert page.evaluate("window.__injected === undefined")
     assert page.locator("img, iframe, script[src]").count() == 0
-
-
-def check_padded_series_filter(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN401
-    """Unequal series lengths must not make the unchanged toggle a no-op."""
-    first = trend.trends[0]
-    known_id = plot_id(first, "verbosity.score")
-    unknown_id = plot_id(first, "rfc.partial_response_sum")
-    page.wait_for_function(
-        "() => document.querySelector('#plot-0-0').data?.length === 3"
-    )
-    toggle = page.get_by_label("Hide unchanged metrics", exact=True)
-    assert page.locator(f"#{known_id}").is_visible()
-    toggle.check()
-    assert not page.locator(f"#{known_id}").is_visible()
-    assert not page.locator("#metric-group-verbosity").is_visible()
-    assert page.locator(f"#{unknown_id}").is_visible()
-    toggle.uncheck()
-    assert page.locator(f"#{known_id}").is_visible()
-    wait_for_chart_width(page, known_id)
 
 
 def main() -> None:
@@ -520,14 +458,14 @@ def main() -> None:
                     check_hover,
                     check_hostile_labels,
                     check_gaps_and_units,
-                    check_unchanged_toggle,
+                    check_all_metrics_shown,
                     check_metric_groups,
                     check_resize,
                 )
                 if javascript
                 else (
                     check_without_javascript,
-                    check_unchanged_toggle,
+                    check_all_metrics_shown,
                     check_metric_groups,
                 )
             )
@@ -541,35 +479,17 @@ def main() -> None:
                     stdout.write(f"PASS {check.__name__}\n")
             if javascript:
                 aligned = representative_aligned_trend()
-                report = compute_report(
-                    AnalysisResult(Flags(), {}, ProjectIR())
+                artifact.write_text(
+                    render_trend_html(aligned), encoding="utf-8"
                 )
-                padded = build_aligned_trend(
-                    ("1", "2", "3"),
-                    (
-                        SnapshotSeries("full", (Path("a"),) * 3),
-                        SnapshotSeries("short", (Path("b"), Path("b"), None)),
-                    ),
-                    lambda _path, report=report: report,
-                    aggregate="mean",
-                )
-                for fixture, check in (
-                    (aligned, check_aligned_series),
-                    (padded, check_padded_series_filter),
-                ):
-                    artifact.write_text(
-                        render_trend_html(fixture), encoding="utf-8"
-                    )
-                    page.goto(
-                        artifact.as_uri(), wait_until="load", timeout=120_000
-                    )
-                    try:
-                        check(page, fixture)
-                    except (AssertionError, api.Error) as error:
-                        failures.append(f"{check.__name__}: {error}")
-                        stdout.write(f"FAIL {failures[-1]}\n")
-                    else:
-                        stdout.write(f"PASS {check.__name__}\n")
+                page.goto(artifact.as_uri(), wait_until="load", timeout=120_000)
+                try:
+                    check_aligned_series(page, aligned)
+                except (AssertionError, api.Error) as error:
+                    failures.append(f"check_aligned_series: {error}")
+                    stdout.write(f"FAIL {failures[-1]}\n")
+                else:
+                    stdout.write("PASS check_aligned_series\n")
                 artifact.write_text(render_trend_html(trend), encoding="utf-8")
             context.close()
         browser.close()

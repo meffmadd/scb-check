@@ -10,7 +10,6 @@ from jinja2 import StrictUndefined
 from markupsafe import Markup
 
 from scb_check.models import AlignedTrend
-from scb_check.models import ReportValue
 from scb_check.models import Trend
 from scb_check.models import TrendSeries
 from scb_check.reporting.score import REPORT_UNITS
@@ -31,14 +30,12 @@ class _Plot:
 class _Section:
     metric: str
     plots: tuple[_Plot, ...]
-    unchanged: bool
 
 
 @dataclass(frozen=True, slots=True)
 class _Group:
     name: str
     sections: tuple[_Section, ...]
-    unchanged: bool
 
 
 def render_trend_html(trend: Trend | AlignedTrend) -> str:
@@ -95,16 +92,10 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
         if trend.mean:
             displayed = (*displayed, trend.mean[index])
         sections_by_group.setdefault(group, []).append(
-            _prepare_section(
-                index, displayed, unchanged=_is_unchanged(trend, index)
-            )
+            _prepare_section(index, displayed)
         )
     groups = tuple(
-        _Group(
-            name,
-            tuple(sections),
-            unchanged=all(section.unchanged for section in sections),
-        )
+        _Group(name, tuple(sections))
         for name, sections in sections_by_group.items()
     )
     return environment.get_template("report.html.jinja").render(
@@ -129,38 +120,9 @@ def _series_payload(series: TrendSeries) -> dict[str, object]:
     }
 
 
-def _is_unchanged(trend: AlignedTrend, index: int) -> bool:
-    changes: list[ReportValue] = []
-    for run in trend.trends:
-        occupied = tuple(
-            position
-            for position, snapshot in enumerate(run.snapshots)
-            if snapshot is not None
-        )
-        if occupied:
-            # Padding outside a series' observed span is not an unknown change.
-            changes.extend(
-                run.series[index].differences[
-                    occupied[0] + 1 : occupied[-1] + 1
-                ]
-            )
-    if trend.mean:
-        mean = trend.mean[index]
-        changes.extend(
-            change
-            for change, count in zip(
-                mean.differences, mean.change_contributors, strict=True
-            )
-            if count
-        )
-    return bool(changes) and all(change == 0 for change in changes)
-
-
 def _prepare_section(
     index: int,
     displayed: tuple[TrendSeries, ...],
-    *,
-    unchanged: bool,
 ) -> _Section:
     series = displayed[0]
     plots = []
@@ -186,7 +148,6 @@ def _prepare_section(
     return _Section(
         series.metric,
         tuple(plots),
-        unchanged=unchanged,
     )
 
 

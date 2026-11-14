@@ -26,7 +26,7 @@ class ReportPage(HTMLParser):
         self.plot_ids: list[str] = []
         self.cells: list[str] = []
         self.tables = 0
-        self.sections: list[dict[str, str | None]] = []
+        self.inputs: list[dict[str, str | None]] = []
         self.groups: dict[str, dict[str, str | None]] = {}
         self.group_plots: dict[str, list[str]] = {}
         self.active_group: str | None = None
@@ -52,8 +52,8 @@ class ReportPage(HTMLParser):
                 )
         if tag == "table":
             self.tables += 1
-        if tag == "section":
-            self.sections.append(attributes)
+        if tag == "input":
+            self.inputs.append(attributes)
         if tag == "details" and attributes.get("id") == "source-directories":
             self.source_details = attributes
         if (
@@ -104,6 +104,7 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
     assert page.payload["runs"][0]["comparisons"][0] is None
     assert len(page.plot_ids) == len(trend.series) * 2
     assert page.tables == 0
+    assert page.inputs == []
     assert page.source_details is not None
     assert "open" not in page.source_details
     for path in paths:
@@ -148,101 +149,10 @@ def test_metric_groups_are_native_expanded_disclosures_in_report_order() -> (
     assert [
         plot for plots in page.group_plots.values() for plot in plots
     ] == page.plot_ids
-    assert page.groups["verbosity"]["data-unchanged"] == "true"
-    assert page.groups["rfc"]["data-unchanged"] == "false"
 
 
-def test_only_fully_known_zero_deltas_are_unchanged() -> None:
-    """Unknowns, tiny changes and offsetting changes must not be hidden as unchanged."""
-    reports = []
-    for index in range(3):
-        report = serialize_report(
-            compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
-        )
-        report["verbosity"]["score"] = 0.1
-        report["verbosity"]["total_loc"] = (1, 2, 1)[index]
-        report["ric"]["partial_ratio_mean"] = (1, 1 + 1e-10, 1 + 1e-10)[index]
-        report["ric"]["partial_ratio_max"] = (None, 0, 0)[index]
-        reports.append(report)
-    reports[2]["syntax"]["python.node_count"] = 5
-    inputs = iter(reports)
-    trend = build_trend(
-        (Path("a"), Path("b"), Path("c")), lambda _path: next(inputs)
-    )
-    page = ReportPage(render_trend_html(trend))
-    states = {
-        series.metric: section["data-unchanged"]
-        for series, section in zip(trend.series, page.sections, strict=True)
-    }
-
-    assert states["verbosity.score"] == "true"
-    assert states["verbosity.flagged_loc"] == "true"
-    assert states["verbosity.total_loc"] == "false"
-    assert states["ric.partial_ratio_mean"] == "false"
-    assert states["ric.partial_ratio_max"] == "false"
-    assert states["rfc.partial_response_sum"] == "false"
-    assert states["syntax.python.node_count"] == "false"
-
-
-@pytest.mark.parametrize("aggregate", [False, True])
-@pytest.mark.parametrize(
-    ("paths", "unchanged"),
-    [
-        ((Path("a"), Path("a"), None), "true"),
-        ((None, Path("a"), Path("a")), "true"),
-        ((Path("a"), None, Path("a")), "false"),
-    ],
-)
-def test_unchanged_filter_ignores_padding_but_not_internal_gaps(
-    paths: tuple[Path | None, ...],
-    unchanged: str,
-    *,
-    aggregate: bool,
-) -> None:
-    """Shorter series do not defeat filtering; gaps within observed spans still do."""
-    report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
-    trend = build_aligned_trend(
-        ("1", "2", "3"),
-        (
-            SnapshotSeries("short", paths),
-            SnapshotSeries("full", (Path("b"),) * 3),
-        ),
-        lambda _path: report,
-        aggregate="mean" if aggregate else None,
-    )
-    page = ReportPage(render_trend_html(trend))
-    states = {
-        series.metric: section["data-unchanged"]
-        for series, section in zip(
-            trend.trends[0].series, page.sections, strict=True
-        )
-    }
-    assert states["verbosity.score"] == unchanged
-    assert states["rfc.partial_response_sum"] == "false"
-
-
-@pytest.mark.parametrize("paths", [(Path("a"),), (None,), (Path("a"), None)])
-def test_no_comparisons_do_not_establish_unchanged(
-    paths: tuple[Path | None, ...],
-) -> None:
-    """An isolated snapshot or empty series provides no evidence of zero changes."""
-    report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
-    trend = build_aligned_trend(
-        tuple(str(index) for index in range(len(paths))),
-        (SnapshotSeries("isolated", paths),),
-        lambda _path: report,
-        aggregate="mean",
-    )
-    page = ReportPage(render_trend_html(trend))
-    assert all(
-        section["data-unchanged"] == "false" for section in page.sections
-    )
-
-
-def test_multiseries_payload_keeps_steps_means_and_unavailable_changes_visible() -> (
-    None
-):
-    """Multiple lines share declared steps without hiding sparse adjacent changes."""
+def test_multiseries_payload_keeps_steps_means_and_gaps() -> None:
+    """Multiple lines share declared steps while retaining sparse measurements."""
     report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
     trend = build_aligned_trend(
         ("3", "1", "2"),
@@ -261,7 +171,7 @@ def test_multiseries_payload_keeps_steps_means_and_unavailable_changes_visible()
     ]
     assert page.payload["runs"][0]["paths"] == ["a", None, "a"]
     assert page.payload["mean"][0]["contributors"] == [2, 1, 2]
-    assert page.sections[0]["data-unchanged"] == "false"
+    assert page.inputs == []
     assert len(page.plot_ids) == len(trend.trends[0].series) * 2
 
 

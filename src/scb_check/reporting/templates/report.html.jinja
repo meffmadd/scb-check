@@ -19,13 +19,6 @@
     .metric-group > summary h2 { display: inline; font-size: 1.2rem; color: #18212b; }
     .group-count { margin-left: .75rem; font-size: .85rem; color: #536273; }
     section { margin: 1rem 0 2rem; }
-    .report-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin: 1rem 0; }
-    .report-controls label { cursor: pointer; }
-    .report-controls small { color: #536273; }
-    /* Retain horizontal layout while hidden so Plotly can resize without toggle JavaScript. */
-    body:has(#hide-unchanged:checked) :is(section, .metric-group)[data-unchanged="true"] {
-      height: 0; overflow: hidden; margin: 0; border: 0; visibility: hidden;
-    }
     section > h3 { margin-bottom: .75rem; font: 600 1rem/1.5 ui-monospace, monospace; }
     .plots { display: grid; gap: 1rem; }
     .plot-card { min-width: 0; padding: 1rem .25rem .25rem; background: #fff; border: 1px solid #e0e5ec; border-radius: .75rem; }
@@ -41,10 +34,6 @@
   <header>
     <h1>{{ title }}</h1>
     <p>{{ payload.labels | length }} steps · {{ payload.runs | length }} series · {{ metric_count }} metrics · values and adjacent changes</p>
-    <div class="report-controls">
-      <label><input id="hide-unchanged" type="checkbox" aria-describedby="unchanged-help"> Hide unchanged metrics</label>
-      <small id="unchanged-help">Changes within observed series spans must be zero; outer missing steps are ignored. Internal gaps and unavailable changes stay visible.</small>
-    </div>
     <details id="source-directories">
       <summary>Source directories</summary>
       {% for run in payload.runs %}
@@ -65,10 +54,10 @@
   </header>
   <noscript>Enable JavaScript to view the charts and hover measurements.</noscript>
   {% for group in groups %}
-  <details id="metric-group-{{ group.name }}" class="metric-group" data-unchanged="{{ 'true' if group.unchanged else 'false' }}" open>
+  <details id="metric-group-{{ group.name }}" class="metric-group" open>
     <summary><h2>{{ group.name }}<span class="group-count">{{ group.sections | length }} metrics</span></h2></summary>
     {% for section in group.sections %}
-    <section data-unchanged="{{ 'true' if section.unchanged else 'false' }}">
+    <section>
     <h3>{{ section.metric }}</h3>
     <div class="plots">
     {% for plot in section.plots %}
