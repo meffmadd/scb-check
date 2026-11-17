@@ -19,23 +19,31 @@
     return number + (unit === "fraction" && !difference ? "%" : " " + displayUnit(unit, difference));
   }
 
-  function hoverText(series, input, difference) {
+  function hoverText(series, name, input, difference) {
     const value = (difference ? series.differences : series.values)[input];
-    return [
-      payload.labels[input],
-      `${difference ? "Change" : "Value"}: ${measurement(value, series.unit, difference)}`
-    ].map(escapeText).join("<br>");
+    const lines = [name, payload.labels[input],
+      `${difference ? "Change" : "Value"}: ${measurement(value, series.unit, difference)}`];
+    return lines.filter(line => line !== "").map(escapeText).join("<br>");
   }
 
-  for (const [index, series] of payload.series.entries()) {
+  for (const [index, series] of payload.runs[0].series.entries()) {
     for (const difference of [false, true]) {
-      const raw = difference ? series.differences : series.values;
       const scale = series.unit === "fraction" ? 100 : 1;
       const element = document.getElementById(`plot-${index}-${Number(difference)}`);
-      const y = raw.map(value => value === null ? null : value * scale);
+      const traces = payload.runs.map(run => {
+        const item = run.series[index];
+        const raw = difference ? item.differences : item.values;
+        return {
+          type: "scatter", mode: "lines+markers", name: escapeText(run.name || "Snapshots"),
+          x: raw.map((_, input) => input + 1),
+          y: raw.map(value => value === null ? null : value * scale), connectgaps: false,
+          text: raw.map((_, input) => hoverText(item, run.name, input, difference)),
+          hovertemplate: "%{text}<extra></extra>", marker: {size: 7}
+        };
+      });
       function labels() {
         // Wrap even unbroken directory names; keep full labels at narrow widths.
-        const width = Math.max(8, Math.min(24, Math.floor(element.clientWidth / payload.paths.length / 8)));
+        const width = Math.max(8, Math.min(24, Math.floor(element.clientWidth / payload.labels.length / 8)));
         const wrapped = payload.labels.map(label => Array.from(label).reduce((chunks, char, offset) => {
           if (offset % width === 0) chunks.push("");
           chunks[chunks.length - 1] += char;
@@ -50,16 +58,12 @@
         element.replaceChildren(message);
       }
       try {
-        Plotly.newPlot(element, [{
-          type: "scatter", mode: "lines+markers",
-          x: raw.map((_, input) => input + 1), y, connectgaps: false,
-          text: raw.map((_, input) => hoverText(series, input, difference)),
-          hovertemplate: "%{text}<extra></extra>", marker: {size: 7}
-        }], {
-          autosize: true, hovermode: "closest", showlegend: false,
+        Plotly.newPlot(element, traces, {
+          autosize: true, hovermode: "closest", showlegend: payload.runs.length > 1 || Boolean(payload.runs[0].name),
+          legend: {orientation: "h", y: 1.02, x: 0, xanchor: "left", yanchor: "bottom"},
           margin: {l: 80, r: 30, t: 30, b: 70},
           xaxis: {
-            tickmode: "array", tickvals: y.map((_, input) => input + 1),
+            tickmode: "array", tickvals: payload.labels.map((_, input) => input + 1),
             ticktext: labels(), tickangle: 0, automargin: true, title: {text: "Input order"}
           },
           yaxis: {

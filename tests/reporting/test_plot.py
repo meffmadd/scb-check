@@ -7,9 +7,11 @@ import pytest
 
 from scb_check.models import AnalysisResult
 from scb_check.models import Flags
+from scb_check.models import SnapshotSeries
 from scb_check.reporting.plot import render_trend_html
 from scb_check.reporting.score import compute_report
 from scb_check.reporting.score import serialize_report
+from scb_check.reporting.trend import build_aligned_trend
 from scb_check.reporting.trend import build_trend
 from scb_check.tree_walking.models import ProjectIR
 
@@ -24,7 +26,7 @@ class ReportPage(HTMLParser):
         self.plot_ids: list[str] = []
         self.cells: list[str] = []
         self.tables = 0
-        self.sections: list[dict[str, str | None]] = []
+        self.inputs: list[dict[str, str | None]] = []
         self.groups: dict[str, dict[str, str | None]] = {}
         self.group_plots: dict[str, list[str]] = {}
         self.active_group: str | None = None
@@ -45,14 +47,20 @@ class ReportPage(HTMLParser):
             assert attributes.get("aria-labelledby")
             self.plot_ids.append(str(attributes["id"]))
             if self.active_group is not None:
-                self.group_plots[self.active_group].append(str(attributes["id"]))
+                self.group_plots[self.active_group].append(
+                    str(attributes["id"])
+                )
         if tag == "table":
             self.tables += 1
-        if tag == "section":
-            self.sections.append(attributes)
+        if tag == "input":
+            self.inputs.append(attributes)
         if tag == "details" and attributes.get("id") == "source-directories":
             self.source_details = attributes
-        if tag == "details" and (group_id := attributes.get("id", "")) and group_id.startswith("metric-group-"):
+        if (
+            tag == "details"
+            and (group_id := attributes.get("id", ""))
+            and group_id.startswith("metric-group-")
+        ):
             self.active_group = group_id.removeprefix("metric-group-")
             self.groups[self.active_group] = attributes
             self.group_plots[self.active_group] = []
@@ -90,18 +98,19 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
     page = ReportPage(html)
     text = " ".join(page.cells)
 
-    assert page.payload["paths"] == [str(path) for path in paths]
+    assert page.payload["runs"][0]["paths"] == [str(path) for path in paths]
     assert page.payload["labels"] == ["1: same", "2: same"]
-    assert page.payload["snapshots"] == [report, report]
-    assert page.payload["comparisons"][0] is None
+    assert page.payload["runs"][0]["snapshots"] == [report, report]
+    assert page.payload["runs"][0]["comparisons"][0] is None
     assert len(page.plot_ids) == len(trend.series) * 2
     assert page.tables == 0
+    assert page.inputs == []
     assert page.source_details is not None
     assert "open" not in page.source_details
     for path in paths:
         assert page.cells.count(str(path)) == 1
     assert len(set(page.plot_ids)) == len(page.plot_ids)
-    assert page.payload["series"][0] == {
+    assert page.payload["runs"][0]["series"][0] == {
         "metric": "verbosity.score",
         "unit": "fraction",
         "values": [0.125, 0.125],
@@ -121,49 +130,49 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
     assert render_trend_html(trend) == html
 
 
-def test_metric_groups_are_native_expanded_disclosures_in_report_order() -> None:
+def test_metric_groups_are_native_collapsed_disclosures_in_report_order() -> (
+    None
+):
     """Every plot belongs to exactly one collapsible top-level metric group."""
     report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
     trend = build_trend((Path("a"), Path("b")), lambda _path: report)
     page = ReportPage(render_trend_html(trend))
 
     assert tuple(page.groups) == tuple(report)
-    assert all("open" in attrs for attrs in page.groups.values())
+    assert all("open" not in attrs for attrs in page.groups.values())
     assert page.group_plots["syntax"] == [
         f"plot-{index}-{difference}"
         for index, series in enumerate(trend.series)
         if series.metric.startswith("syntax.")
         for difference in (0, 1)
     ]
-    assert [plot for plots in page.group_plots.values() for plot in plots] == page.plot_ids
-    assert page.groups["verbosity"]["data-unchanged"] == "true"
-    assert page.groups["rfc"]["data-unchanged"] == "false"
+    assert [
+        plot for plots in page.group_plots.values() for plot in plots
+    ] == page.plot_ids
 
 
-def test_only_fully_known_zero_deltas_are_unchanged() -> None:
-    """Unknowns, tiny changes and offsetting changes must not be hidden as unchanged."""
-    reports = []
-    for index in range(3):
-        report = serialize_report(compute_report(AnalysisResult(Flags(), {}, ProjectIR())))
-        report["verbosity"]["score"] = 0.1
-        report["verbosity"]["total_loc"] = (1, 2, 1)[index]
-        report["ric"]["partial_ratio_mean"] = (1, 1 + 1e-10, 1 + 1e-10)[index]
-        report["ric"]["partial_ratio_max"] = (None, 0, 0)[index]
-        reports.append(report)
-    reports[2]["syntax"]["python.node_count"] = 5
-    inputs = iter(reports)
-    trend = build_trend((Path("a"), Path("b"), Path("c")), lambda _path: next(inputs))
+def test_multiseries_payload_keeps_steps_and_gaps() -> None:
+    """Multiple lines share declared steps while retaining sparse measurements."""
+    report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
+    trend = build_aligned_trend(
+        ("3", "1", "2"),
+        (
+            SnapshotSeries("<problem>", (Path("a"), None, Path("a"))),
+            SnapshotSeries("other", (Path("b"), Path("b"), Path("b"))),
+        ),
+        lambda _path: report,
+    )
     page = ReportPage(render_trend_html(trend))
-    states = {series.metric: section["data-unchanged"]
-        for series, section in zip(trend.series, page.sections, strict=True)}
-
-    assert states["verbosity.score"] == "true"
-    assert states["verbosity.flagged_loc"] == "true"
-    assert states["verbosity.total_loc"] == "false"
-    assert states["ric.partial_ratio_mean"] == "false"
-    assert states["ric.partial_ratio_max"] == "false"
-    assert states["rfc.partial_response_sum"] == "false"
-    assert states["syntax.python.node_count"] == "false"
+    assert page.payload["labels"] == ["3", "1", "2"]
+    assert [run["name"] for run in page.payload["runs"]] == [
+        "<problem>",
+        "other",
+    ]
+    assert page.payload["runs"][0]["paths"] == ["a", None, "a"]
+    assert set(page.payload) == {"labels", "runs", "units"}
+    assert page.payload["runs"][0]["series"][0]["values"] == [0, None, 0]
+    assert page.inputs == []
+    assert len(page.plot_ids) == len(trend.trends[0].series) * 2
 
 
 def test_untrusted_paths_round_trip_without_script_or_markup_injection() -> (
@@ -175,5 +184,5 @@ def test_untrusted_paths_round_trip_without_script_or_markup_injection() -> (
     trend = build_trend((path, path), lambda _path: report)
     page = ReportPage(render_trend_html(trend))
     assert len(page.scripts) == 3
-    assert page.payload["paths"] == [str(path), str(path)]
+    assert page.payload["runs"][0]["paths"] == [str(path), str(path)]
     assert str(path) in " ".join(page.cells)

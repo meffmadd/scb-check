@@ -27,7 +27,7 @@ def _invoke(paths: tuple[Path, ...], *options: str) -> Result:
     )
 
 
-def _payload(output: Path) -> dict[str, Any]:
+def _document(output: Path) -> dict[str, Any]:
     match = re.search(
         r'<script id="report-data" type="application/json">(.*?)</script>',
         output.read_text("utf-8"),
@@ -35,6 +35,10 @@ def _payload(output: Path) -> dict[str, Any]:
     )
     assert match
     return json.loads(match[1])
+
+
+def _payload(output: Path) -> dict[str, Any]:
+    return _document(output)["runs"][0]
 
 
 @pytest.fixture
@@ -91,6 +95,122 @@ def test_complete_snapshot_and_adjacent_diff_parity(
         for group, fields in report.items()
         for field in fields
     }
+
+
+def test_manifest_relative_paths_alignment_and_positional_parity(
+    roots: tuple[Path, ...],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both input forms produce identical metrics, with manifest-relative sparse peers."""
+    manifest = tmp_path / "comparison.toml"
+    manifest.write_text(
+        'steps = ["3", "1", "2"]\n[series.problem]\n"3" = "first"\n"1" = "second"\n"2" = "third"\n[series.sparse]\n"3" = "third"\n"2" = "first"\n',
+        encoding="utf-8",
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    output = elsewhere / "manifest.html"
+    result = _invoke(
+        (),
+        "--manifest",
+        str(manifest),
+        "--output",
+        str(output),
+    )
+    assert result.exit_code == 0, result.output
+    document = _document(output)
+    assert document["labels"] == ["3", "1", "2"]
+    assert document["runs"][0]["paths"] == [str(path) for path in roots]
+    metric = next(
+        item
+        for item in document["runs"][1]["series"]
+        if item["metric"] == "verbosity.total_loc"
+    )
+    assert metric["values"] == [2, None, 1]
+    assert metric["differences"] == [None, None, None]
+    positional = _invoke(roots)
+    assert positional.exit_code == 0, positional.output
+    assert (
+        document["runs"][0]["series"] == _payload(Path("report.html"))["series"]
+    )
+    assert set(document) == {"labels", "runs", "units"}
+
+
+@pytest.mark.parametrize(
+    ("content", "diagnostic"),
+    [
+        ("steps = [", "Invalid value"),
+        ('steps = ["1", "1"]\n[series.a]\n', "unique strings"),
+        ('steps = ["1"]\n[series.a]\n"2" = "first"', "undeclared steps"),
+        ("steps = [1]\n[series.a]\n", "unique strings"),
+        ("steps = []\n[series.a]\n", "unique strings"),
+        ('steps = ["1"]\nseries = []', "nonempty table"),
+        ('steps = ["1"]\n[series]\n', "nonempty table"),
+        ('steps = ["1"]\n[series.a]\n"1" = 3', "nonempty directory path"),
+        ('steps = ["1"]\n[series.a]\n"1" = ""', "nonempty directory path"),
+        (
+            'steps = ["1"]\n[series.a]\n"1" = "missing"',
+            "invalid source directory",
+        ),
+        (
+            'steps = ["1", "2"]\n[series.a]\n"1" = "first"\n"2" = "missing"',
+            "invalid source directory",
+        ),
+        (
+            'steps = ["1"]\n[series.a]\n"1" = "first/sample.py"',
+            "invalid source directory",
+        ),
+        ('steps = ["1"]\nextra = true\n[series.a]\n', "requires exactly"),
+    ],
+)
+def test_invalid_manifest_fails_before_analysis_and_preserves_output(
+    roots: tuple[Path, ...],
+    content: str,
+    diagnostic: str,
+) -> None:
+    """Malformed manifests fail atomically before reading any configured source."""
+    # If analysis starts, this directive would mask the manifest validation error.
+    (roots[0] / "sample.py").write_text("# scbc ignore[unknown-rule]\nx = 1\n")
+    check = CliRunner().invoke(main, ["check", str(roots[0]), "--disable-sg"])
+    assert check.exit_code == 2
+    assert "unknown-rule" in check.stderr
+    Path("input.toml").write_text(content)
+    Path("report.html").write_text("existing artifact")
+    result = _invoke((), "--manifest", "input.toml")
+    assert result.exit_code == 2
+    assert diagnostic in result.stderr
+    assert "unknown-rule" not in result.stderr
+    assert Path("report.html").read_text() == "existing artifact"
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ("--manifest", "missing.toml"),
+        ("--aggregate", "mean"),
+    ],
+)
+def test_manifest_conflicts_and_unsupported_options_are_usage_errors(
+    roots: tuple[Path, ...],
+    options: tuple[str, ...],
+) -> None:
+    """Conflicting input forms and unsupported options fail without an artifact."""
+    result = _invoke(roots, *options)
+    assert result.exit_code == 2
+    assert result.stderr
+    assert not Path("report.html").exists()
+
+
+@pytest.mark.usefixtures("roots")
+@pytest.mark.parametrize("manifest", ["missing.toml", "first"])
+def test_unreadable_manifest_is_a_usage_error(manifest: str) -> None:
+    """Missing files and directories cannot be used as manifests."""
+    result = _invoke((), "--manifest", manifest)
+    assert result.exit_code == 2
+    assert result.stderr
+    assert not Path("report.html").exists()
 
 
 def test_custom_output_reversal_and_repetition(roots: tuple[Path, ...]) -> None:

@@ -138,6 +138,7 @@ This measures snapshot changes, **not code churn**: literal edits or renames tha
 
 | Option | Behavior |
 | --- | --- |
+| `--manifest FILE` | TOML manifest of named series aligned by explicit steps; cannot be combined with positional paths. |
 | `--output PATH` | HTML destination; defaults to `report.html` in the current directory. |
 | `--config FILE` | Shared settings file; otherwise discover settings from the current directory. |
 | `--include-all` | Include gitignored files and normally suppressed findings for every input. |
@@ -145,13 +146,41 @@ This measures snapshot changes, **not code churn**: literal edits or renames tha
 | `-v` / `--verbosity` | Info logging; repeat as `-vv` for debug logging. |
 | `--help` | Show usage. |
 
+Alternatively, `scb-check report --manifest comparison.toml --output comparison.html` accepts one or more named series. A single-series manifest produces the same values and changes as equivalent positional inputs:
+
+```toml
+steps = ["1", "2", "3"]
+
+[series.eve_industry]
+"1" = "eve_industry/checkpoint_1/snapshot"
+"2" = "eve_industry/checkpoint_2/snapshot"
+"3" = "eve_industry/checkpoint_3/snapshot"
+```
+
+Multiple series share those exact step identifiers and their declared order:
+
+```toml
+steps = ["1", "2", "3"]
+
+[series.problem-1]
+"1" = "run/problem-1/checkpoint_1/snapshot"
+"2" = "run/problem-1/checkpoint_2/snapshot"
+"3" = "run/problem-1/checkpoint_3/snapshot"
+
+[series.problem-2]
+"1" = "run/problem-2/checkpoint_1/snapshot"
+"3" = "run/problem-2/checkpoint_3/snapshot"
+```
+
+Relative source paths resolve against the manifest's directory, not the working directory. Steps must be a nonempty list of unique, nonempty strings; `series` must contain named tables mapping declared steps to nonempty directory paths. Omitted entries are missing snapshots, never zeros. Explicit invalid paths, undeclared steps, malformed TOML, and unknown top-level keys are errors before analysis. An explicitly configured snapshot must still contain usable source.
+
+Each metric plots one line per series with a legend and concise series/step hover labels. Missing snapshots interrupt both values and adjacent changes: a change compares only the current and previous **declared step** within the same series, never an earlier available checkpoint.
+
 One configuration and equal analysis flags apply to every snapshot, with ordinary `check`/`diff` semantics. Tree-local configs are not loaded separately. By default, exclusions and suppressions apply and ast-grep runs normally. `--include-all` includes ignored, informational, and boundary-suppressed findings, but configured excludes and default excluded directories still apply.
 
-Every field in the full [check report](#check-json-report-fields), including counts and per-language fields, gets separate value and adjacent-change line plots. Changes are **current minus previous**, positioned at the later input; the first input has no previous difference. The x-axis is an evenly spaced input index, not elapsed time. Labels include index and directory basename. Hover shows only the input label and the plotted value or signed change, with its unit. Full resolved paths appear once in a collapsed **Source directories** list; there are no per-plot tables. Value and change plots sit side by side on wide screens and stack on narrow screens.
+Every field in the full [check report](#check-json-report-fields), including counts and per-language fields, gets separate value and adjacent-change line plots. Changes are **current minus previous**, positioned at the later input; the first input has no previous difference. The x-axis is evenly spaced, not elapsed time. Positional labels include index and directory basename; manifest labels are the declared steps. Hover shows the series (when named), input label and plotted value or signed change with its unit. Full resolved paths appear once in a collapsed **Source directories** list; there are no per-plot tables. Value and change plots sit side by side on wide screens and stack on narrow screens.
 
-Metrics are organized into collapsible groups such as `syntax`, containing fields such as `syntax.python.node_count`. Groups start expanded; click the group heading (or use the keyboard) to collapse or reopen the whole group. These native disclosures work without JavaScript; charts still require it.
-
-Use **Hide unchanged metrics** to hide both plots for metrics whose adjacent changes are all exactly zero. The checkbox is off by default and works through CSS, without toggle JavaScript. Metrics with any unavailable change stay visible; offsetting changes are not treated as unchanged. Groups with no remaining metrics are hidden too, without changing their expanded/collapsed state.
+Metrics are organized into collapsible groups such as `syntax`, containing fields such as `syntax.python.node_count`. Groups start collapsed; click the group heading (or use the keyboard) to expand or collapse the whole group. These native disclosures work without JavaScript; charts still require it.
 
 Unavailable values are gaps, not zeros or interpolated lines; isolated observations remain dots. Language fields cover the union of inputs, but absent snapshot language counts remain unavailable. Only subtraction zero-fills absent dotted syntax counts; a language absent from both adjacent snapshots has no change measurement. Explicit `null` propagates. Fractions display as percentages and their changes as percentage points; counts, masses, and dimensionless ratios retain metric-owned units.
 
