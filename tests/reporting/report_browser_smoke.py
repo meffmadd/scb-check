@@ -382,9 +382,13 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
     ]
     assert chart.evaluate("p => p.data.map(t => t.connectgaps)") == [False] * 2
     assert chart.locator(".legendtext").all_text_contents() == [
-        "problem-a",
-        trend.trends[1].name,
+        "problem-a (τ: 0.33)",
+        f"{trend.trends[1].name} (τ: 1.00)",
     ]
+    assert (
+        "Mean τ: 0.67 (2/2 contributors)"
+        in page.locator(f"#{chart_id}-heading").inner_text()
+    )
     assert chart.locator(".xtick text").all_text_contents() == [
         "third",
         "first",
@@ -397,6 +401,10 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
         arg=chart_id,
     )
     change_id = plot_id(first, "verbosity.score", difference=True)
+    assert page.locator(f"#{change_id} .legendtext").all_text_contents() == [
+        "problem-a",
+        trend.trends[1].name,
+    ]
     assert page.locator(f"#{change_id}").evaluate(
         "p => p.data.map(t => t.y.map(v => v === null ? null : Math.round(v)))"
     ) == [[None, 20, -10], [None, None, None]]

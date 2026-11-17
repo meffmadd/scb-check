@@ -1,5 +1,6 @@
 """Render library-neutral trend data with packaged visualization assets."""
 
+import math
 import re
 from dataclasses import dataclass
 from importlib import resources
@@ -8,6 +9,7 @@ from jinja2 import Environment
 from jinja2 import PackageLoader
 from jinja2 import StrictUndefined
 from markupsafe import Markup
+from scipy.stats import kendalltau
 
 from scb_check.models import AlignedTrend
 from scb_check.models import Trend
@@ -24,6 +26,7 @@ class _Plot:
     title: str
     unit: str
     all_unavailable: bool
+    summary: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +54,10 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
             for index, path in enumerate(trend.paths)
         )
         trend = AlignedTrend(labels, (trend,))
+    coefficients = tuple(
+        tuple(_kendall_tau(series) for series in run.series)
+        for run in trend.trends
+    )
     payload = {
         "labels": trend.steps,
         "runs": tuple(
@@ -60,7 +67,10 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
                     None if path is None else str(path) for path in run.paths
                 ),
                 "series": tuple(
-                    _series_payload(series) for series in run.series
+                    _series_payload(series, tau)
+                    for series, tau in zip(
+                        run.series, run_coefficients, strict=True
+                    )
                 ),
                 "snapshots": tuple(
                     None if report is None else serialize_report(report)
@@ -71,7 +81,9 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
                     for report in run.comparisons
                 ),
             }
-            for run in trend.trends
+            for run, run_coefficients in zip(
+                trend.trends, coefficients, strict=True
+            )
         ),
         "units": {
             group: dict(fields) for group, fields in REPORT_UNITS.items()
@@ -82,7 +94,9 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
         group = series.metric.partition(".")[0]
         displayed = tuple(run.series[index] for run in trend.trends)
         sections_by_group.setdefault(group, []).append(
-            _prepare_section(index, displayed)
+            _prepare_section(
+                index, displayed, tuple(row[index] for row in coefficients)
+            )
         )
     groups = tuple(
         _Group(name, tuple(sections))
@@ -101,20 +115,46 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
     )
 
 
-def _series_payload(series: TrendSeries) -> dict[str, object]:
+def _kendall_tau(series: TrendSeries) -> float | None:
+    observations = [
+        (index, value)
+        for index, value in enumerate(series.values)
+        if value is not None
+    ]
+    if len(observations) < 2:  # noqa: PLR2004 - correlation requires two observations
+        return None
+    steps, values = zip(*observations, strict=True)
+    if len(set(values)) == 1:
+        return None
+    statistic = float(kendalltau(steps, values, method="auto").statistic)
+    return statistic if math.isfinite(statistic) else None
+
+
+def _series_payload(
+    series: TrendSeries, tau: float | None
+) -> dict[str, object]:
     return {
         "metric": series.metric,
         "unit": series.unit,
         "values": series.values,
         "differences": series.differences,
+        "tau": tau,
     }
 
 
 def _prepare_section(
     index: int,
     displayed: tuple[TrendSeries, ...],
+    coefficients: tuple[float | None, ...],
 ) -> _Section:
     series = displayed[0]
+    valid = tuple(value for value in coefficients if value is not None)
+    value = f"{sum(valid) / len(valid):.2f}" if valid else "N/A"
+    summary = (
+        f"Mean τ: {value} ({len(valid)}/{len(coefficients)} contributors)"
+        if len(coefficients) > 1
+        else f"τ: {value}"
+    )
     plots = []
     for difference in (False, True):
         measurements = tuple(
@@ -133,6 +173,7 @@ def _prepare_section(
                 title="Changes from previous" if difference else "Values",
                 unit=unit,
                 all_unavailable=all(value is None for value in measurements),
+                summary=None if difference else summary,
             )
         )
     return _Section(

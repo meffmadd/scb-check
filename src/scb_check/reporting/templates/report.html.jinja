@@ -47,6 +47,7 @@
         the first input has no previous snapshot. Missing measurements are unavailable, not zero, and interrupt lines.
         Missing snapshots also interrupt changes: comparisons never bridge an omitted step.
         Fractions display as percentages; changes display as percentage points.</p>
+      <p>Values plots show Kendall τ-b against step order. Missing observations are omitted; constant series and series with fewer than two observations have unavailable τ. The signed mean weights each available series equally and is descriptive, not a significance test.</p>
       <p>Changes are not churn or quality judgments. Population and coverage changes can affect comparisons.</p>
     </details>
   </header>
@@ -60,7 +61,7 @@
     <div class="plots">
     {% for plot in section.plots %}
       <div class="plot-card">
-        <h4 id="{{ plot.id }}-heading">{{ plot.title }} ({{ plot.unit }})</h4>
+        <h4 id="{{ plot.id }}-heading">{{ plot.title }} ({{ plot.unit }}){% if plot.summary %} · {{ plot.summary }}{% endif %}</h4>
         <div id="{{ plot.id }}" class="metric-plot" role="img" aria-labelledby="{{ plot.id }}-heading"></div>
         {% if plot.all_unavailable %}<p class="plot-note">All measurements unavailable.</p>{% endif %}
       </div>

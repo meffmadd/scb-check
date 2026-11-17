@@ -33,8 +33,10 @@
       const traces = payload.runs.map(run => {
         const item = run.series[index];
         const raw = difference ? item.differences : item.values;
+        const name = escapeText(run.name || "Snapshots");
+        const tau = item.tau === null ? "N/A" : item.tau.toFixed(2);
         return {
-          type: "scatter", mode: "lines+markers", name: escapeText(run.name || "Snapshots"),
+          type: "scatter", mode: "lines+markers", name: difference ? name : `${name} (τ: ${tau})`,
           x: raw.map((_, input) => input + 1),
           y: raw.map(value => value === null ? null : value * scale), connectgaps: false,
           text: raw.map((_, input) => hoverText(item, run.name, input, difference)),
@@ -59,7 +61,7 @@
       }
       try {
         Plotly.newPlot(element, traces, {
-          autosize: true, hovermode: "closest", showlegend: payload.runs.length > 1 || Boolean(payload.runs[0].name),
+          autosize: true, hovermode: "closest", showlegend: !difference || payload.runs.length > 1 || Boolean(payload.runs[0].name),
           legend: {orientation: "h", y: 1.02, x: 0, xanchor: "left", yanchor: "bottom"},
           margin: {l: 80, r: 30, t: 30, b: 70},
           xaxis: {
