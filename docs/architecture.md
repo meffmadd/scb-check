@@ -2,202 +2,7 @@
 
 `scb-check check` reports composite scores plus location-level flags explaining a source codebase's current state. `scb-check diff` compares two independently computed check reports: snapshot metric deltas, not code churn. `scb-check report` plots full reports and adjacent differences across an ordered list of source trees.
 
-## Metrics
-
-### Verbosity
-
-`verbosity` is the share of real source lines of code (`SLOC`) flagged by at least one slop signal.
-
-Per file, flagged lines are the union of:
-
-- clone lines from duplicated syntax blocks in any supported language,
-- Python `ast-grep` lines from bundled or extra YAML rules,
-- structural rule lines from Python rule classes.
-
-Rust, JavaScript, TypeScript, Zig, Haskell, and C++ currently have no bundled slop-pattern rules, so their verbosity contribution is clone LOC only.
-
-That union is intersected with `SLOC`, then divided by total `SLOC`. A line flagged by more than one source counts once. Zero total `SLOC` yields zero verbosity and flagged-LOC counts.
-
-### Erosion
-
-`erosion` is the share of cyclomatic function mass concentrated in high-complexity functions.
-
-- `mass = cyclomatic_complexity * sqrt(sloc)`
-- high-complexity functions have `cyclomatic_complexity > 10`
-- functions with `sloc <= 0` contribute zero mass
-
-`cog_erosion` uses the same mass-share calculation with cognitive complexity and `cog_complexity > 10`. Zero total mass yields a zero score.
-
-Complexity metric populations select declarations by `(physical file, qualified name)`, keeping the last same-file declaration; generic parsers retain their existing name disambiguation. Cross-file Python name collisions no longer discard functions. Python declarations under control-flow wrappers also enter ordinary metrics and structural rules. These two extraction/indexing corrections intentionally affect counts, masses, erosion scores, and potentially structural verbosity, without changing formulas, rule policies, report fields, or CLI contracts.
-
-### Coupling Between Objects (CBO)
-
-`cbo` reports **partial retained-project CBO**, not verified full-program CBO and not a sloppiness score. The selected definition is Briand, Daly & Wüst (1999), [DOI 10.1109/32.748920](https://doi.org/10.1109/32.748920), §4.2.1 Definition 20 (printed p. 101), using §3.7 Definition 17's `uses` predicate (printed p. 94). It formalizes the CK metric ([Chidamber & Kemerer, 1994](https://doi.org/10.1109/32.295895)). No refined/slice-based variants or quality thresholds are applied.
-
-For each class, count distinct other classes where either class invokes a method implemented by the other or accesses an attribute declared by the other. Count actual ancestor-member use; inheritance and type declarations alone add no edges. Repeated sites, reads/writes/deletes, and reverse-direction uses deduplicate to one partner. Self-use adds none. An inherited body belongs to its declaring class; it is not copied to subclasses. Uses belong to their nearest enclosing class (including class initialization and nested functions); module/free-function uses without an enclosing class cannot contribute a class partner.
-
-The modeled population is every retained class declaration, including nested and repeated declarations, in successfully parsed files. Python classes with available use/attribute inventories and direct-base facts receive partial measurements; unsupported classes receive `None` diagnostics. External/library classes, builtins, excluded files, and failed parses are outside the population. Libraries contribute only if their source is explicitly included and parsed as project source. Imports, class construction alone, bare method references, and placeholder-only method bodies do not add method-use edges; declared fields supply attribute edges. Construction does not imply an inferred `__init__` call.
-
-For method calls, use the IR's possible implementation bodies when available, including polymorphic overrides. Both complete-under-`closed-project-hierarchy` and approximate sets contribute their known bodies. If unavailable, use a statically selected implemented method as partial evidence. Attribute uses select canonical declared fields. The metric performs no language resolution or source IO. Its immutable module-fact input is a projection of retained analysis, not rule references or a second graph resolver.
-
-All measurements are explicitly **partial**: dynamic receivers, unsupported contexts/decorators/descriptors, unresolved/ambiguous uses, unavailable inventories, unmodeled libraries, and external subclasses/callers can hide partners. Unknown outgoing references are omitted, never assigned invented partners. An unresolved incoming use in another class can hide a partner for any measured class, even one with completely resolved outgoing sites. A partial zero means no observed resolved partners, not a verified absence of coupling. Approximate/static fallback sets are not a sound full-runtime upper or lower bound.
-
-Project aggregation is an **analyzer convention**, not a paper-defined project formula:
-
-- `measured_classes` counts classes with partial measurements; `unavailable_classes` counts retained classes with unsupported extraction (units: classes).
-- `partial_partner_sum`, `partial_partner_mean`, and `partial_partner_max` summarize only the measured population (units: partners per class for mean/max, class-partner incidences for sum). Each undirected pair contributes twice to the sum.
-- With no measured classes, all three summaries are `None`, not zero. Unavailable classes are excluded from denominators. All measured values remain partial, including in mixed-language snapshots.
-
-`CBO.partner_sets()` exposes read-only per-class partner-ID sets (`None` for unsupported extraction) separately from flat numerical reports. `tests/fixtures/cbo/partners.py` has eight measured classes with partner counts `3, 1, 2, 1, 0, 0, 0, 1`: sum `8`, mean `1`, maximum `3`. Snapshot differences compare independently modeled populations; larger breadth is not inherently worse.
-
-### Partial metric interpretation
-
-CBO, RFC₁, MPC, distinct callers, DAC, CIC, method RIC, Ca, Ce, and module-call dependencies describe retained source, not whole-program behavior or code quality. Their project summaries are **analyzer conventions**, not paper-defined project formulas. Larger values do not imply sloppiness; these metrics introduce no quality thresholds, findings, or exit-code changes.
-
-A **partial** measurement counts supported evidence, including an observed zero. An **unavailable** measurement means the entity lacks required extraction support; it is excluded from summary denominators rather than treated as zero. Measured and unavailable populations remain separate. Each snapshot models its own retained population; differences can reflect coverage changes as well as changed relationships.
-
-### Direct Response For a Class (RFC₁)
-
-`rfc` implements a restricted retained-project **direct RFC₁**, following Briand, Daly & Wüst (1999), [DOI 10.1109/32.748920](https://doi.org/10.1109/32.748920), §4.2.1 Definitions 21–22 (printed p. 101), formalizing [Chidamber & Kemerer (1994)](https://doi.org/10.1109/32.295895). It is not transitive RFC∞.
-
-For each class, seed a response set with method declaration identities selected by the retained instance and class member lookups. This includes inherited selections, respects selected overrides, and deduplicates methods visible through both lookups. Selected abstract/placeholder declarations count even without bodies. No generated methods are invented. An isolated class therefore still contributes its selected method count.
-
-Union the known possible **method implementation** identities directly called by those seed methods. Both approximate and complete-under-`closed-project-hierarchy` runtime-target sets supply known bodies; there is **no static-target fallback** when that set is empty. Own-method calls remain eligible, while recursion and repeated sites add no duplicate identities. Follow only one level: a newly added callee's calls are not expanded. Free/nested functions are not method targets; calls executing in nested functions, module/class initialization, or explicitly unsupported contexts do not expand a seed method. Inherited bodies are examined as their canonical declarations rather than copied implementations.
-
-Every retained class, including nested/repeated declarations, enters the population. A class is measured when its module has source-use extraction, its direct-base facts exist, both retained member lookups contain it, and every selected method has callable facts and an available source-use inventory in its declaring module; otherwise it is unavailable. This also applies to inherited selections. Currently this is Python-first. Only retained project methods contribute; libraries contribute only when scanned as project source. Dynamic/unresolved calls, external bases/overrides, and unsupported execution contexts can hide responses within a measured class. Incoming call volume does not directly enter RFC₁; unmodeled incoming callers do not enlarge its set. Possible-target evidence is not a verified full-runtime bound.
-
-`partial_response_sum`, `partial_response_mean`, and `partial_response_max` summarize per-class response-set sizes over measured classes, including zeros (unit: methods; the sum counts class–response incidences). `measured_classes` and `unavailable_classes` use classes. With no measured classes, all summaries are `None`. `RFC.response_sets()` exposes separate read-only diagnostics.
-
-### Message Passing Coupling (MPC)
-
-`mpc` measures **Message Passing Coupling**, not Method Pair Coupling. The selected counting variant follows Briand, Daly & Wüst (1999), [DOI 10.1109/32.748920](https://doi.org/10.1109/32.748920), §4.2.1 Definition 23 (printed pp. 101–102). Original provenance is [Li & Henry (1993)](https://doi.org/10.1016/0164-1212(93)90077-B); its primary full text was not independently checked for this implementation.
-
-Count each static call occurrence executing directly in an implemented method of the focal class when the statically selected target method is implemented outside that class. Use the retained static declaration's implementation owner; possible runtime overrides do not change site eligibility or multiply the count. Repeated sites count separately; one site in a loop counts once. Calls only to own implementations contribute zero. Inherited source bodies stay with their declaring class; an ancestor-implemented target remains external to a subclass. Bodyless methods supply neither source implementations nor eligible targets. No generated methods or implicit constructor calls are invented. Free/nested-function bodies, initialization code, bare method references, and unsupported execution contexts do not contribute.
-
-The population is every retained class, including nested/repeated declarations. Source-use and direct-base extraction make a class measurable; missing support makes it unavailable. Targets must be retained project method implementations; unscanned libraries, unresolved outgoing calls, dynamic dispatch, and unsupported bodies can hide sites. Incoming callers do not affect this outgoing count. All observed counts remain partial, including zero; static selection does not establish a sound whole-program runtime bound.
-
-`partial_call_site_sum`, `partial_call_site_mean`, and `partial_call_site_max` summarize measured per-class counts (unit: call sites). `measured_classes` and `unavailable_classes` use classes. Summaries are `None` with no measured classes. `MPC.class_counts()` provides separate read-only diagnostics.
-
-### Distinct callers
-
-`callers` is an **engineering-defined incoming-use count**, not Henry–Kafura information-flow fan-in or the RIC ratio. No defining paper or DOI is claimed. Briand, Daly & Wüst (1999), [DOI 10.1109/32.748920](https://doi.org/10.1109/32.748920), §§3.3, 3.7 and 4.2.2 (printed pp. 103–104 for §4.2.2), supplies coupling-framework background only.
-
-Invert direct call occurrences with function execution ownership and static resolution status `project`, selecting the canonical `resolution.target_id`. Do not expand possible runtime bodies or overrides. Each source callable declaration contributes once per destination, regardless of repeated sites; direct recursion contributes one caller. A nested function is its own caller. Module/class initialization has no callable caller and contributes none; execution ownership is not promoted to an enclosing function. Inherited methods stay canonical declarations rather than being copied to subclasses. Placeholder/abstract and decorated declarations remain eligible because this counts declaration use, not implemented bodies. No generated callables or implicit calls are invented.
-
-The population is every retained function/method declaration, including nested/repeated declarations. Available module source uses plus callable facts make a declaration measurable; missing support makes it unavailable. Generic-language callables currently lack this support. Only retained source callers/destinations count; a library participates only as scanned project source. Unresolved/ambiguous/external calls, callbacks, unsupported execution, and missing extraction elsewhere can hide incoming callers for **any** measured destination, even one with fully resolved outgoing calls. Such destinations remain partial, not unavailable or verified zero. Outgoing uncertainty in one callable becomes incoming uncertainty for potential destinations.
-
-Same-module versus cross-module compares `ModuleIR.id`: one logical module per physical file, not module-name spelling or package membership. `partial_caller_sum` counts caller–destination pairs, not globally distinct callers; `partial_same_module_sum` and `partial_cross_module_sum` partition it. `partial_caller_mean` and `partial_caller_max` summarize counts per measured destination, including zeros (unit: callers). Population fields `measured_callables` and `unavailable_callables` count functions/methods (declared unit: `functions`). All five summaries are `None` with no measured destinations. `DistinctCallers.caller_sets()` exposes separate read-only, partitioned diagnostics.
-
-### Data Abstraction Coupling (DAC)
-
-`dac` implements **attribute-count DAC**, following Briand, Daly & Wüst (1999), [DOI 10.1109/32.748920](https://doi.org/10.1109/32.748920), §4.2.1 Definition 24 (printed p. 102), with §3.6 type conventions (printed p. 94). Original provenance is [Li & Henry (1993)](https://doi.org/10.1016/0164-1212(93)90077-B); its primary full text was not independently checked for this implementation.
-
-Count a canonical attribute once if any retained declared type has form `name` or `generic`, category `class`, and project resolution to a retained class. Two fields of the same class type contribute two: this measures attribute volume, not independent type breadth. Repeated or conflicting annotations supply positive evidence but never multiple contributions for one field or proof of a unique runtime type. Class and instance fields count; self/ancestor class types are eligible. Inherited fields stay with their declaring class. Parameters, locals, primitives, and nonclass types do not count. Bodyless methods add no inferred fields; no generated methods/fields are invented.
-
-Use only the outer declared type. A retained project generic class can count, but containers, unions, and typing wrappers are not flattened into their argument classes. Python object references count through the declared class type. There is no C++ pointer/reference/array underlying-type normalization in the current supported subset; generic-language attribute extraction is unavailable.
-
-Every retained class, including nested/repeated declarations, enters the population. Available module attribute extraction makes a class measurable; absent extraction makes it unavailable. Unannotated fields, unknown/unresolved types, unsupported assignments, and library types outside retained source are omitted within **partial** measurements, not classified as known nonclass types. Libraries contribute only when their classes are scanned as project source. Initializers do not infer types. Incoming uses do not add attributes, though writes outside supported declaring-class extraction can be missing.
-
-`partial_attribute_sum`, `partial_attribute_mean`, and `partial_attribute_max` summarize measured per-class field counts (unit: attributes); `measured_classes` and `unavailable_classes` use classes. Summaries are `None` with no measured classes. `DAC.attribute_sets()` exposes separate read-only diagnostics.
-
-### Class Inheritance-related Coupling (CIC)
-
-`cic` reports **partial static retained-project CIC**. Rajaraman & Lyu (1992), *Some Coupling Measures for C++ Programs*, §IV, [author-hosted primary paper](https://www.cse.cuhk.edu.hk/lyu/_media/conference/crajaraman_tools1992_some.pdf), PDF p. 6 / printed p. 5, defines CIC as the count of accesses to variables and uses of member functions defined in proper ancestor classes. The primary text was checked for this implementation; **no DOI was verified**. The paper's directed multigraph preserves repeated references. The following source-body, dispatch, occurrence, and aggregation policies are analyzer choices for a Python-first interpretation, not claims that the paper settles them.
-
-- Traverse retained project `direct_bases` transitively to establish the focal class's proper ancestors, excluding itself. Select outgoing occurrences by the canonical field-defining or method-implementation owner, not the receiver's type or member spelling. Uses of own overrides and unrelated members, inheritance declarations alone, type declarations, and construction alone contribute zero.
-- Use retained **static** project targets only; possible runtime implementations neither change eligibility nor multiply a site. Calls and bare references to implemented ancestor methods count. Abstract/placeholder declarations without implementations do not supply method targets. Canonical ancestor fields count reads, writes, read-writes, and deletes.
-- Preserve repeated physical source sites; loops do not multiply them. A call and its accompanying target-access record count once, including nested/multiline parentheses around the target. When spans differ, deduplication requires matching retained execution owner, static target, and full receiver facts within the call's target span; containment alone does not suppress accesses. Bare references, argument references, and distinct receiver-field accesses remain independently eligible, including receiver prefixes resolving to the same canonical field as the call target. An augmented field update is one read-write occurrence.
-- Attribute supported execution to the nearest enclosing class, including class initialization and nested functions. A nested class is its own focal class. Module/free-function sites without an enclosing class and explicitly unsupported execution contexts (including lambdas/comprehensions) contribute nothing. Inherited bodies stay only with their source-declaring class; they are never copied or re-extracted for subclasses.
-
-The population is every retained class declaration, including nested/repeated declarations, in successfully parsed files. A class is measurable only when its module has source-use and attribute inventories, its declared methods have callable facts, and every transitive base relation resolves to a retained class with available direct-base facts. Unknown, ambiguous, external, missing, unsupported, or cyclic ancestry makes the class **unavailable**, including descendants of such classes. Implicit Python `object` is not an invented retained base; an explicit unscanned `object` base is unavailable under this strict policy. Generic-language extraction currently makes CIC unavailable.
-
-For classes with established ancestry, unknown/ambiguous/external member targets, unsupported member resolution, and unmodeled execution can still hide occurrences; measured counts are therefore **partial**, including zero. Libraries participate only when included and parsed as retained project source. Excluded/failed files supply no invented facts. Static selection is not a verified whole-program runtime bound. Incoming references do not contribute to this outgoing-only metric, so incoming-reference uncertainty cannot enlarge its counted population. The metric consumes immutable module facts without source IO, reparsing, or additional language resolution; proper-ancestor traversal is a metric filter over retained base edges.
-
-Project aggregation is an **analyzer convention**, not a paper-defined project formula. `measured_classes` and `unavailable_classes` count retained classes (unit: classes). `partial_occurrence_sum`, `partial_occurrence_mean`, and `partial_occurrence_max` summarize only measured per-class counts (declared unit: occurrences; mean is occurrences per measured class). All three are `None` with no measured classes; unavailable classes are excluded from the denominator. `CIC.class_counts()` exposes separate read-only class-ID diagnostics with `None` for unavailable classes. `tests/fixtures/cic/occurrences.py` has counts `0, 4, 4, 0, 0, 0`: sum `8`, mean `8/6`, maximum `4`. No quality thresholds or sloppiness judgments are introduced. Check and independent-snapshot diff compose these fields explicitly, preserving signed/zero deltas and null propagation.
-
-### Method-level Relative Inward Coupling (RIC)
-
-`ric` implements the explicit **method variant** of Joshi & Joshi (2006), *Microscopic coupling metrics for refactoring*, [DOI 10.1109/CSMR.2006.32](https://doi.org/10.1109/CSMR.2006.32), §7 (manuscript PDF p. 5), immediately after the attribute formula. It preserves that formula rather than §8's conflicting edge-count interpretation:
-
-`RIC(method owned by i, comparison class j) = distinct methods of j directly using method / max(1, distinct methods of i directly using method)`
-
-The population is **all retained method declarations × all other retained class declarations**, including zero-use pairs, nested/repeated declarations, and classes with no methods. Inherited methods and callers retain their canonical declaring classes; they are not copied into subclasses. Overrides are separate declarations. Abstract/placeholder and decorated declarations remain eligible when callable extraction is available. No generated methods or implicit constructor calls are invented.
-
-Count only direct call occurrences executing in retained methods, with static resolution status `project` and a retained method target. Deduplicate caller declaration IDs per target/class, regardless of repeated sites. Direct recursion contributes one owner using method. Runtime possible-target sets do not expand or replace static selection. Free/nested functions, module/class initialization, and explicitly unsupported execution contexts do not count; calls are not promoted to an enclosing method. There is **no indirect traversal**.
-
-A class requires available module source uses, direct-base facts, and callable facts for every method declared in it. A pair is unavailable when its target method, declaring class, or comparison class lacks required extraction. Retained lexical method ownership enumerates unavailable pairs when callable facts are missing; it does not supply measured use. Current support is Python-first; generic-language class/method extraction does not suffice for measurement. A supported class with no methods can still contribute comparison pairs with zero external users. No methods or fewer than two classes yields no pairs.
-
-Every measured pair remains **partial**, including zero: unresolved/ambiguous/external calls, dynamic dispatch, unsupported contexts, missing extraction elsewhere, excluded/failed files, and unretained incoming callers can hide either raw count. Missing incoming evidence elsewhere does not make every supported destination unavailable. Libraries participate only as explicitly scanned project source. Neither counts nor ratios establish verified runtime bounds; partial ratios are not necessarily lower bounds. Public APIs, framework callbacks, and missing external caller visibility limit interpretation. RIC adds no thresholds, sloppiness judgment, or automatic move/remove-method recommendations.
-
-`RIC.pair_diagnostics(modules)` returns a read-only mapping keyed by `(method_id, comparison_class_id)`. Values are frozen `RICPair` records, or `None` for unavailable pairs. `external_users` is the raw numerator, `owner_users` is raw owner use, `effective_denominator` is `max(1, owner_users)` (all counts: distinct using methods), and `ratio` is their dimensionless quotient. Thus one external user and zero owner users gives `(1, 0, 1, 1.0)`, distinct from equal actual use `(1, 1, 1, 1.0)`. Diagnostics remain separate from flat numerical reports.
-
-Project summaries are **analyzer conventions**, not paper-defined class/system RIC: `measured_pairs` and `unavailable_pairs` count pairs; `partial_ratio_mean` and `partial_ratio_max` summarize measured pair ratios, including zeros (unit: `ratio`, not `fraction`/percentage). No ratio sum or pooled ratio is reported. With no measured pairs both summaries are `None`. Adding unused classes changes the all-pairs mean; independently modeled snapshot populations and coverage can change summaries without changing any existing call. Only explicit `pair_diagnostics()` enumeration has method × class space/time cost.
-
-Ordinary `compute()`, `check`, and `diff` share a narrow internal facts projection with diagnostics: class/method availability, canonical ownership, and sparse distinct-user counts. Total pairs are counted per method as `retained classes - (owner is retained)`; measured pairs are `eligible methods × (available classes - 1)`, with unavailable pairs the difference. Measured zero-use pairs therefore remain in population counts and the mean denominator without being materialized. Only observed, measured external-use groups contribute ratios; an entirely zero measured population still has mean/max `0.0`. Nonzero contributions retain diagnostic method/class order and the same float summation semantics. Projection storage scales with declarations and distinct observed user relations, not zero-pair population size; grouping and counting scan retained declarations/uses, and canonical ordering sorts only observed target/class groups. `tests/metrics/test_ric.py` checks exact equivalence to full diagnostics and bounds aggregate allocation and executed RIC line events on a zero-call project, without timing thresholds.
-
-`tests/fixtures/ric/direct.py` has 48 measured pairs, ratio mean `0.09375`, and maximum `1.5`; owner target users are two methods, with three external users in `Client` and one each in `Other` and `Child`. It also distinguishes recursion, placeholders, inherited selection, runtime overrides, repeated sites, unknown references, and free/nested execution.
-
-### Category coupling (Ca and Ce)
-
-`ca` and `ce` preserve the class populations in [Robert C. Martin's 1994 manuscript, *OO Design Quality Metrics: An Analysis of Dependencies*](https://condor.depaul.edu/dmumaugh/OOT/Design-Principles/oodmetrc.pdf): categories are discussed on PDF p. 5, with dependency metrics on p. 6. No DOI is claimed for this manuscript. Briand, Daly & Wüst (1999), [DOI 10.1109/32.748920](https://doi.org/10.1109/32.748920), §4.2.1 (PDF p. 12 / printed p. 102), reproduces these populations and explicitly leaves the dependency predicate unspecified. The following shared policy is an **analyzer choice**, not a recovered primary-paper formalization.
-
-#### Shared measurement policy
-
-- **Category membership:** one class-bearing retained logical module per physical file, keyed by `ModuleIR.id`. Include every retained class declaration, including nested/repeated declarations; never merge categories or classes by qualified name. Modules in one package remain separate, including a class-bearing `__init__.py`. Classless modules add neither measured nor unavailable categories. Directories and namespace packages are not inferred categories.
-- **Directed dependency:** a class calls a statically resolved implemented method or accesses a canonical declared field of another retained class. Reads, writes, augmented writes, and deletes qualify. Use `SourceUseIR.resolution` with status `project` and canonical declaring owners; **do not expand possible runtime targets**. Inherited targets stay with their declaring class. Bodyless target methods supply no implementation dependency. Static declaration evidence is not a verified runtime relationship, including for decorated methods.
-- **Source ownership:** the nearest enclosing class of a supported execution owner supplies the client, including class initialization and functions nested inside methods. Nested classes supply their own clients. Inherited source bodies stay with their declaring class, not subclasses. Module/free-function uses and unsupported execution contexts supply no class client.
-- **Excluded evidence:** imports alone, inheritance alone, declared types alone, class construction alone (no inferred constructor call), bare method references, self-use, and unresolved/ambiguous/unsupported targets add no class dependency. Internal-only class dependencies remain in shared diagnostics but contribute to neither metric for that category.
-- **Scope:** only retained project classes participate. “Outside” means outside the category, not outside the project. Builtins and unscanned library classes have no invented class identities; libraries participate only when their source is included and parsed as project source. Failed parses, exclusions, and dynamic generation can hide classes and relations.
-
-`metrics.categories.category_dependencies(project)` projects the already-resolved immutable IR onto `CategoryDependencies`: read-only class-to-category membership, unavailable category IDs, and immutable directed class pairs. It performs no parsing, source IO, or language resolution. Reporting builds this projection once per snapshot and independently supplies it to `AfferentCoupling` and `EfferentCoupling`. Neither metric depends on the other or on CBO; the policy does not change existing metrics.
-
-#### Counting and project summaries
-
-For a category `K`:
-
-- **Ca:** count distinct client classes outside `K` with any qualifying dependency on a class inside `K`. Several external clients count separately, even within one module. One client using several internal classes/members or repeated sites counts once. Internal clients do not contribute.
-- **Ce:** count distinct source classes inside `K` with any qualifying dependency on a class outside `K`. One source depending on twenty outside classes contributes **one**, not twenty. External clients, outside target classes, and neighboring modules are not Ce's population. This historical source-class variant differs from tools that label outside target breadth “Ce”.
-
-Both groups expose `measured_categories` and `unavailable_categories` (unit: categories). Ca's `partial_client_sum`, `partial_client_mean`, and `partial_client_max` summarize measured category client-set sizes (unit: client classes). Ce's `partial_source_sum`, `partial_source_mean`, and `partial_source_max` summarize measured category source-set sizes (unit: source classes). Sums count category–client/source incidences, means divide by measured categories, and maxima select the largest per-category count. One Ca client can contribute to several destination categories; a Ce source belongs to exactly one category. These project aggregates are **analyzer conventions**, not paper-defined formulas.
-
-`AfferentCoupling.client_sets()` and `EfferentCoupling.source_sets()` expose separate read-only category-ID → class-ID-set diagnostics, with `None` for unavailable categories. Structured membership and class-pair diagnostics never enter numerical reports. The [source fixture](../tests/fixtures/category_coupling/) has four measured categories: Ca counts `3, 0, 1, 0` (sum `4`, mean `1`, maximum `3`); Ce counts `0, 2, 1, 0` (sum `3`, mean `0.75`, maximum `2`).
-
-#### Availability and interpretation
-
-A class-bearing category is unavailable if any internal class lacks direct-base extraction, its module lacks source-use or attribute extraction, or a declared method lacks callable facts. Generic-language class categories currently lack this support. An available tuple containing unresolved bases is still partial evidence, not missing extraction. A category is never silently measured using only its supported internal subset. Known edges involving an unavailable category can still inform other measured categories.
-
-Unknown relations are omitted within explicitly **partial** measurements. Unresolved outgoing uses can hide Ce sources; unmodeled libraries can hide outside dependencies. Unknown incoming uses or unavailable extraction **anywhere** can hide clients for any measured Ca category, even if every outgoing use in that category resolves. Choosing a predicate does not erase these source limitations. Static selection and unsupported dispatch/inference are not sound whole-program runtime bounds.
-
-An isolated supported category measures partial zero, not proven absence. Unavailable categories are excluded from denominators. If no categories are measured—including classless snapshots—all summary fields are `None`, not zero. Check and independent-snapshot diff use the same composition; deltas are signed later minus earlier, and any null operand yields a null delta, including two nulls. Coverage changes can change populations independently of observed relationships.
-
-Category size, grouping, and scanned context affect interpretation: Ce is bounded by the category's internal class count, while Ca is not; aggregating more classes or scanning more client/library source changes exposure. Neither larger values nor positive deltas imply sloppiness. No quality thresholds, findings, or score/exit-code changes are introduced. See the [glossary](../GLOSSARY.md) for counting terminology.
-
-### Module-call dependencies
-
-`module_call_dependencies` reports **static resolved-call logical-module neighbors**, an engineering-defined directed graph count. It is not Martin's class-population Ca/Ce or Henry–Kafura information flow. Briand, Daly & Wüst (1999), [DOI 10.1109/32.748920](https://doi.org/10.1109/32.748920), §§3.3, 3.7 and 4.2.2, and Martin's [1994 manuscript](https://condor.depaul.edu/dmumaugh/OOT/Design-Principles/oodmetrc.pdf), “Dependency Metrics,” supply background only, not defining provenance.
-
-Each successfully parsed physical file is one logical module identified by `ModuleIR.id`. Packages are not aggregated, and colliding descriptive module names do not merge files. Every retained module enters the population, including empty files. An available `source_uses` inventory makes a module measurable; `None` makes it unavailable. Currently Python supplies these facts; generic-language parsers do not supply call/import extraction.
-
-Select call occurrences with static `resolution.status == "project"` and a retained target module/declaration. The source module is the occurrence's containing module; the target is the declaration's module, including canonical inherited-member ownership. Supported function/method, module-initialization, class-initialization, and definition-header execution count; explicitly unsupported execution contexts do not. Class construction counts a call to the retained class declaration, without inventing an implicit constructor call. Placeholder/decorated callable declarations remain eligible targets. Imports, bare references, attribute accesses, inheritance/type evidence alone, and possible runtime bodies add no edges. This is one named relation, never an unlabeled union.
-
-Count distinct other modules separately for incoming and outgoing directions. Repeated bindings/sites/callables to one module add one neighbor; same-module calls and recursion add none. A mutual dependency contributes one neighbor per direction to each module. Retained targets remain eligible neighbors even if their own extraction is unavailable; their diagnostics still remain unavailable, not measured zero.
-
-Scope is retained project source only. Libraries participate only when explicitly scanned and parsed as source. Excluded/failed files and unknown, ambiguous, external, or unsupported targets contribute no invented neighbor. All supported measurements are **partial**, including zero. Unresolved outgoing calls and missing extraction can hide incoming neighbors for any measured destination, even one with completely resolved outgoing sites. Unscanned external callers can likewise hide incoming dependencies. Static declaration selection does not establish a whole-program runtime bound.
-
-Project summaries are **analyzer conventions**, not paper-defined formulas:
-
-- `measured_modules` / `unavailable_modules` count retained modules with/without source-use extraction (unit: modules).
-- `partial_incoming_sum` / `partial_outgoing_sum` add directional neighbor counts over measured modules (unit: module-neighbor incidences), not globally unique neighbors.
-- `partial_incoming_mean` / `partial_outgoing_mean` divide each sum by measured modules; `partial_incoming_max` / `partial_outgoing_max` select the largest measured directional count (units: neighbors per module).
-- All six summaries are `None` with no measured modules. Unavailable modules stay outside denominators. Directional sums match when all modules are measured, but can differ when known target modules are unavailable.
-
-`ModuleCallDependencies.neighbor_sets()` exposes a read-only module-ID mapping to frozen `ModuleNeighbors(incoming, outgoing)` sets, or `None` for unavailable modules, separately from flat numerical reports. The metric consumes immutable module facts without reparsing, IO, or duplicate resolution. `tests/fixtures/module_dependencies/` has four measured modules and edges A→B, A→C, B→A: each directional sum is `3`, mean `0.75`, incoming maximum `1`, outgoing maximum `2`. Larger breadth is not inherently worse; no findings, thresholds, or exit-code changes are introduced. Check and independent-snapshot diff explicitly compose this group, with signed/zero/null deltas and standalone parity.
-
-### Snapshot comparison
-
-Each delta is the later measurement minus the earlier measurement, in its existing units. `diff` compares every numeric check report measurement: scores, scanned-file and SLOC counts, flagged-line and finding counts, function counts and masses, and syntax-tree/node counts including per-language counts. Only absent dotted per-language syntax fields contribute zero counts to subtraction; original snapshots keep their own language coverage. Explicit `None` propagates through subtraction, while missing required groups or fields are contract errors.
-
-Absolute ratio differences avoid division by a zero baseline. JSON retains fractional units; human percentage differences are percentage points. Counts and masses expose numerator and denominator changes: verbosity can fall even while flagged SLOC grows. A larger measurement is not automatically a regression, and unchanged aggregates can hide offsetting changes or literal edits. This is not a measure of edit volume.
+This guide describes implementation boundaries and data flow. See the [metric index](metrics.md) for links to implementation docstrings covering formulas, counting policies, and sources. The [JSON reference](report-fields.md) owns numerical fields, units, and aggregation.
 
 ## Shared source loading
 
@@ -245,11 +50,11 @@ CLI (`cli.py` / `commands/`)
     └─ `render_comparison(before, after, diff)` for a human summary
 ```
 
-Each side must have successfully parsed eligible source; zero-SLOC files are valid. The command applies the same configuration and analysis options to both sides, preserving ordinary walker semantics including each tree's applicable ignore files. Successful comparisons exit `0` regardless of findings; unusable inputs exit `2` with no partial payload. See [README](../README.md#comparing-source-trees) for options and output fields.
+Each side must have successfully parsed eligible source; zero-SLOC files are valid. The command applies the same configuration and analysis options to both sides, preserving ordinary walker semantics including each tree's applicable ignore files. Successful comparisons exit `0` regardless of findings; unusable inputs exit `2` with no partial payload. See [CLI reference](cli.md#comparing-source-trees) for options and output fields.
 
 ### Report-comparison interface
 
-`models.py` defines `ReportValue = int | float | None`, `MetricResult = Mapping[str, ReportValue]`, and `Report = Mapping[str, MetricResult]`. These are data contracts, not runtime report classes. Computed reports expose read-only outer and inner mappings over privately owned dictionaries. Metric results are flat: booleans, strings, sequences, nested mappings, and non-finite numbers are not report values. The canonical groups and fields are in the [README schema reference](../README.md#check-json-report-fields).
+`models.py` defines `ReportValue = int | float | None`, `MetricResult = Mapping[str, ReportValue]`, and `Report = Mapping[str, MetricResult]`. These are data contracts, not runtime report classes. Computed reports expose read-only outer and inner mappings over privately owned dictionaries. Metric results are flat: booleans, strings, sequences, nested mappings, and non-finite numbers are not report values. The canonical groups and fields are in the [JSON schema reference](report-fields.md#check-json-report-fields).
 
 `reporting.score.compute_report(analysis: AnalysisResult)` explicitly composes `Verbosity`, `Erosion`, `CognitiveErosion`, `Syntax`, `CBO`, `RFC`, `MPC`, `DistinctCallers`, `DAC`, `CIC`, `RIC`, `AfferentCoupling`, `EfferentCoupling`, and `ModuleCallDependencies` instances from the sibling `metrics/` package. Each metric's `compute()` receives narrowly scoped extracted facts and owns its field names, supporting counts, calculations, and units. The builder owns group names. Private `metrics/_mass.py` shares erosion arithmetic; `metrics/_counts.py` shares sum/mean/max arithmetic for measured CBO, RFC₁, MPC, callers, DAC, CIC, Ca, Ce, and directional module-neighbor counts, returning `None` aggregates for an empty measured population. Concrete metrics retain population, field, and unit ownership. Tree walking owns complexity extraction, not mass calculations.
 
@@ -271,7 +76,7 @@ Immutable `AlignedTrend` holds shared step identifiers and independent `Trend` o
 
 Package loaders/resources find templates and assets independently of cwd. The pinned basic Plotly distribution is embedded once, with attribution, so reports need no server or network. JavaScript enables plots/hover; without scripting, the page explains the requirement and the source-directory disclosure remains accessible. Jinja autoescape protects page text, `StrictUndefined` catches missing context, and only fixed bundled scripts become trusted markup after script-end-tag escaping. Hover text is escaped separately because Plotly supports HTML-like formatting.
 
-Input order is categorical, not chronology or elapsed time. Adjacent differences are not churn or quality judgments: changes in retained populations, scanned context, or extraction coverage can change summaries without changing existing relationships. Read [partial metric interpretation](#partial-metric-interpretation) alongside supporting measured/unavailable counts. CLI syntax, options, defaults, and failure behavior are canonical in [README](../README.md#plot-reports).
+Input order is categorical, not chronology or elapsed time. Adjacent differences are not churn or quality judgments: changes in retained populations, scanned context, or extraction coverage can change summaries without changing existing relationships. Read [partial metric interpretation](metrics.md#partial-metric-interpretation) alongside supporting measured/unavailable counts. CLI syntax, options, defaults, and failure behavior are canonical in [CLI reference](cli.md#plot-reports).
 
 ### Text evidence boundary
 
@@ -285,7 +90,7 @@ Python calls and attribute accesses live once in `ModuleIR.source_uses`, with sn
 
 A source site, a distinct caller, and a distinct target are different populations: repeated sites and recursion must survive extraction so consumers can choose counts and direction policies. Static binding evidence is not a possible-runtime-target set. External status requires import/builtin evidence outside the retained snapshot; dotted spelling alone supplies neither external status nor type/runtime-target inference.
 
-Rule-facing references and shallow operation-selected effects intentionally preserve textual nesting, parameter/builtin exclusions, self-recursion exclusions, and dotted-call keep-policy. Linked effects carry `source_use_id`, but their rule labels need not match canonical resolution status. This separation retains existing structural-rule behavior while exposing richer facts. Metric populations, counts, formulas, and scores stay in consumers, outside the IR; the inventory itself defines no metric formula. Its consumers preserve verbosity/erosion and CLI exit contracts while adding explicit check/independent-snapshot diff measurements.
+Rule-facing references and shallow operation-selected effects intentionally preserve textual nesting, parameter/builtin exclusions, rule-specific self-recursion exclusions, and dotted-call keep-policy. Linked effects carry `source_use_id`, but their rule labels need not match canonical resolution status. This separation retains existing structural-rule behavior while exposing richer facts. Metric populations, counts, formulas, and scores stay in consumers, outside the IR; the inventory itself defines no metric formula. Its consumers preserve verbosity/erosion and CLI exit contracts while adding explicit check/independent-snapshot diff measurements.
 
 ### Class and type evidence boundary
 
@@ -328,7 +133,7 @@ The IR-first gate is validated at `analyze_files(...).project` by `tests/test_me
 | Method RIC | Target method/class identity; distinct executing method/class owners, including owner-class and comparison-class use | Pair population, user deduplication, denominator floor and ratio |
 | Multilevel CSE | Original `TextFragmentIR` text/spans and module/declaration owner tree, including nested owners | Method/class/file selection, document preprocessing, explicitly supplied local encoder and similarity |
 
-Implemented consumers and future candidates handle unavailable inventories and uncertain targets explicitly. Shared language resolution belongs here even when expensive; metric-specific graph traversal/counting and embedding computation do not. Fact extraction itself adds no scores, thresholds, or backend registry; implemented metrics explicitly compose their report fields. Ca/Ce select their shared category/dependency policy from these same retained facts; see [category coupling](#category-coupling-ca-and-ce). Existing verbosity/erosion, rule projections, CLI exits, and standalone-check/independent-diff contracts are unchanged.
+Implemented consumers and future candidates handle unavailable inventories and uncertain targets explicitly. Shared language resolution belongs here even when expensive; metric-specific graph traversal/counting and embedding computation do not. Fact extraction itself adds no scores, thresholds, or backend registry; implemented metrics explicitly compose their report fields. Ca/Ce select their shared category/dependency policy from these same retained facts; see [the category policy docstrings](../src/scb_check/metrics/categories.py). Existing verbosity/erosion, rule projections, CLI exits, and standalone-check/independent-diff contracts are unchanged.
 
 ## Layers
 
@@ -419,4 +224,4 @@ Change these only with tests and documentation updates because they move user-vi
 - Extra `ast-grep` rules: set `SCB_CHECK_EXTRA_SLOP_RULES` to a `:`-separated list of YAML files.
 - Structural rules: add a rule class in `rules/`, register it in `rules/registry.py`, and keep it on IR plus `RuleContext`.
 - New CLI commands: add command wiring under `commands/` and register from `cli.py`.
-- Snapshot metrics: subclass `metrics.base.Metric` with a metric-owned flat result and units, explicitly compose it in reporting, and extend comparison contracts and CLI acceptance coverage; see [Development](development.md#adding-or-extending-a-metric).
+- Snapshot metrics: subclass `metrics.base.Metric` with a metric-owned flat result and units, explicitly compose it in reporting, and extend comparison contracts and CLI acceptance coverage; see [Add or extend a metric](adding-a-metric.md).

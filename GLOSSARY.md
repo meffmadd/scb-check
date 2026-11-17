@@ -1,6 +1,6 @@
 # Category coupling
 
-Terminology for class dependencies across categories. The analyzer's selected measurement policy is defined in [Architecture](docs/architecture.md#category-coupling-ca-and-ce).
+Terminology for class dependencies across categories. The analyzer's selected measurement policy is documented in the [shared category-policy docstrings](src/scb_check/metrics/categories.py) and the [Ca](src/scb_check/metrics/ca.py) / [Ce](src/scb_check/metrics/ce.py) implementations.
 
 ## Language
 
