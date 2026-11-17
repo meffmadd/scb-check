@@ -2,6 +2,12 @@
 
 This guide summarizes the current implementation status and the preferred approach for common changes.
 
+## Setup
+
+Clone and install the fork as shown in the [README](../README.md#install), then run commands from the checkout with `uv run`. Use the [verification workflow](#verification) before submitting changes.
+
+To introduce or change a measurement, follow [Add or extend a metric](adding-a-metric.md).
+
 ## Current status
 
 `scb-check` is a Python CLI with four public commands:
@@ -9,7 +15,7 @@ This guide summarizes the current implementation status and the preferred approa
 - `scb-check check PATH` reports human-readable flags or JSON scores.
 - `scb-check rule RULE_ID` prints bundled `ast-grep` YAML or structural rule metadata.
 - `scb-check diff TREE_A TREE_B` reports before/after/signed metric deltas between directories.
-- `scb-check report PATH...` creates offline HTML plots of every metric's values and adjacent changes; see [CLI options and defaults](../README.md#plot-reports).
+- `scb-check report PATH...` creates offline HTML plots of every metric's values and adjacent changes; see [CLI options and defaults](cli.md#plot-reports).
 
 Implemented analysis paths:
 
@@ -27,16 +33,7 @@ Implemented analysis paths:
 - Bundled Python `ast-grep` slop patterns, plus optional local rules from `SCB_CHECK_EXTRA_SLOP_RULES`.
 - Structural rules over `ProjectIR`; the current bundled Python rules are `trivial-wrapper` and opt-in `low-use-short-function`.
 - Cyclomatic and cognitive erosion scores for all supported languages.
-- [Partial retained-project CBO](architecture.md#coupling-between-objects-cbo), with Python-first member use, possible polymorphic targets, separate immutable partner diagnostics, measured/unavailable populations, and independent check/diff reports.
-- [Direct RFC₁](architecture.md#direct-response-for-a-class-rfc₁): selected own/inherited methods plus one level of known possible method bodies, without static fallback or transitive expansion.
-- [Message Passing Coupling](architecture.md#message-passing-coupling-mpc): statically selected external implemented-method call occurrences, counted once per site regardless of possible runtime overrides.
-- [Distinct callers](architecture.md#distinct-callers): engineering-defined incoming callable counts from static project calls, including recursion and same-/cross-module partitions.
-- [Method-level RIC](architecture.md#method-level-relative-inward-coupling-ric): all method/other-class pairs, direct static distinct using methods, raw counts and floored denominator diagnostics, partial pair mean/max ratios. Ordinary aggregates use arithmetic populations and sparse observed contributions; full Cartesian diagnostics are explicit opt-in.
-- [Attribute-count DAC](architecture.md#data-abstraction-coupling-dac): canonical own fields with known outer retained-class types, not distinct types or flattened generic arguments.
-- [Class Inheritance-related Coupling](architecture.md#class-inheritance-related-coupling-cic): static proper-ancestor member occurrences, including bare implemented-method references, nearest-enclosing-class source ownership, and strict transitive ancestry availability.
-- [Category Ca/Ce](architecture.md#category-coupling-ca-and-ce): distinct outside client classes and distinct inside source classes with outside dependencies. Both independently consume one immutable module-category/static member-dependency projection; Ce is not outside target breadth.
-- [Module-call dependencies](architecture.md#module-call-dependencies): engineering-defined distinct directional logical-module neighbors from static resolved project calls, including supported initialization and excluding self-module edges.
-- These coupling metrics expose partial measured/unavailable populations, separate read-only diagnostics, and independent check/diff reports. Their project summaries are analyzer conventions without quality thresholds; [Architecture](architecture.md#partial-metric-interpretation) owns precise population, dispatch, type, and uncertainty policies.
+- Partial coupling metrics with separate measured/unavailable populations, read-only diagnostics, and independent check/diff reports. The [metric index](metrics.md) links to implementation docstrings for populations, counting policies, and limitations.
 - Python source ignores for `ast-grep` and structural rule IDs.
 - Python boundary suppression for validation/normalization functions.
 
@@ -46,7 +43,7 @@ Implemented analysis paths:
 - Exit `2` is for user-facing failures such as bad config, bad paths, unknown rules, invalid directives, or an empty eligible/parseable source set.
 - Individual read/parse failures warn and skip within their own analysis. In `diff` and `report`, every snapshot must have at least one successfully parsed eligible file; parsed zero-SLOC files remain valid. A failure produces no partial comparison payload or HTML artifact. Report publication is atomic and preserves existing output on failure.
 - Non-Python files skip Python ast-grep rules, structural rules, and source directives until language-specific rules exist.
-- Config discovery and source-directive behavior are user-facing; keep README examples synchronized when they change.
+- Config discovery and source-directive behavior are user-facing; keep the [configuration reference](configuration.md) synchronized when they change.
 
 ## Where to make changes
 
@@ -142,20 +139,9 @@ Pay special attention to:
 - mass formulas for `erosion` and `cog_erosion`,
 - line spans used by clone, `ast-grep`, and structural findings.
 
-## Adding or extending a metric
-
-1. Add behavioral acceptance expectations through the Typer CLI for known scores and supporting values. Keep the [README schema reference](../README.md#check-json-report-fields) synchronized.
-2. Put a small metric class in its own `metrics/` module, subclassing `metrics.base.Metric` with its `compute()` input types (for example, `Syntax` uses `Metric[[tuple[LanguageSyntaxSummary, ...]]]`). Implement instance `compute()` and declare class-level `units`. Pass only the extracted facts it needs; keep parser traversal and complexity extraction in tree walking. Reuse private `metrics/_mass.py` arithmetic for the erosion variants and `metrics/_counts.py`'s `summarize_counts` for measured-count aggregates. Concrete metrics still select populations and own fields and units.
-3. Return a read-only flat `MetricResult` of `int | float | None`. Own field names and units in the metric, including dynamic syntax fields. Return defined-but-unavailable fields as `None`; preserve existing zero-denominator results and let calculation errors surface.
-4. Explicitly compose the metric in `reporting.score.compute_report(AnalysisResult)` and associate its group with metric-owned units. Keep both mapping levels read-only. Use `serialize_report` for contract validation and fresh plain dictionaries; keep metadata outside numerical results.
-5. For class/callable/module metrics, preserve the [partial/unavailable distinction](architecture.md#partial-metric-interpretation), explicit extraction gates, and narrow immutable inputs. Reuse retained member selections, source occurrences, and declared types rather than adding a resolver. Test known-value source cases: RFC₁ one-hop/inherited/bodyless methods; MPC repeated/loop sites and implementation ownership; callers recursion, initialization exclusion, and module partition reconciliation; DAC repeated field types, wrappers, and unknown annotations; Ca per-category client deduplication; Ce saturation per internal source class; shared category membership, static dependency policy, partial zeros, and unavailable internal extraction; module-call neighbors repeated/cyclic/self edges, physical-file mapping, supported initialization, and unavailable targets; CIC proper ancestors, repeated sites, call/target-access deduplication, static overrides, inherited-body ownership, and unresolved ancestry availability; RIC all-pair zeros, raw zero-owner use versus the denominator floor, repeated callers, canonical ownership, and unavailable endpoints. For RIC aggregate changes, compare against full diagnostics and preserve the zero-call allocation/work regression without timing thresholds. Keep structured diagnostics outside numerical results. Document counting variants and citations without quality thresholds.
-6. Update required-field/group validation and comparison coverage for the schema. Use flat numerical fields, not nested result objects. Add no registry, report class, or placeholder configuration; constructors are for real configuration requirements.
-
-Keep `metrics/` independent of reporting and source IO. See the [ownership and interface explanation](architecture.md#report-comparison-interface).
-
 ## Extending snapshot comparisons
 
-1. Extend the snapshot metric contract through the steps above.
+1. Extend the snapshot metric contract through [Add or extend a metric](adding-a-metric.md).
 2. Keep `compare_reports(before, after)` pure and returning a read-only `Report`. Require defined groups and fields; zero-fill only absent dotted per-language syntax fields, without changing snapshots. Propagate explicit `None` rather than treating it as zero.
 3. Keep `compute_diff_report(earlier_analysis, later_analysis)` returning an ordinary `before` / `after` / `diff` dictionary. Use the standalone snapshot builder on both analyses. Tree paths belong in command output, not metric results.
 4. Add CLI coverage in `tests/test_diff_cli.py`: standalone-check parity plus independently known positive, negative, and zero differences, argument reversal, language additions/removals, exits, and stderr. Cover read-only behavior, fresh serialization, null propagation, and malformed report contracts at the public reporting seam where real-source CLI fixtures cannot produce them.
@@ -165,13 +151,31 @@ Keep `metrics/` independent of reporting and source IO. See the [ownership and i
 
 ## Extending ordered HTML reporting
 
-Keep path/config validation, analysis, and atomic output IO in `commands/report.py`. Both CLI input forms feed `build_aligned_trend`, which consumes ordered steps, named `SnapshotSeries` paths and a loader returning ordinary reports. `build_trend` offers a single-series library convenience. The builders preserve repetitions, delegate adjacent differences to `compare_reports`, and never bridge omitted steps. Shared presentation contracts are immutable `AlignedTrend`, `Trend` and `TrendSeries` in `models.py`. Manifest syntax and single-/multi-series examples are canonical in the [CLI reference](../README.md#plot-reports). Retain numerical snapshots as report data rather than analysis IRs. Add fields through existing `compute_report` / `REPORT_UNITS` composition, not a plotting registry or renderer-side measurement calculation.
+Keep path/config validation, analysis, and atomic output IO in `commands/report.py`. Both CLI input forms feed `build_aligned_trend`, which consumes ordered steps, named `SnapshotSeries` paths and a loader returning ordinary reports. `build_trend` offers a single-series library convenience. The builders preserve repetitions, delegate adjacent differences to `compare_reports`, and never bridge omitted steps. Shared presentation contracts are immutable `AlignedTrend`, `Trend` and `TrendSeries` in `models.py`. Manifest syntax and single-/multi-series examples are canonical in the [CLI reference](cli.md#plot-reports). Retain numerical snapshots as report data rather than analysis IRs. Add fields through existing `compute_report` / `REPORT_UNITS` composition, not a plotting registry or renderer-side measurement calculation.
 
 Use `tests/test_report_cli.py` for known-source standalone-check/diff parity, shared configuration/flags, unusable inputs, exit codes, and atomic publication failures. Use `tests/reporting/test_trend.py` and `test_plot.py` for complete field coverage across series, explicit step alignment, missing middle snapshots, nullable deltas, units, safe embedded JSON, accessible chart labels, and a single collapsed source-directory list without per-plot tables. Both value and adjacent-change plots are always included. Assert meaning rather than full-document layouts or call order.
 
 For browser acceptance, run `tests/reporting/report_browser_smoke.py` with Chromium installed in a pinned, isolated Playwright tool environment. Verify multiple traces without legends, concise hover labels, measurements and Kendall coefficients, escaped series/step labels, null gaps, isolated/zero/negative points, unclipped labels at narrow/wide widths, responsive paired plots, native metric-group collapse/expand (including collapsed defaults, keyboard access and resize while collapsed), all metric pairs visible when expanded without filter controls, offline/no-network operation, and a clear JavaScript requirement with accessible source directories when scripting is disabled. Keep browser tooling out of runtime dependencies.
 
-After runtime dependency changes, regenerate `uv.lock` and both [exported requirements locks](../README.md#install). Build wheel and sdist with `uv build`; inspect them for the Jinja template, chart adapter, and vendor asset/license/provenance files. Install the wheel in a clean environment, leave the checkout, and generate a report with `--disable-sg` to verify packaged asset loading is independent of cwd. When updating Plotly, follow the vendor provenance/update instructions and repeat packaging and offline browser checks.
+After runtime dependency changes, regenerate `uv.lock` and both [exported requirements locks](#dependency-locks). Build wheel and sdist with `uv build`; inspect them for the Jinja template, chart adapter, and vendor asset/license/provenance files. Install the wheel in a clean environment, leave the checkout, and generate a report with `--disable-sg` to verify packaged asset loading is independent of cwd. When updating Plotly, follow the vendor provenance/update instructions and repeat packaging and offline browser checks.
+
+## Dependency locks
+
+For hash-checked dependency installs from this repository:
+
+```bash
+python -m pip install --require-hashes -r requirements.lock
+python -m pip install --require-hashes -r requirements-dev.lock
+```
+
+These files install dependencies; use `uv sync` for a working development checkout with the project installed.
+
+Regenerate the exported locks after dependency changes:
+
+```bash
+uv export --format requirements.txt --no-dev --no-emit-project --frozen --output-file requirements.lock
+uv export --format requirements.txt --all-groups --no-emit-project --frozen --output-file requirements-dev.lock
+```
 
 ## Verification
 

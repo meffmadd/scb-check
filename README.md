@@ -1,316 +1,54 @@
 # scb-check
 
-Python CLI that reports SCBench verbosity and erosion composites for supported source codebases, compares snapshot metrics between source trees, and plots ordered snapshots as offline HTML.
+Implements various code-quality metrics to explore how code changes over time.
 
-- [Paper](https://arxiv.org/abs/2603.24755)
-- [Source](https://github.com/gabeorlanski/scb-check)
-- [SlopCodeBench (main repo)](https://github.com/SprocketLab/slop-code-bench)
+Measure source snapshots, compare their results, and plot changes across checkpoints. The metrics cover duplication, complexity, syntax size, and coupling. They support investigating code evolution, including during agentic development; an increasing measurement does not automatically mean declining quality.
 
-- **Verbosity**: fraction of SLOC flagged by clone detection, ast-grep slop rules, or structural rules. Non-Python languages currently contribute clone lines only.
-- **Erosion**: share of function "mass" (`complexity * sqrt(sloc)`) concentrated in high-complexity functions (cyclomatic complexity > 10).
-- **Cognitive erosion**: same mass-share calculation using cognitive complexity > 10.
-- **Partial CBO**: distinct retained-project class partners from method/attribute use in either direction, with Python-first resolution and explicit availability counts. This is not a quality score.
-- **Partial CIC**: physical accesses/uses of statically selected proper-ancestor members, with strict ancestry availability and no inherited-body copying. See the [counting and provenance contract](docs/architecture.md#class-inheritance-related-coupling-cic).
-- **Partial method RIC**: distinct methods of a comparison class using a method, divided by `max(1, distinct owner-class using methods)`. Includes zero-use pairs; diagnostics preserve raw counts. This is not a method-move recommendation; see the [RIC contract](docs/architecture.md#method-level-relative-inward-coupling-ric).
-- **Partial RFC₁, MPC, distinct callers, and DAC**: direct response methods, statically selected external method call sites, distinct incoming callers, and class-typed attribute volume. These are descriptive measurements, not quality scores; see the [precise counting policies](docs/architecture.md#partial-metric-interpretation).
-- **Partial Ca/Ce**: category coupling counts outside client classes (Ca) and inside classes with outside dependencies (Ce), not external target breadth. Categories are class-bearing logical modules; see the [shared policy and limitations](docs/architecture.md#category-coupling-ca-and-ce).
-- **Partial module-call dependencies**: distinct incoming/outgoing logical-module neighbors from static resolved project calls, not imports. These engineering-defined graph counts are not Ca/Ce or quality scores; see the [counting policy](docs/architecture.md#module-call-dependencies).
-- **Metric deltas**: signed later-minus-earlier differences in scores, counts, and complexity masses from two full analyses.
+Supports Python, Rust, JavaScript, TypeScript, Zig, Haskell, and C++. Coverage varies by metric; semantic coupling measurements are currently Python-first and partial.
 
 ## Install
 
-Requires Python 3.12+.
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
-Run without installing (recommended):
-
-```bash
-uvx scb-check check PATH
-uvx --from git+https://github.com/gabeorlanski/scb-check scb-check check PATH
-```
-
-Or install into the current project:
+Install from this fork's checkout:
 
 ```bash
-uv sync              # for development in this repo
-uv add scb-check     # as a dependency elsewhere
+git clone https://github.com/meffmadd/scb-check.git
+cd scb-check
+uv sync
 ```
-
-For hash-checked dependency installs from this repository, use the exported lock files:
-
-```bash
-python -m pip install --require-hashes -r requirements.lock
-python -m pip install --require-hashes -r requirements-dev.lock
-```
-
-Regenerate them after dependency changes with:
-
-```bash
-uv export --format requirements.txt --no-dev --no-emit-project --frozen --output-file requirements.lock
-uv export --format requirements.txt --all-groups --no-emit-project --frozen --output-file requirements-dev.lock
-```
-
-`scb-check` runs bundled ast-grep rules by trying a global `sg` executable first. If global `sg` is missing or fails, it falls back to the `ast-grep-cli` executable installed with `scb-check`.
 
 ## Usage
 
+Run these commands from the checkout.
+
+Measure a snapshot:
+
 ```bash
-scb-check check PATH                    # human-readable flags
-scb-check check PATH --output-format json  # JSON report with verbosity/erosion scores
-scb-check check PATH --report           # shortcut for --output-format json
-scb-check check PATH -v / --verbosity   # add info logging
-scb-check check PATH -vv                # add debug logging
-scb-check check PATH --config FILE      # explicit config path
-scb-check check PATH --include-all      # include gitignored files plus ignored, lower-severity, and boundary-suppressed findings
-scb-check check PATH --disable-sg  # skip ast-grep subprocess findings
-scb-check check PATH --min-duplicate-lines N  # show duplicate groups with at least N SLOC lines
-scb-check rule RULE_ID                  # print YAML or metadata for a specific rule
-scb-check diff TREE_A TREE_B            # before / after / signed metric deltas
-scb-check diff TREE_A TREE_B --output-format json  # structured metric comparison
-scb-check diff TREE_A TREE_B --config FILE --disable-sg  # shared options for both analyses
-scb-check report TREE_A TREE_B TREE_C   # write report.html in the current directory
-scb-check report TREE_A TREE_B TREE_C --output changes.html
+uv run scb-check check PATH --output-format json
 ```
 
-For `check`, `PATH` may be a file or directory; `diff` and `report` accept directories only. Directories are walked for supported source files: Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). Directory discovery respects `.gitignore` globs by default; use `--include-all` to scan gitignored supported files too.
+Compare an earlier and a later snapshot:
 
-Python declarations inside control-flow wrappers participate in ordinary metrics and structural rules. Same-named functions in different files count independently; repeated Python definitions within one file retain last-definition metric selection. These extraction/counting corrections can change scores without changing metric formulas or the JSON schema. Maintainer-facing immutable entity facts are described in the [IR contract](docs/tree-walking.md#retained-entity-contract), including [Python entity-owned source text fragments](docs/tree-walking.md#source-text-fragments). Internal analysis also retains [Python call/access occurrences and scoped import bindings](docs/tree-walking.md#canonical-source-uses-and-imports), with execution ownership and conservative direct-resolution evidence, plus [class/member declarations, structured field types, and direct bases](docs/tree-walking.md#class-member-and-declared-type-facts). [Bounded Python member resolution](docs/tree-walking.md#member-resolution-and-runtime-targets) connects those facts to canonical declarations and separate possible implementation sets with explicit uncertainty; the [candidate input matrix](docs/architecture.md#metric-ready-analysis-data-flow) describes metric consumers. Unavailable internal fact inventories are `None`, distinct from successfully extracted empty facts; parser-supported subsets are documented in the [availability contract](docs/tree-walking.md#fact-availability-and-parser-support). CBO, RFC₁, MPC, distinct callers, DAC, CIC, method RIC, Ca, Ce, and module-call dependencies consume these retained facts without changing verbosity, erosion, structural-rule policies, or independent snapshot analysis.
-
-### Check JSON report fields
-
-Check JSON is a report object with fourteen metric groups. Each group is a flat object of numerical values or `null`, with no `data` wrapper or flat compatibility aliases.
-
-| Metric group | Result fields |
-| --- | --- |
-| `verbosity` | `score`, `files_scanned`, `total_loc`, `flagged_loc`, `clone_loc`, `ast_grep_flagged_loc`, `structural_rule_loc`, `structural_rule_findings` |
-| `erosion` | `score`, `total_functions`, `high_cc_functions`, `total_mass`, `high_cc_mass` |
-| `cog_erosion` | `score`, `total_functions`, `high_cog_functions`, `total_cog_mass`, `high_cog_mass` |
-| `syntax` | `tree_count`, `node_count`, plus `<language>.tree_count` and `<language>.node_count` |
-| `cbo` | `measured_classes`, `unavailable_classes`, `partial_partner_sum`, `partial_partner_mean`, `partial_partner_max` |
-| `rfc` | `measured_classes`, `unavailable_classes`, `partial_response_sum`, `partial_response_mean`, `partial_response_max` |
-| `mpc` | `measured_classes`, `unavailable_classes`, `partial_call_site_sum`, `partial_call_site_mean`, `partial_call_site_max` |
-| `callers` | `measured_callables`, `unavailable_callables`, `partial_caller_sum`, `partial_caller_mean`, `partial_caller_max`, `partial_same_module_sum`, `partial_cross_module_sum` |
-| `dac` | `measured_classes`, `unavailable_classes`, `partial_attribute_sum`, `partial_attribute_mean`, `partial_attribute_max` |
-| `cic` | `measured_classes`, `unavailable_classes`, `partial_occurrence_sum`, `partial_occurrence_mean`, `partial_occurrence_max` |
-| `ric` | `measured_pairs`, `unavailable_pairs`, `partial_ratio_mean`, `partial_ratio_max` |
-| `ca` | `measured_categories`, `unavailable_categories`, `partial_client_sum`, `partial_client_mean`, `partial_client_max` |
-| `ce` | `measured_categories`, `unavailable_categories`, `partial_source_sum`, `partial_source_mean`, `partial_source_max` |
-| `module_call_dependencies` | `measured_modules`, `unavailable_modules`, `partial_incoming_sum`, `partial_incoming_mean`, `partial_incoming_max`, `partial_outgoing_sum`, `partial_outgoing_mean`, `partial_outgoing_max` |
-
-Syntax counts cover parsed Tree-sitter trees and their nodes. Dotted per-language names such as `python.node_count` are single flat keys, not nested objects. Only languages present in that snapshot appear. Group, field, and language ordering is deterministic.
-
-Scores use fractional units. Counts and complexity masses retain their numerical units. Values are finite numbers or `null`; `null` means unavailable or undefined, not zero. Existing zero-denominator scores remain zero, including zero-SLOC verbosity and zero-mass erosion. Human check output remains location-level findings with source context.
-
-CBO's `partial_partner_*` summaries cover measured retained-project classes only: sum of per-class partner counts (each pair counts twice), arithmetic mean, and maximum. Population fields use classes; summaries use partner counts. All are **partial**, including zero: unresolved outgoing/incoming uses and unmodeled library classes can hide partners. Unsupported classes count as unavailable, not measured zero. With no measured classes, summaries are `null`. This project aggregation is an analyzer convention, not a paper-defined formula. CBO adds no findings, exit-code changes, thresholds, or sloppiness judgments. See [the precise variant, population, and resolution policy](docs/architecture.md#coupling-between-objects-cbo).
-
-CIC's `partial_occurrence_*` fields summarize measured per-class physical ancestor-member occurrences (unit: occurrences): sum, arithmetic mean, and maximum. Population fields count classes. Incomplete ancestry or missing required extraction makes a class unavailable; unresolved member uses within established ancestry leave partial counts, including zero. With no measured classes, summaries are `null`. Project aggregation is an analyzer convention, not a paper-defined formula. See [the precise Python-first policy and primary-paper citation (no DOI verified)](docs/architecture.md#class-inheritance-related-coupling-cic). Larger values do not imply sloppiness; CIC adds no quality thresholds, findings, or exit-code changes.
-
-RIC population fields count method/comparison-class pairs (unit: `pairs`). `partial_ratio_mean` and `partial_ratio_max` summarize measured pairs, including zeros (unit: dimensionless `ratio`, not a percentage); both are `null` without measured pairs. These are analyzer conventions, not paper-defined class/system RIC; there is no ratio sum or pooled ratio. Check/diff count zero-use pairs arithmetically and aggregate sparse observed uses; they do not build the full diagnostic Cartesian product. Read-only per-pair raw counts, effective denominator, and ratio (including zero-use pairs) remain explicitly available separately from JSON numerical reports. See the [RIC contract](docs/architecture.md#method-level-relative-inward-coupling-ric) for population, availability, and interpretation limits.
-
-RFC₁, MPC, and DAC summarize measured classes; distinct callers summarizes measured functions/methods. Population fields count classes or callables; summary units are methods (`rfc`), call sites (`mpc`), callers (`callers`), and attributes (`dac`). Each `partial_*_sum` adds per-entity counts, each mean divides by the measured population, and each maximum selects its largest count. Callers' same-/cross-module sums partition its total. All summary fields are `null` with no measured entities; unsupported entities are unavailable, not measured zero. These project aggregates are analyzer conventions. Partial zero does not prove absence: unresolved uses, unmodeled libraries, or unknown field types can hide contributions. See [Architecture](docs/architecture.md#partial-metric-interpretation) for citations, exact variants, populations, dispatch/type limits, and incoming-reference uncertainty. No quality thresholds or findings are added.
-
-Ca and Ce summarize measured **class-bearing module categories**, not classes or importing files. Ca counts distinct outside client classes once per destination category; Ce counts distinct inside source classes with any outside dependency, once regardless of target breadth. Their `partial_*_sum`, mean, and maximum use client classes (`ca`) or source classes (`ce`); sums count category–client/source incidences. Population fields use categories. Unsupported internal extraction makes a category unavailable and excludes it from summaries. With no measured categories, summaries are `null`; an isolated supported category measures partial zero. Unresolved relations and unscanned libraries remain omitted, not known absent. These analyzer-defined project aggregates add no scores, findings, thresholds, or exit-code changes. See [Architecture](docs/architecture.md#category-coupling-ca-and-ce) for the historical variant, static method/field predicate, scope, incoming uncertainty, and separate read-only diagnostics.
-
-Module-call dependencies count distinct other physical-file modules in each direction, including supported initialization calls, excluding self-module calls. Only static resolved retained-project calls count; imports, possible runtime targets, and external/unknown targets do not. Libraries participate only as scanned project source. Population units are modules, sums are module-neighbor incidences, and means/maxima are neighbors per module. Summaries cover measured modules only and are `null` when none are measured. Unsupported extraction remains unavailable; supported zero remains partial because missing outgoing/incoming evidence can hide neighbors. A known target with unavailable extraction still contributes an outgoing neighbor, so measured directional sums can differ. Aggregation is an analyzer convention, with no quality thresholds. See [the full policy and separate diagnostics](docs/architecture.md#module-call-dependencies).
-
-### Comparing source trees
-
-`scb-check diff TREE_A TREE_B` runs a full check analysis of each directory, including plain directories outside any git repository. `TREE_A` is the earlier snapshot; `TREE_B` is the later snapshot. Every delta is **after minus before**, including negative and zero values. The default human summary shows both resolved roots and before/after/diff columns for all scores, underlying counts, complexity masses, and syntax counts.
-
-One configuration applies to both analyses: discovered from the current working directory, or selected with `--config FILE`. Tree-local configs are not loaded separately. Discovery uses each tree's applicable `.gitignore` files and the ordinary check exclusion semantics. `--include-all` has its full check meaning on both sides: include gitignored files plus ignored, informational, and boundary-suppressed findings; configured excludes and default excluded directories still apply. `--disable-sg` disables ast-grep on both sides. Otherwise each analysis can run the ordinary ast-grep subprocesses. Logging uses `-v` / `--verbosity` and `-vv` as with `check`. There is no `--report` alias, duplicate-display option, or threshold gate.
-
-#### Diff JSON fields
-
-- `tree_a`, `tree_b`: resolved directory paths, separate from measurements.
-- `before`, `after`: each preserves the complete [check JSON report structure](#check-json-report-fields).
-- `diff`: the same metric groups and fields with signed differences, including zeros, without per-field delta suffixes. Dotted syntax fields cover the sorted language union; only absent per-language counts contribute zero for subtraction. The snapshots remain unchanged and equal standalone check JSON with identical settings.
-
-If either operand is `null`, its difference is `null`, including two null operands. Missing required groups or fields are report-contract errors, not zeros. The comparison key is `diff`; there is no `delta` alias.
-
-Scores and score deltas use fractional units in JSON. A score changing from `0.20` to `0.15` has delta `-0.05`. Human output displays scores as percentages and their differences as percentage points (`-5.00 percentage points`), not relative percentage changes. Counts and masses retain their existing units. Human output labels unavailable values explicitly rather than displaying them as zero.
-
-Individual read/parse failures warn and skip within their own analysis, without dropping the readable counterpart in the other tree. Each side must have at least one successfully parsed eligible file; zero-SLOC files are valid. Invalid directives retain check's error behavior. Optional ast-grep failures degrade as in check.
-
-This measures snapshot changes, **not code churn**: literal edits or renames that preserve ordinary reports yield zero deltas. Zero aggregate deltas do not prove unchanged code or rule out offsetting local changes. A positive delta means a larger measurement, not necessarily a regression. See [Architecture](docs/architecture.md#snapshot-comparison) for interpretation and the pure Python report-comparison interface.
-
-### Plot reports
-
-`scb-check report PATH... [OPTIONS]` creates a self-contained HTML report from at least two source directories in supplied order. Inputs are source trees, not saved JSON or Git revisions. Repeated paths remain separate positions; inputs are neither sorted nor deduplicated.
-
-| Option | Behavior |
-| --- | --- |
-| `--manifest FILE` | TOML manifest of named series aligned by explicit steps; cannot be combined with positional paths. |
-| `--output PATH` | HTML destination; defaults to `report.html` in the current directory. |
-| `--config FILE` | Shared settings file; otherwise discover settings from the current directory. |
-| `--include-all` | Include gitignored files and normally suppressed findings for every input. |
-| `--disable-sg` | Skip ast-grep checks for every input. |
-| `-v` / `--verbosity` | Info logging; repeat as `-vv` for debug logging. |
-| `--help` | Show usage. |
-
-Alternatively, `scb-check report --manifest comparison.toml --output comparison.html` accepts one or more named series. A single-series manifest produces the same values and changes as equivalent positional inputs:
-
-```toml
-steps = ["1", "2", "3"]
-
-[series.eve_industry]
-"1" = "eve_industry/checkpoint_1/snapshot"
-"2" = "eve_industry/checkpoint_2/snapshot"
-"3" = "eve_industry/checkpoint_3/snapshot"
+```bash
+uv run scb-check diff BEFORE AFTER
 ```
 
-Multiple series share those exact step identifiers and their declared order:
+Plot a sequence of source directories as an offline HTML report:
 
-```toml
-steps = ["1", "2", "3"]
-
-[series.problem-1]
-"1" = "run/problem-1/checkpoint_1/snapshot"
-"2" = "run/problem-1/checkpoint_2/snapshot"
-"3" = "run/problem-1/checkpoint_3/snapshot"
-
-[series.problem-2]
-"1" = "run/problem-2/checkpoint_1/snapshot"
-"3" = "run/problem-2/checkpoint_3/snapshot"
+```bash
+uv run scb-check report STEP_1 STEP_2 STEP_3 --output changes.html
 ```
 
-Relative source paths resolve against the manifest's directory, not the working directory. Steps must be a nonempty list of unique, nonempty strings; `series` must contain named tables mapping declared steps to nonempty directory paths. Omitted entries are missing snapshots, never zeros. Explicit invalid paths, undeclared steps, malformed TOML, and unknown top-level keys are errors before analysis. An explicitly configured snapshot must still contain usable source.
-
-Each metric plots one line per series without a legend. Hover shows the series, step, measurement, and its series' Kendall τ-b against declared step order. The values-plot heading shows τ for one series or the signed, equally weighted mean and contributor count for multiple series. Missing observations are omitted without interpolation. Constant series and series with fewer than two observations have undefined τ and do not contribute; unavailable results display `N/A`. The mean is descriptive, not a significance test. Missing snapshots interrupt both values and adjacent changes: a change compares only the current and previous **declared step** within the same series, never an earlier available checkpoint.
-
-One configuration and equal analysis flags apply to every snapshot, with ordinary `check`/`diff` semantics. Tree-local configs are not loaded separately. By default, exclusions and suppressions apply and ast-grep runs normally. `--include-all` includes ignored, informational, and boundary-suppressed findings, but configured excludes and default excluded directories still apply.
-
-Every field in the full [check report](#check-json-report-fields), including counts and per-language fields, gets separate value and adjacent-change line plots. Changes are **current minus previous**, positioned at the later input; the first input has no previous difference. The x-axis is evenly spaced, not elapsed time. Positional labels include index and directory basename; manifest labels are the declared steps. Hover shows the series (when named), input label, plotted value or signed change with its unit, and the series' value-trend τ. Full resolved paths appear once in a collapsed **Source directories** list; there are no per-plot tables. Value and change plots sit side by side on wide screens and stack on narrow screens.
-
-Metrics are organized into collapsible groups such as `syntax`, containing fields such as `syntax.python.node_count`. Groups start collapsed; click the group heading (or use the keyboard) to expand or collapse the whole group. These native disclosures work without JavaScript; charts still require it.
-
-Unavailable values are gaps, not zeros or interpolated lines; isolated observations remain dots. Language fields cover the union of inputs, but absent snapshot language counts remain unavailable. Only subtraction zero-fills absent dotted syntax counts; a language absent from both adjacent snapshots has no change measurement. Explicit `null` propagates. Fractions display as percentages and their changes as percentage points; counts, masses, and dimensionless ratios retain metric-owned units.
-
-Plotly.js is embedded once, with no CDN or network requirement. Plots and hover require JavaScript; without it, the page explains this requirement and source directories remain accessible. Output is always HTML, with all metrics and both plots: there is no metric selection, mode switch, `--output-format`, `--report` alias, `--min-duplicate-lines`, threshold gate, Git traversal, or browser launch.
-
-Every input needs successfully parsed eligible source; parsed zero-SLOC files are valid. Individual read/parse failures warn and skip normally, but an unusable snapshot is never silently dropped. Only complete HTML is published, atomically; failure preserves any existing artifact. The output parent must already exist. See [ordered plot reports](docs/architecture.md#ordered-plot-reports) for interpretation and partial-coverage limits.
-
-### Exit codes
-
-`scb-check check` exits `0` when no findings are reported, `1` when any finding is present (clones, ast-grep hits, structural findings, or high-complexity functions), and `2` for usage errors (bad path, missing config, invalid directives).
-
-`scb-check diff` exits `0` on success regardless of findings or delta signs, and `2` for invalid paths/config/options/directives or a side with no successfully parsed eligible files. Failures print to stderr without a partial comparison on stdout. It never exits `1`.
-
-`scb-check report` exits `0` after successful generation, regardless of findings, and `2` for usage, input, configuration, or output errors. It never exits `1`.
-
-Clone detection only emits duplicated syntax blocks with at least two executable body statements. Function signatures, comments, blanks, and Python docstrings do not satisfy that threshold; displayed clone line counts and `--min-duplicate-lines` still use duplicated `SLOC` in the clone span.
-
-## Configuration
-
-scb-check looks for `scb-check.toml` or a `pyproject.toml` containing `[tool.scb-check]`, `[tool.ruff]`, or `[tool.ty.src]`, walking upward from the current directory until it hits a `.git` root.
-
-```toml
-# scb-check.toml
-exclude = ["tests/fixtures/*", "vendor/**"]
-context = 1
-
-[low-use-short-function]
-enabled = true
-max-call-sites = 2
-max-function-sloc = 5
-max-inline-caller-sloc = 50
-max-inline-caller-complexity = 10
-max-inline-caller-cognitive-complexity = 10
-max-inline-call-nesting = 3
-```
-
-```toml
-# pyproject.toml
-[tool.scb-check]
-exclude = ["tests/fixtures/*"]
-context = 2
-
-[tool.scb-check.low-use-short-function]
-enabled = true
-```
-
-- `exclude`: list of glob patterns to skip while discovering supported source files.
-- `context`: number of surrounding source lines to show around human-readable ast-grep, structural rule, and erosion findings.
-- `low-use-short-function`: opt-in budgets for the short low-use helper rule. Set `enabled = true` to enable it, then tune `max-call-sites`, `max-function-sloc`, `max-inline-caller-sloc`, `max-inline-caller-complexity`, `max-inline-caller-cognitive-complexity`, and `max-inline-call-nesting`.
-
-Configured `exclude` patterns still apply when `--include-all` is used; only `.gitignore` file discovery is extended.
-
-Ast-grep slop rules, structural rules, and source directives are currently Python-only. Rust, JavaScript, TypeScript, Zig, Haskell, and C++ still participate in SLOC totals, clone detection, cyclomatic erosion, and cognitive erosion.
-
-When using `pyproject.toml`, scb-check also includes excludes from:
-
-- `[tool.ruff].exclude`
-- `[tool.ruff].extend-exclude`
-- `[tool.ty.src].exclude`
-
-## Source directives
-
-In Python files, you can suppress specific ast-grep or structural rule findings at the source line level with:
-
-```python
-# scbc ignore[rule-id]
-# scbc ignore[trivial-wrapper]
-```
-
-Same-line form:
-
-```python
-value = cfg.get("a", {}).get("b", {})  # scbc ignore[chained-dict-get] Boundary normalization for legacy webhook payloads.
-```
-
-Standalone block form:
-
-```python
-# scbc ignore[chained-dict-get]
-# Boundary normalization for legacy webhook payloads.
-value = cfg.get("a", {}).get("b", {})
-```
-
-Multiple rule IDs:
-
-```python
-# scbc ignore[chained-dict-get,dict-get-empty-dict-default]
-# Legacy webhook payloads are partially populated and normalized downstream.
-value = cfg.get("a", {}).get("b", {})
-```
-
-Function-level boundary suppression is available for code that intentionally validates or normalizes external input:
-
-```python
-def _load_toml(path: Path) -> dict[str, Any]:
-    # scbc boundary: reads and validates user config
-    ...
-```
-
-Boundary directives must be inside the function body, after the `def` line. By default, ast-grep findings inside that function are hidden, and informational ast-grep rules are omitted. Use `--include-all` to show ignored, informational, and boundary-suppressed ast-grep findings.
-
-Rules:
-
-- Rule IDs inside `ignore[...]` are required.
-- Reason text is optional.
-- Same-line ignore directives apply to that same physical line.
-- Standalone ignore directives apply to the next non-blank, non-comment code line.
-- Boundary directives apply to the containing function body.
-- Ast-grep and structural rule findings are suppressible; clone and erosion findings are not.
-- Invalid directives fail the run with exit code `2` unless `--include-all` is used.
-
-## How it works
-
-- **Tree walking**: language dispatch backed by tree-sitter grammars emits language-agnostic `ModuleIR` and semantic project context.
-- **Clone detection**: hashed AST blocks across the scanned set; two or more matching instances become a `CloneBlock`.
-- **Slop patterns**: Python ast-grep rules in `src/scb_check/resources/slop_rules/` split by category (e.g. `range(len(x))`, `dict.get(k, None)`, `isinstance` ladders, manual min/max, defensive guards).
-- **Structural rules**: typed Python classes in `src/scb_check/rules/` run over tree-walking IR. `trivial-wrapper` flags removable single-return pass-through functions (identity returns and calls that only forward parameters to another scanned function), while semantic keep reasons skip constant returns, default-backed value providers, external calls, decorated functions, dunder methods, and inherited API implementations. `low-use-short-function` flags short helpers with few resolved call sites only when inlining them would stay within configured caller SLOC, complexity, cognitive complexity, and nesting budgets.
-- **Extra local slop patterns**: set `SCB_CHECK_EXTRA_SLOP_RULES` to a `:`-separated list of YAML paths to layer additional rules on top of the bundled set.
-- **Complexity**: per-function cyclomatic and cognitive complexity plus SLOC, combined into mass scores for erosion metrics.
+Differences are later minus earlier. `check` exits `1` when it reports findings; `diff` and `report` exit `0` on success regardless of findings.
 
 ## Documentation
 
-- [Docs index](docs/index.md)
-- [Architecture and concepts](docs/architecture.md)
-- [Current status and development approach](docs/development.md)
+- [Compare code across checkpoints](docs/comparing-snapshots.md)
+- [CLI reference](docs/cli.md), [JSON report fields](docs/report-fields.md), and [configuration](docs/configuration.md)
+- [Measurements and limitations](docs/metrics.md)
+- [Development](docs/development.md) and [documentation index](docs/index.md)
 
-## Development
+## Acknowledgements
 
-```bash
-uv run pytest
-uv run ruff check
-uv run ty check src/
-```
+This fork builds on [scb-check](https://github.com/gabeorlanski/scb-check) and the work of [SlopCodeBench](https://github.com/SprocketLab/slop-code-bench).
