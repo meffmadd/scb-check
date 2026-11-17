@@ -153,12 +153,12 @@ def check_render(page: Any, trend: Trend) -> None:  # noqa: ANN401
 
 
 def check_hover(page: Any, trend: Trend) -> None:  # noqa: ANN401
-    """Hover shows only the input label and the plotted measurement with its unit."""
+    """Hover shows the input, measurement and series coefficient."""
     assert trend.paths[0] is not None
     assert trend.paths[2] is not None
     score = plot_id(trend, "verbosity.score")
     text = hover(page, score, 0)
-    assert text == f"1: {trend.paths[0].name}Value: 12.5%", text
+    assert text.startswith(f"1: {trend.paths[0].name}Value: 12.5%τ: "), text
     assert str(trend.paths[0]) not in text
     assert (
         page.locator(
@@ -170,7 +170,7 @@ def check_hover(page: Any, trend: Trend) -> None:  # noqa: ANN401
 
     count = plot_id(trend, "verbosity.total_loc", difference=True)
     text = hover(page, count, 1)
-    assert text == f"3: {trend.paths[2].name}Change: -3 lines", text
+    assert text.startswith(f"3: {trend.paths[2].name}Change: -3 linesτ: "), text
 
     for metric, expected in (
         ("erosion.total_mass", "2.5 mass"),
@@ -180,7 +180,7 @@ def check_hover(page: Any, trend: Trend) -> None:  # noqa: ANN401
         assert expected in text, text
         assert "50%" not in text, text
     text = hover(page, plot_id(trend, "rfc.unavailable_classes"), 0)
-    assert text == f"1: {trend.paths[0].name}Value: 3 classes", text
+    assert text == f"1: {trend.paths[0].name}Value: 3 classesτ: N/A", text
 
 
 def check_hostile_labels(page: Any, trend: Trend) -> None:  # noqa: ANN401
@@ -366,7 +366,7 @@ def representative_aligned_trend() -> AlignedTrend:
 
 
 def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN401
-    """Offline charts expose named series, gaps, native legends and resizing."""
+    """Offline charts expose named series and coefficients on hover, with gaps and resizing."""
     check_collapsed_defaults(page, trend)
     first = trend.trends[0]
     page.wait_for_function(
@@ -381,10 +381,7 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
         [50, None, 70],
     ]
     assert chart.evaluate("p => p.data.map(t => t.connectgaps)") == [False] * 2
-    assert chart.locator(".legendtext").all_text_contents() == [
-        "problem-a (τ: 0.33)",
-        f"{trend.trends[1].name} (τ: 1.00)",
-    ]
+    assert chart.locator(".legendtext").count() == 0
     assert (
         "Mean τ: 0.67 (2/2 contributors)"
         in page.locator(f"#{chart_id}-heading").inner_text()
@@ -394,21 +391,13 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
         "first",
         "last",
     ]
-    assert hover(page, chart_id, 0) == "problem-athirdValue: 10%"
-    chart.locator(".legendtoggle").nth(1).click()
-    page.wait_for_function(
-        "id => document.getElementById(id).data[1].visible === 'legendonly'",
-        arg=chart_id,
-    )
+    assert hover(page, chart_id, 0) == "problem-athirdValue: 10%τ: 0.33"
     change_id = plot_id(first, "verbosity.score", difference=True)
-    assert page.locator(f"#{change_id} .legendtext").all_text_contents() == [
-        "problem-a",
-        trend.trends[1].name,
-    ]
+    assert page.locator(f"#{change_id} .legendtext").count() == 0
     assert page.locator(f"#{change_id}").evaluate(
         "p => p.data.map(t => t.y.map(v => v === null ? null : Math.round(v)))"
     ) == [[None, 20, -10], [None, None, None]]
-    assert "percentage points" in hover(page, change_id, 0)
+    assert "percentage pointsτ: 0.33" in hover(page, change_id, 0)
     unknown = page.locator(f"#{plot_id(first, 'rfc.partial_response_sum')}")
     assert unknown.evaluate("p => p.data.map(t => t.y)") == [[None] * 3] * 2
     check_all_metrics_shown(page, trend)
@@ -417,13 +406,8 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
     page.set_viewport_size({"width": 480, "height": 1000})
     group.locator("summary").click()
     wait_for_chart_width(page, chart_id)
-    assert chart.locator(".legendtext").count() == 2
-    assert hover(page, chart_id, 0) == "problem-athirdValue: 10%"
-    chart.locator(".legendtoggle").nth(1).click()
-    page.wait_for_function(
-        "id => document.getElementById(id).data[1].visible === true",
-        arg=chart_id,
-    )
+    assert chart.locator(".legendtext").count() == 0
+    assert hover(page, chart_id, 0) == "problem-athirdValue: 10%τ: 0.33"
     assert page.evaluate("window.__injected === undefined")
     assert page.locator("img, iframe, script[src]").count() == 0
 
