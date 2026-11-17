@@ -151,7 +151,7 @@ def test_metric_groups_are_native_collapsed_disclosures_in_report_order() -> (
     ] == page.plot_ids
 
 
-def test_multiseries_payload_keeps_steps_means_and_gaps() -> None:
+def test_multiseries_payload_keeps_steps_and_gaps() -> None:
     """Multiple lines share declared steps while retaining sparse measurements."""
     report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
     trend = build_aligned_trend(
@@ -161,7 +161,6 @@ def test_multiseries_payload_keeps_steps_means_and_gaps() -> None:
             SnapshotSeries("other", (Path("b"), Path("b"), Path("b"))),
         ),
         lambda _path: report,
-        aggregate="mean",
     )
     page = ReportPage(render_trend_html(trend))
     assert page.payload["labels"] == ["3", "1", "2"]
@@ -170,7 +169,8 @@ def test_multiseries_payload_keeps_steps_means_and_gaps() -> None:
         "other",
     ]
     assert page.payload["runs"][0]["paths"] == ["a", None, "a"]
-    assert page.payload["mean"][0]["contributors"] == [2, 1, 2]
+    assert set(page.payload) == {"labels", "runs", "units"}
+    assert page.payload["runs"][0]["series"][0]["values"] == [0, None, 0]
     assert page.inputs == []
     assert len(page.plot_ids) == len(trend.trends[0].series) * 2
 

@@ -139,7 +139,6 @@ This measures snapshot changes, **not code churn**: literal edits or renames tha
 | Option | Behavior |
 | --- | --- |
 | `--manifest FILE` | TOML manifest of named series aligned by explicit steps; cannot be combined with positional paths. |
-| `--aggregate mean` | Add an equal-weight mean alongside individual series; no aggregate by default. |
 | `--output PATH` | HTML destination; defaults to `report.html` in the current directory. |
 | `--config FILE` | Shared settings file; otherwise discover settings from the current directory. |
 | `--include-all` | Include gitignored files and normally suppressed findings for every input. |
@@ -177,11 +176,9 @@ Relative source paths resolve against the manifest's directory, not the working 
 
 Each metric plots one line per series with a legend and concise series/step hover labels. Missing snapshots interrupt both values and adjacent changes: a change compares only the current and previous **declared step** within the same series, never an earlier available checkpoint.
 
-`scb-check report --manifest comparison.toml --aggregate mean --output comparison.html` adds a distinct dashed mean line. The mean is the equal-weight arithmetic mean of available measurements at each step, not a pooled or LOC-weighted score. Change plots average available per-series adjacent deltas, not differences between step means with different populations. Aggregate hover includes contributor counts; no contributors means unavailable. `--aggregate mean` also works with positional inputs.
-
 One configuration and equal analysis flags apply to every snapshot, with ordinary `check`/`diff` semantics. Tree-local configs are not loaded separately. By default, exclusions and suppressions apply and ast-grep runs normally. `--include-all` includes ignored, informational, and boundary-suppressed findings, but configured excludes and default excluded directories still apply.
 
-Every field in the full [check report](#check-json-report-fields), including counts and per-language fields, gets separate value and adjacent-change line plots. Changes are **current minus previous**, positioned at the later input; the first input has no previous difference. The x-axis is evenly spaced, not elapsed time. Positional labels include index and directory basename; manifest labels are the declared steps. Hover shows the series (when named), input label and plotted value or signed change with its unit, plus contributor counts for means. Full resolved paths appear once in a collapsed **Source directories** list; there are no per-plot tables. Value and change plots sit side by side on wide screens and stack on narrow screens.
+Every field in the full [check report](#check-json-report-fields), including counts and per-language fields, gets separate value and adjacent-change line plots. Changes are **current minus previous**, positioned at the later input; the first input has no previous difference. The x-axis is evenly spaced, not elapsed time. Positional labels include index and directory basename; manifest labels are the declared steps. Hover shows the series (when named), input label and plotted value or signed change with its unit. Full resolved paths appear once in a collapsed **Source directories** list; there are no per-plot tables. Value and change plots sit side by side on wide screens and stack on narrow screens.
 
 Metrics are organized into collapsible groups such as `syntax`, containing fields such as `syntax.python.node_count`. Groups start collapsed; click the group heading (or use the keyboard) to expand or collapse the whole group. These native disclosures work without JavaScript; charts still require it.
 

@@ -31,8 +31,6 @@ class TrendSeries:
     unit: Unit
     values: tuple[ReportValue, ...]
     differences: tuple[ReportValue, ...]
-    contributors: tuple[int, ...] = ()
-    change_contributors: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,11 +54,10 @@ class Trend:
 
 @dataclass(frozen=True, slots=True)
 class AlignedTrend:
-    """Independent named trends on one ordered categorical axis, with optional means."""
+    """Independent named trends on one ordered categorical axis."""
 
     steps: tuple[str, ...]
     trends: tuple[Trend, ...]
-    mean: tuple[TrendSeries, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -19,11 +19,10 @@
     return number + (unit === "fraction" && !difference ? "%" : " " + displayUnit(unit, difference));
   }
 
-  function hoverText(series, name, input, difference, aggregate) {
+  function hoverText(series, name, input, difference) {
     const value = (difference ? series.differences : series.values)[input];
     const lines = [name, payload.labels[input],
       `${difference ? "Change" : "Value"}: ${measurement(value, series.unit, difference)}`];
-    if (aggregate) lines.push(`Contributors: ${(difference ? series.change_contributors : series.contributors)[input]}`);
     return lines.filter(line => line !== "").map(escapeText).join("<br>");
   }
 
@@ -31,17 +30,15 @@
     for (const difference of [false, true]) {
       const scale = series.unit === "fraction" ? 100 : 1;
       const element = document.getElementById(`plot-${index}-${Number(difference)}`);
-      const lines = payload.runs.map(run => ({series: run.series[index], name: run.name, aggregate: false}));
-      if (payload.mean.length) lines.push({series: payload.mean[index], name: "Mean", aggregate: true});
-      const traces = lines.map(line => {
-        const raw = difference ? line.series.differences : line.series.values;
+      const traces = payload.runs.map(run => {
+        const item = run.series[index];
+        const raw = difference ? item.differences : item.values;
         return {
-          type: "scatter", mode: "lines+markers", name: escapeText(line.name || "Snapshots"),
+          type: "scatter", mode: "lines+markers", name: escapeText(run.name || "Snapshots"),
           x: raw.map((_, input) => input + 1),
           y: raw.map(value => value === null ? null : value * scale), connectgaps: false,
-          text: raw.map((_, input) => hoverText(line.series, line.name, input, difference, line.aggregate)),
-          hovertemplate: "%{text}<extra></extra>", marker: {size: line.aggregate ? 9 : 7},
-          ...(line.aggregate ? {line: {color: "#111827", width: 4, dash: "dash"}, marker: {size: 9, symbol: "diamond"}} : {})
+          text: raw.map((_, input) => hoverText(item, run.name, input, difference)),
+          hovertemplate: "%{text}<extra></extra>", marker: {size: 7}
         };
       });
       function labels() {
@@ -62,7 +59,7 @@
       }
       try {
         Plotly.newPlot(element, traces, {
-          autosize: true, hovermode: "closest", showlegend: lines.length > 1 || Boolean(lines[0].name),
+          autosize: true, hovermode: "closest", showlegend: payload.runs.length > 1 || Boolean(payload.runs[0].name),
           legend: {orientation: "h", y: 1.02, x: 0, xanchor: "left", yanchor: "bottom"},
           margin: {l: 80, r: 30, t: 30, b: 70},
           xaxis: {

@@ -46,9 +46,7 @@
       <p>Inputs are evenly spaced in supplied order, not elapsed time. Changes are current minus previous;
         the first input has no previous snapshot. Missing measurements are unavailable, not zero, and interrupt lines.
         Missing snapshots also interrupt changes: comparisons never bridge an omitted step.
-        Fractions display as percentages; changes display as percentage points.
-        {% if payload.mean %}The mean is equal-weight over available measurements at each step;
-        change means average available per-series adjacent deltas. Hover shows contributor counts.{% endif %}</p>
+        Fractions display as percentages; changes display as percentage points.</p>
       <p>Changes are not churn or quality judgments. Population and coverage changes can affect comparisons.</p>
     </details>
   </header>

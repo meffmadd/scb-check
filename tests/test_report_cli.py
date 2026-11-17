@@ -116,8 +116,6 @@ def test_manifest_relative_paths_alignment_and_positional_parity(
         (),
         "--manifest",
         str(manifest),
-        "--aggregate",
-        "mean",
         "--output",
         str(output),
     )
@@ -137,17 +135,7 @@ def test_manifest_relative_paths_alignment_and_positional_parity(
     assert (
         document["runs"][0]["series"] == _payload(Path("report.html"))["series"]
     )
-    mean = next(
-        item
-        for item in document["mean"]
-        if item["metric"] == "verbosity.total_loc"
-    )
-    assert mean["values"] == [1.5, 3, 1.5]
-    assert mean["differences"] == [None, 2, -1]
-    assert mean["contributors"] == [2, 1, 2]
-    assert _invoke((), "--manifest", str(manifest)).exit_code == 0
-    no_mean = _document(Path("report.html"))
-    assert no_mean["mean"] == []
+    assert set(document) == {"labels", "runs", "units"}
 
 
 @pytest.mark.parametrize(
@@ -198,13 +186,17 @@ def test_invalid_manifest_fails_before_analysis_and_preserves_output(
 
 
 @pytest.mark.parametrize(
-    "options", [("--manifest", "missing.toml"), ("--aggregate", "pooled")]
+    "options",
+    [
+        ("--manifest", "missing.toml"),
+        ("--aggregate", "mean"),
+    ],
 )
-def test_manifest_conflicts_and_invalid_aggregation_are_usage_errors(
+def test_manifest_conflicts_and_unsupported_options_are_usage_errors(
     roots: tuple[Path, ...],
     options: tuple[str, ...],
 ) -> None:
-    """Conflicting input forms and unsupported means fail without an artifact."""
+    """Conflicting input forms and unsupported options fail without an artifact."""
     result = _invoke(roots, *options)
     assert result.exit_code == 2
     assert result.stderr

@@ -338,7 +338,7 @@ def check_without_javascript(page: Any, trend: Trend) -> None:  # noqa: ANN401
 
 
 def representative_aligned_trend() -> AlignedTrend:
-    """Align unequal populations with a missing middle snapshot and unweighted means."""
+    """Align named series with a missing middle snapshot."""
     reports = {}
     for name, score in (
         ("a", 0.1),
@@ -362,16 +362,15 @@ def representative_aligned_trend() -> AlignedTrend:
             ),
         ),
         reports.__getitem__,
-        aggregate="mean",
     )
 
 
 def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN401
-    """Offline charts expose every named series, gaps, aggregate counts and resizing."""
+    """Offline charts expose named series, gaps, native legends and resizing."""
     check_collapsed_defaults(page, trend)
     first = trend.trends[0]
     page.wait_for_function(
-        "() => document.querySelector('#plot-0-0').data?.length === 3"
+        "() => document.querySelector('#plot-0-0').data?.length === 2"
     )
     chart_id = plot_id(first, "verbosity.score")
     chart = page.locator(f"#{chart_id}")
@@ -380,45 +379,43 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
     ) == [
         [10, 30, 20],
         [50, None, 70],
-        [30, 30, 45],
     ]
-    assert chart.evaluate("p => p.data.map(t => t.connectgaps)") == [False] * 3
-    assert chart.evaluate("p => p.data[2].line.dash") == "dash"
+    assert chart.evaluate("p => p.data.map(t => t.connectgaps)") == [False] * 2
     assert chart.locator(".legendtext").all_text_contents() == [
         "problem-a",
         trend.trends[1].name,
-        "Mean",
     ]
     assert chart.locator(".xtick text").all_text_contents() == [
         "third",
         "first",
         "last",
     ]
-    assert hover(page, chart_id, 5) == "MeanthirdValue: 30%Contributors: 2"
     assert hover(page, chart_id, 0) == "problem-athirdValue: 10%"
+    chart.locator(".legendtoggle").nth(1).click()
+    page.wait_for_function(
+        "id => document.getElementById(id).data[1].visible === 'legendonly'",
+        arg=chart_id,
+    )
     change_id = plot_id(first, "verbosity.score", difference=True)
     assert page.locator(f"#{change_id}").evaluate(
-        "p => p.data[2].y.map(v => v === null ? null : Math.round(v))"
-    ) == [None, 20, -10]
-    change = page.locator(f"#{change_id}")
-    # The mean overlaps its sole contributor; the legend lets users inspect it alone.
-    change.locator(".legendtoggle").first.click()
-    page.wait_for_function(
-        "id => document.getElementById(id).data[0].visible === 'legendonly'",
-        arg=change_id,
-    )
-    assert "Contributors: 1" in hover(page, change_id, 0)
+        "p => p.data.map(t => t.y.map(v => v === null ? null : Math.round(v)))"
+    ) == [[None, 20, -10], [None, None, None]]
     assert "percentage points" in hover(page, change_id, 0)
     unknown = page.locator(f"#{plot_id(first, 'rfc.partial_response_sum')}")
-    assert unknown.evaluate("p => p.data[2].y") == [None] * 3
+    assert unknown.evaluate("p => p.data.map(t => t.y)") == [[None] * 3] * 2
     check_all_metrics_shown(page, trend)
     group = page.locator("#metric-group-verbosity")
     group.locator("summary").click()
     page.set_viewport_size({"width": 480, "height": 1000})
     group.locator("summary").click()
     wait_for_chart_width(page, chart_id)
-    assert chart.locator(".legendtext").count() == 3
-    assert "Contributors: 2" in hover(page, chart_id, 5)
+    assert chart.locator(".legendtext").count() == 2
+    assert hover(page, chart_id, 0) == "problem-athirdValue: 10%"
+    chart.locator(".legendtoggle").nth(1).click()
+    page.wait_for_function(
+        "id => document.getElementById(id).data[1].visible === true",
+        arg=chart_id,
+    )
     assert page.evaluate("window.__injected === undefined")
     assert page.locator("img, iframe, script[src]").count() == 0
 

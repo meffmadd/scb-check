@@ -3,7 +3,7 @@
 import tomllib
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Annotated, Literal
+from typing import Annotated
 
 import typer
 
@@ -35,10 +35,6 @@ def report(  # noqa: PLR0913
             "--manifest",
             help="TOML manifest with named series and ordered steps.",
         ),
-    ] = None,
-    aggregate: Annotated[
-        Literal["mean"] | None,
-        typer.Option("--aggregate", help="Add an equal-weight mean line."),
     ] = None,
     output: Annotated[
         Path, typer.Option("--output", help="HTML output path.")
@@ -84,9 +80,7 @@ def report(  # noqa: PLR0913
             ensure_files_parsed(result, path)
             return compute_report(result)
 
-        trend = build_aligned_trend(
-            steps, sources, load_snapshot, aggregate=aggregate
-        )
+        trend = build_aligned_trend(steps, sources, load_snapshot)
         html = render_trend_html(trend)
         _write_html(output, html)
     except (OSError, ValueError) as exc:

@@ -73,14 +73,6 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
             }
             for run in trend.trends
         ),
-        "mean": tuple(
-            {
-                **_series_payload(series),
-                "contributors": series.contributors,
-                "change_contributors": series.change_contributors,
-            }
-            for series in trend.mean
-        ),
         "units": {
             group: dict(fields) for group, fields in REPORT_UNITS.items()
         },
@@ -89,8 +81,6 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
     for index, series in enumerate(trend.trends[0].series):
         group = series.metric.partition(".")[0]
         displayed = tuple(run.series[index] for run in trend.trends)
-        if trend.mean:
-            displayed = (*displayed, trend.mean[index])
         sections_by_group.setdefault(group, []).append(
             _prepare_section(index, displayed)
         )

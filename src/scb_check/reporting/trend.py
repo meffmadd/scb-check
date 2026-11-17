@@ -4,11 +4,9 @@ from collections.abc import Callable
 from itertools import pairwise
 from pathlib import Path
 from types import MappingProxyType
-from typing import Literal
 
 from scb_check.models import AlignedTrend
 from scb_check.models import Report
-from scb_check.models import ReportValue
 from scb_check.models import SnapshotSeries
 from scb_check.models import Trend
 from scb_check.models import TrendSeries
@@ -35,8 +33,6 @@ def build_aligned_trend(
     steps: tuple[str, ...],
     sources: tuple[SnapshotSeries, ...],
     load_report: Callable[[Path], Report],
-    *,
-    aggregate: Literal["mean"] | None = None,
 ) -> AlignedTrend:
     """Align complete reports and compare only neighboring declared steps per series."""
     if not steps or len(set(steps)) != len(steps):
@@ -100,15 +96,7 @@ def build_aligned_trend(
         trends.append(
             Trend(source.paths, series, reports, comparisons, source.name)
         )
-    means = (
-        tuple(
-            _mean_series(tuple(trend.series[index] for trend in trends))
-            for index in range(len(fields))
-        )
-        if aggregate == "mean"
-        else ()
-    )
-    return AlignedTrend(steps, tuple(trends), means)
+    return AlignedTrend(steps, tuple(trends))
 
 
 def _load_snapshot(path: Path, load_report: Callable[[Path], Report]) -> Report:
@@ -121,30 +109,3 @@ def _load_snapshot(path: Path, load_report: Callable[[Path], Report]) -> Report:
             for group, fields in report.items()
         }
     )
-
-
-def _mean_series(series: tuple[TrendSeries, ...]) -> TrendSeries:
-    values, counts = _means(tuple(item.values for item in series))
-    differences, change_counts = _means(
-        tuple(item.differences for item in series)
-    )
-    return TrendSeries(
-        series[0].metric,
-        series[0].unit,
-        values,
-        differences,
-        counts,
-        change_counts,
-    )
-
-
-def _means(
-    rows: tuple[tuple[ReportValue, ...], ...],
-) -> tuple[tuple[ReportValue, ...], tuple[int, ...]]:
-    values: list[ReportValue] = []
-    counts = []
-    for column in zip(*rows, strict=True):
-        available = tuple(value for value in column if value is not None)
-        counts.append(len(available))
-        values.append(sum(available) / len(available) if available else None)
-    return tuple(values), tuple(counts)
