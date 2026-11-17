@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from scb_check.models import AlignedTrend
 from scb_check.models import AnalysisResult
 from scb_check.models import Flags
 from scb_check.models import SnapshotSeries
@@ -115,6 +116,7 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
         "unit": "fraction",
         "values": [0.125, 0.125],
         "differences": [None, 0.0],
+        "tau": None,
     }
     assert "Values (percent)" in text
     assert "Changes from previous (percentage points)" in text
@@ -173,6 +175,73 @@ def test_multiseries_payload_keeps_steps_and_gaps() -> None:
     assert page.payload["runs"][0]["series"][0]["values"] == [0, None, 0]
     assert page.inputs == []
     assert len(page.plot_ids) == len(trend.trends[0].series) * 2
+
+
+def test_values_plot_kendall_coefficients_and_equal_weight_mean() -> None:
+    """Sparse and tied series contribute equally; undefined series are excluded."""
+    observations = {
+        "up": (1, 2, 3, 4),
+        "down": (4, None, None, 1),
+        "tied": (1, 1, 2, None),
+        "constant": (2, 2, 2, 2),
+        "short": (None, None, 1, None),
+    }
+    reports = {}
+    runs = []
+    for name, values in observations.items():
+        paths = []
+        for index, value in enumerate(values):
+            path = Path(f"{name}-{index}")
+            report = serialize_report(
+                compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
+            )
+            report["verbosity"]["total_loc"] = value
+            reports[path] = report
+            paths.append(path)
+        runs.append(SnapshotSeries(name, tuple(paths)))
+    trend = build_aligned_trend(
+        ("d", "a", "c", "b"), tuple(runs), reports.__getitem__
+    )
+    page = ReportPage(render_trend_html(trend))
+    index = next(
+        i
+        for i, series in enumerate(trend.trends[0].series)
+        if series.metric == "verbosity.total_loc"
+    )
+    coefficients = [run["series"][index]["tau"] for run in page.payload["runs"]]
+    assert coefficients[:2] == pytest.approx([1, -1])
+    assert coefficients[2] == pytest.approx(0.8164965809)
+    assert coefficients[3:] == [None, None]
+    assert "Mean τ: 0.27 (3/5 contributors)" in " ".join(page.cells)
+    assert page.payload["runs"][0]["series"][index]["differences"] == [
+        None,
+        1,
+        1,
+        1,
+    ]
+    opposing = AlignedTrend(trend.steps, trend.trends[:2])
+    assert "Mean τ: 0.00 (2/2 contributors)" in " ".join(
+        ReportPage(render_trend_html(opposing)).cells
+    )
+
+
+def test_single_and_all_undefined_summaries() -> None:
+    """A single series uses τ, while a multi-series empty mean shows its count."""
+    report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
+    single = ReportPage(
+        render_trend_html(build_trend((Path("a"), Path("a")), lambda _: report))
+    )
+    assert "Values (percent) · τ: N/A" in " ".join(single.cells)
+    trend = build_aligned_trend(
+        ("first", "second"),
+        (
+            SnapshotSeries("a", (Path("a"), Path("a"))),
+            SnapshotSeries("b", (None, Path("b"))),
+        ),
+        lambda _: report,
+    )
+    page = ReportPage(render_trend_html(trend))
+    assert "Mean τ: N/A (0/2 contributors)" in " ".join(page.cells)
 
 
 def test_untrusted_paths_round_trip_without_script_or_markup_injection() -> (
