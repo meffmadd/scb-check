@@ -36,6 +36,7 @@ class _TauSummary:
     median: float | None
     flat_adjusted_contributors: int
     flat_adjusted_mean: float | None
+    flat_adjusted_median: float | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,16 +189,19 @@ def _summarize(series_trends: tuple[_SeriesTrend, ...]) -> _TauSummary:
         item.tau for item in series_trends if item.tau is not None
     )
     # Flat series count as zero trend here; series too short to rank never do.
-    flat_adjusted = len(coefficients) + sum(item.flat for item in series_trends)
+    flat_adjusted = coefficients + tuple(
+        0.0 for item in series_trends if item.flat
+    )
     return _TauSummary(
         series=len(series_trends),
         contributors=len(coefficients),
         mean=sum(coefficients) / len(coefficients) if coefficients else None,
         median=median(coefficients) if coefficients else None,
-        flat_adjusted_contributors=flat_adjusted,
+        flat_adjusted_contributors=len(flat_adjusted),
         flat_adjusted_mean=(
-            sum(coefficients) / flat_adjusted if flat_adjusted else None
+            sum(flat_adjusted) / len(flat_adjusted) if flat_adjusted else None
         ),
+        flat_adjusted_median=median(flat_adjusted) if flat_adjusted else None,
     )
 
 
@@ -211,7 +215,8 @@ def _summary_text(summary: _TauSummary) -> str:
         f"τ ({summary.contributors}/{summary.series} series): "
         f"mean {shown(summary.mean)}, median {shown(summary.median)} · "
         f"flat-adjusted ({summary.flat_adjusted_contributors}/{summary.series} series): "
-        f"mean {shown(summary.flat_adjusted_mean)}"
+        f"mean {shown(summary.flat_adjusted_mean)}, "
+        f"median {shown(summary.flat_adjusted_median)}"
     )
 
 

@@ -119,7 +119,7 @@ Metrics are organized into collapsible groups such as `syntax`, containing field
 Each plot heading summarizes monotonic trend with Kendall τ-b, correlating a series' values with declared step order. Missing observations are omitted; constant series and series with fewer than two observations have undefined τ, displayed as `N/A`. One series shows its own `τ`. Multiple series show:
 
 - the signed, equally weighted **mean** and **median** of the defined coefficients, with the number of contributing series out of all declared series. Opposing trends can cancel;
-- a **flat-adjusted mean** that also counts constant series with at least two observations as zero, with its own contributor count. Series with fewer than two observations stay excluded.
+- a **flat-adjusted mean and median** that also count constant series with at least two observations as zero, with their own contributor count. Series with fewer than two observations stay excluded.
 
 These summaries are descriptive, not significance tests. The embedded report data carries the same numbers under `summaries`, alongside each series' raw values, adjacent differences, and coefficient.
 

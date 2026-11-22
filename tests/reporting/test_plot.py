@@ -230,6 +230,7 @@ def test_kendall_coefficients_and_summaries_weight_series_equally() -> None:
         "median": pytest.approx(tied),
         "flat_adjusted_contributors": 4,
         "flat_adjusted_mean": pytest.approx(tied / 4),
+        "flat_adjusted_median": pytest.approx(tied / 2),
     }
     opposing = ReportPage(
         render_trend_html(AlignedTrend(trend.steps, trend.trends[:2]))
@@ -262,6 +263,7 @@ def test_summaries_without_defined_coefficients_report_no_mean() -> None:
         "median": None,
         "flat_adjusted_contributors": 1,
         "flat_adjusted_mean": 0,
+        "flat_adjusted_median": 0,
     }
     assert "τ (0/2 series): mean N/A" in " ".join(flat_and_short.cells)
     short = ReportPage(
@@ -270,6 +272,7 @@ def test_summaries_without_defined_coefficients_report_no_mean() -> None:
     summary = short.payload["summaries"]["verbosity.total_loc"]
     assert summary["flat_adjusted_contributors"] == 0
     assert summary["flat_adjusted_mean"] is None
+    assert summary["flat_adjusted_median"] is None
 
 
 def test_untrusted_paths_round_trip_without_script_or_markup_injection() -> (
