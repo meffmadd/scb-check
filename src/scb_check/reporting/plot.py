@@ -4,6 +4,7 @@ import math
 import re
 from dataclasses import dataclass
 from importlib import resources
+from statistics import median
 
 from jinja2 import Environment
 from jinja2 import PackageLoader
@@ -150,8 +151,21 @@ def _prepare_section(
     series = displayed[0]
     valid = tuple(value for value in coefficients if value is not None)
     value = f"{sum(valid) / len(valid):.2f}" if valid else "N/A"
+    median_value = f"{median(valid):.2f}" if valid else "N/A"
+    flat_count = sum(
+        1
+        for item, coefficient in zip(displayed, coefficients, strict=True)
+        if coefficient is None
+        and len(observations := tuple(v for v in item.values if v is not None)) >= 2  # noqa: PLR2004 - trend requires two observations
+        and len(set(observations)) == 1
+    )
+    adjusted_count = len(valid) + flat_count
+    adjusted = f"{sum(valid) / adjusted_count:.2f}" if adjusted_count else "N/A"
     summary = (
-        f"Mean τ: {value} ({len(valid)}/{len(coefficients)} contributors)"
+        f"Mean τ: {value} · Median τ: {median_value} "
+        f"({len(valid)}/{len(coefficients)} contributors) · "
+        f"Flat-adjusted mean τ: {adjusted} "
+        f"({adjusted_count}/{len(coefficients)} contributors)"
         if len(coefficients) > 1
         else f"τ: {value}"
     )

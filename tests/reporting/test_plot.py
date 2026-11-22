@@ -212,7 +212,8 @@ def test_values_plot_kendall_coefficients_and_equal_weight_mean() -> None:
     assert coefficients[:2] == pytest.approx([1, -1])
     assert coefficients[2] == pytest.approx(0.8164965809)
     assert coefficients[3:] == [None, None]
-    assert "Mean τ: 0.27 (3/5 contributors)" in " ".join(page.cells)
+    assert "Mean τ: 0.27 · Median τ: 0.82 (3/5 contributors)" in " ".join(page.cells)
+    assert "Flat-adjusted mean τ: 0.20 (4/5 contributors)" in " ".join(page.cells)
     assert page.payload["runs"][0]["series"][index]["differences"] == [
         None,
         1,
@@ -220,7 +221,7 @@ def test_values_plot_kendall_coefficients_and_equal_weight_mean() -> None:
         1,
     ]
     opposing = AlignedTrend(trend.steps, trend.trends[:2])
-    assert "Mean τ: 0.00 (2/2 contributors)" in " ".join(
+    assert "Mean τ: 0.00 · Median τ: 0.00 (2/2 contributors)" in " ".join(
         ReportPage(render_trend_html(opposing)).cells
     )
 
@@ -241,7 +242,12 @@ def test_single_and_all_undefined_summaries() -> None:
         lambda _: report,
     )
     page = ReportPage(render_trend_html(trend))
-    assert "Mean τ: N/A (0/2 contributors)" in " ".join(page.cells)
+    assert "Mean τ: N/A · Median τ: N/A (0/2 contributors)" in " ".join(page.cells)
+    assert "Flat-adjusted mean τ: 0.00 (1/2 contributors)" in " ".join(page.cells)
+    empty = AlignedTrend(trend.steps, (trend.trends[1], trend.trends[1]))
+    assert "Flat-adjusted mean τ: N/A (0/2 contributors)" in " ".join(
+        ReportPage(render_trend_html(empty)).cells
+    )
 
 
 def test_untrusted_paths_round_trip_without_script_or_markup_injection() -> (
