@@ -67,6 +67,6 @@ uv run scb-check report docs/examples/snapshots/before docs/examples/snapshots/a
 printf 'Open this file in your browser: %s/changes.html\n' "$output"
 ```
 
-Open the printed file path in a browser with JavaScript enabled. Expand `verbosity` and find `total_loc`: its values are `2` and `7`, with a change of `5` at the second snapshot. Expand `erosion` and find `score`: both values and the second snapshot's change are zero. The first snapshot has no preceding change.
+Open the printed file path in a browser with JavaScript enabled. Expand `verbosity` and find `total_loc`: its values are `2` and `7`, and its heading shows `τ: 1.00` for the increase. Expand `erosion` and find `score`: both values are zero, so its trend is `τ: N/A`.
 
 You've measured two source trees, inspected their differences, and plotted the same results. To use your own checkpoints, continue with [Compare code across checkpoints](comparing-snapshots.md). For what these changes do—and don't—say about quality, see [Interpreting trajectories](metrics.md#interpreting-trajectories).

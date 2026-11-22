@@ -20,20 +20,18 @@
     .group-count { margin-left: .75rem; font-size: .85rem; color: #536273; }
     section { margin: 1rem 0 2rem; }
     section > h3 { margin-bottom: .75rem; font: 600 1rem/1.5 ui-monospace, monospace; }
-    .plots { display: grid; gap: 1rem; }
     .plot-card { min-width: 0; padding: 1rem .25rem .25rem; background: #fff; border: 1px solid #e0e5ec; border-radius: .75rem; }
     h4 { margin: 0 1rem; font-size: .9rem; font-weight: 500; color: #536273; }
     .metric-plot { width: 100%; min-width: 0; height: 400px; }
     .plot-note { margin: 0 1rem 1rem; color: #536273; }
     noscript { display: block; padding: 1rem; background: #fff0cf; }
     pre { white-space: pre-wrap; }
-    @media (min-width: 64rem) { .plots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   </style>
 </head>
 <body>
   <header>
     <h1>{{ title }}</h1>
-    <p>{{ payload.labels | length }} steps · {{ payload.runs | length }} series · {{ metric_count }} metrics · values and adjacent changes</p>
+    <p>{{ payload.labels | length }} steps · {{ payload.runs | length }} series · {{ metric_count }} metrics</p>
     <details id="source-directories">
       <summary>Source directories</summary>
       {% for run in payload.runs %}
@@ -43,12 +41,10 @@
     </details>
     <details>
       <summary>About this report</summary>
-      <p>Inputs are evenly spaced in supplied order, not elapsed time. Changes are current minus previous;
-        the first input has no previous snapshot. Missing measurements are unavailable, not zero, and interrupt lines.
-        Missing snapshots also interrupt changes: comparisons never bridge an omitted step.
-        Fractions display as percentages; changes display as percentage points.</p>
-      <p>Values plots show Kendall τ-b against step order. Missing observations are omitted; constant series and series with fewer than two observations have unavailable τ. The signed mean and median summarize available coefficients equally. The flat-adjusted mean also counts constant series with at least two observations as zero; shorter series remain excluded. These summaries are descriptive, not significance tests.</p>
-      <p>Changes are not churn or quality judgments. Population and coverage changes can affect comparisons.</p>
+      <p>Inputs are evenly spaced in supplied order, not elapsed time. Missing measurements are unavailable,
+        not zero, and interrupt lines. Fractions display as percentages.</p>
+      <p>Each plot shows Kendall τ-b against step order. Missing observations are omitted; constant series and series with fewer than two observations have unavailable τ. The signed mean and median weight the available coefficients equally. The flat-adjusted mean also counts constant series with at least two observations as zero; shorter series remain excluded. These summaries are descriptive, not significance tests.</p>
+      <p>Trends are not churn or quality judgments. Population and coverage changes can affect values.</p>
     </details>
   </header>
   <noscript>Enable JavaScript to view the charts and hover measurements.</noscript>
@@ -58,14 +54,10 @@
     {% for section in group.sections %}
     <section>
     <h3>{{ section.metric }}</h3>
-    <div class="plots">
-    {% for plot in section.plots %}
-      <div class="plot-card">
-        <h4 id="{{ plot.id }}-heading">{{ plot.title }} ({{ plot.unit }}){% if plot.summary %} · {{ plot.summary }}{% endif %}</h4>
-        <div id="{{ plot.id }}" class="metric-plot" role="img" aria-labelledby="{{ plot.id }}-heading"></div>
-        {% if plot.all_unavailable %}<p class="plot-note">All measurements unavailable.</p>{% endif %}
-      </div>
-    {% endfor %}
+    <div class="plot-card">
+      <h4 id="{{ section.plot_id }}-heading">Values ({{ section.unit }}) · {{ section.summary }}</h4>
+      <div id="{{ section.plot_id }}" class="metric-plot" role="img" aria-labelledby="{{ section.plot_id }}-heading"></div>
+      {% if section.all_unavailable %}<p class="plot-note">All measurements unavailable.</p>{% endif %}
     </div>
     </section>
     {% endfor %}

@@ -61,7 +61,7 @@ def representative_trend() -> Trend:
             partial_ratio_mean=0.5, measured_pairs=2, unavailable_pairs=1
         )
         report["rfc"]["unavailable_classes"] = 3
-        # A late language introduces snapshot gaps but signed zero-filled differences.
+        # A late language introduces snapshot gaps.
         if index == 4:
             report["syntax"]["python.node_count"] = 7
             report["syntax"]["python.tree_count"] = 1
@@ -71,14 +71,14 @@ def representative_trend() -> Trend:
     )
 
 
-def plot_id(trend: Trend, metric: str, *, difference: bool = False) -> str:
+def plot_id(trend: Trend, metric: str) -> str:
     """Locate a chart by metric rather than relying on canonical field positions."""
     index = next(
         index
         for index, series in enumerate(trend.series)
         if series.metric == metric
     )
-    return f"plot-{index}-{int(difference)}"
+    return f"plot-{index}"
 
 
 def hover(page: Any, chart_id: str, marker: int) -> str:  # noqa: ANN401
@@ -93,7 +93,7 @@ def hover(page: Any, chart_id: str, marker: int) -> str:  # noqa: ANN401
 
 
 def check_collapsed_defaults(page: Any, trend: Trend | AlignedTrend) -> None:  # noqa: ANN401
-    """Groups start closed; their native headings reveal all metric pairs."""
+    """Groups start closed; their native headings reveal all metrics."""
     first = trend.trends[0] if isinstance(trend, AlignedTrend) else trend
     groups = page.locator("details.metric-group")
     assert groups.count() == len(
@@ -110,8 +110,8 @@ def check_collapsed_defaults(page: Any, trend: Trend | AlignedTrend) -> None:  #
 
 
 def check_render(page: Any, trend: Trend) -> None:  # noqa: ANN401
-    """Every metric renders both SVG charts with finite axes and no external assets."""
-    expected = len(trend.series) * 2
+    """Every metric renders one SVG chart with finite axes and no external assets."""
+    expected = len(trend.series)
     page.wait_for_function(
         "n => document.querySelectorAll('.metric-plot .main-svg').length >= n",
         arg=expected,
@@ -135,27 +135,18 @@ def check_render(page: Any, trend: Trend) -> None:  # noqa: ANN401
     )
     assert "Plot unavailable:" not in page.locator("body").inner_text()
     for series in trend.series:
-        for difference in (False, True):
-            chart = page.locator(
-                f"#{plot_id(trend, series.metric, difference=difference)}"
-            )
-            raw = series.differences if difference else series.values
-            scale = 100 if series.unit == "fraction" else 1
-            assert chart.evaluate("p => p.data[0].y") == [
-                None if value is None else value * scale for value in raw
-            ]
-            unit = (
-                ("percentage points" if difference else "percent")
-                if series.unit == "fraction"
-                else series.unit
-            )
-            assert chart.locator(".ytitle").text_content() == unit
+        chart = page.locator(f"#{plot_id(trend, series.metric)}")
+        scale = 100 if series.unit == "fraction" else 1
+        assert chart.evaluate("p => p.data[0].y") == [
+            None if value is None else value * scale for value in series.values
+        ]
+        unit = "percent" if series.unit == "fraction" else series.unit
+        assert chart.locator(".ytitle").text_content() == unit
 
 
 def check_hover(page: Any, trend: Trend) -> None:  # noqa: ANN401
     """Hover shows the input, measurement and series coefficient."""
     assert trend.paths[0] is not None
-    assert trend.paths[2] is not None
     score = plot_id(trend, "verbosity.score")
     text = hover(page, score, 0)
     assert text.startswith(f"1: {trend.paths[0].name}Value: 12.5%τ: "), text
@@ -167,10 +158,6 @@ def check_hover(page: Any, trend: Trend) -> None:  # noqa: ANN401
         == 0
     )
     assert page.evaluate("window.__injected === undefined")
-
-    count = plot_id(trend, "verbosity.total_loc", difference=True)
-    text = hover(page, count, 1)
-    assert text.startswith(f"3: {trend.paths[2].name}Change: -3 linesτ: "), text
 
     for metric, expected in (
         ("erosion.total_mass", "2.5 mass"),
@@ -205,7 +192,7 @@ def check_hostile_labels(page: Any, trend: Trend) -> None:  # noqa: ANN401
 
 
 def check_gaps_and_units(page: Any, trend: Trend) -> None:  # noqa: ANN401
-    """Nulls break visible lines; isolated, zero, negative and unchanged points survive."""
+    """Nulls break visible lines; isolated, zero and unchanged points survive."""
     score = page.locator(f"#{plot_id(trend, 'verbosity.score')}")
     assert score.locator(".scatterlayer .point").count() == 3
     assert score.evaluate("p => p.data[0].y") == [12.5, None, 0, None, 25]
@@ -215,21 +202,9 @@ def check_gaps_and_units(page: Any, trend: Trend) -> None:  # noqa: ANN401
     )
     assert score.locator(".ytitle").text_content() == "percent"
     assert "Value: 0%" in hover(page, score.get_attribute("id"), 1)
-    change = page.locator(
-        f"#{plot_id(trend, 'verbosity.total_loc', difference=True)}"
-    )
-    assert change.evaluate("p => p.data[0].y") == [None, 2, -3, 0, 0]
-    assert change.locator(".scatterlayer .point").count() == 4
-    assert "Change: +0 lines" in hover(page, change.get_attribute("id"), 2)
-    fraction_change = page.locator(
-        f"#{plot_id(trend, 'erosion.score', difference=True)}"
-    )
-    assert (
-        fraction_change.locator(".ytitle").text_content() == "percentage points"
-    )
-    assert "Change: -12.5 percentage points" in hover(
-        page, fraction_change.get_attribute("id"), 0
-    )
+    unchanged = page.locator(f"#{plot_id(trend, 'verbosity.total_loc')}")
+    assert unchanged.evaluate("p => p.data[0].y") == [3, 5, 2, 2, 2]
+    assert unchanged.locator(".scatterlayer .point").count() == 5
     null = page.locator(f"#{plot_id(trend, 'rfc.partial_response_sum')}")
     assert null.locator(".scatterlayer .point").count() == 0
     assert null.evaluate("p => p.data[0].y") == [None] * 5
@@ -276,28 +251,17 @@ def check_resize(page: Any, trend: Trend) -> None:  # noqa: ANN401
             assert label["text"] == f"{index + 1}: {path.name}"
         assert geometry["area"]["w"] >= 200, geometry
         assert geometry["area"]["h"] >= 120, geometry
-        value_box = chart.bounding_box()
-        change_box = page.locator(
-            f"#{plot_id(trend, 'verbosity.total_loc', difference=True)}"
-        ).bounding_box()
-        assert value_box is not None
-        assert change_box is not None
-        if width >= 1024:
-            assert change_box["x"] > value_box["x"]
-            assert abs(change_box["y"] - value_box["y"]) < 2
-        else:
-            assert change_box["y"] > value_box["y"] + value_box["height"]
         widths.append(geometry["width"])
     assert widths[1] < widths[0], widths
     assert abs(widths[0] - widths[2]) < 3, widths
 
 
 def check_all_metrics_shown(page: Any, trend: Trend | AlignedTrend) -> None:  # noqa: ANN401
-    """Expanded groups reveal all value/change pairs without metric-filter controls."""
+    """Expanded groups reveal every metric plot without metric-filter controls."""
     first = trend.trends[0] if isinstance(trend, AlignedTrend) else trend
     assert page.get_by_role("checkbox").count() == 0
     assert page.locator("section:visible").count() == len(first.series)
-    assert page.locator(".metric-plot:visible").count() == len(first.series) * 2
+    assert page.locator(".metric-plot:visible").count() == len(first.series)
 
 
 def check_metric_groups(page: Any, trend: Trend) -> None:  # noqa: ANN401
@@ -370,7 +334,7 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
     check_collapsed_defaults(page, trend)
     first = trend.trends[0]
     page.wait_for_function(
-        "() => document.querySelector('#plot-0-0').data?.length === 2"
+        "() => document.querySelector('#plot-0').data?.length === 2"
     )
     chart_id = plot_id(first, "verbosity.score")
     chart = page.locator(f"#{chart_id}")
@@ -383,7 +347,7 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
     assert chart.evaluate("p => p.data.map(t => t.connectgaps)") == [False] * 2
     assert chart.locator(".legendtext").count() == 0
     assert (
-        "Mean τ: 0.67 (2/2 contributors)"
+        "τ (2/2 series): mean 0.67, median 0.67"
         in page.locator(f"#{chart_id}-heading").inner_text()
     )
     assert chart.locator(".xtick text").all_text_contents() == [
@@ -392,12 +356,6 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
         "last",
     ]
     assert hover(page, chart_id, 0) == "problem-athirdValue: 10%τ: 0.33"
-    change_id = plot_id(first, "verbosity.score", difference=True)
-    assert page.locator(f"#{change_id} .legendtext").count() == 0
-    assert page.locator(f"#{change_id}").evaluate(
-        "p => p.data.map(t => t.y.map(v => v === null ? null : Math.round(v)))"
-    ) == [[None, 20, -10], [None, None, None]]
-    assert "percentage pointsτ: 0.33" in hover(page, change_id, 0)
     unknown = page.locator(f"#{plot_id(first, 'rfc.partial_response_sum')}")
     assert unknown.evaluate("p => p.data.map(t => t.y)") == [[None] * 3] * 2
     check_all_metrics_shown(page, trend)
@@ -506,7 +464,7 @@ def main() -> None:
     assert not errors, f"Browser errors: {errors}"
     assert not failures, "\n".join(failures)
     stdout.write(
-        f"PASS offline Chromium acceptance: {len(trend.series) * 2} SVG charts; no browser errors or HTTP(S)\n"
+        f"PASS offline Chromium acceptance: {len(trend.series)} SVG charts; no browser errors or HTTP(S)\n"
     )
 
 

@@ -38,7 +38,7 @@ List source directories in the order you want them plotted:
 uv run scb-check report snapshots/step-1 snapshots/step-2 snapshots/step-3 --output changes.html
 ```
 
-Open `changes.html` in a browser with JavaScript enabled. The report works offline. Expand a metric group to see values and changes between adjacent checkpoints. Its horizontal axis follows your supplied order, not elapsed time.
+Open `changes.html` in a browser with JavaScript enabled. The report works offline. Expand a metric group to see each metric's values across checkpoints and its [trend summary](cli.md#trend-summaries). Its horizontal axis follows your supplied order, not elapsed time.
 
 ## Compare multiple sequences
 
@@ -63,7 +63,7 @@ Then generate the report:
 uv run scb-check report --manifest comparison.toml --output comparison.html
 ```
 
-Use the same step identifiers for corresponding checkpoints. Omit a step if that snapshot is missing; do not substitute an empty directory. A missing step interrupts adjacent comparisons, so the example does not calculate a step-1-to-step-3 change for `run-b`.
+Use the same step identifiers for corresponding checkpoints. Omit a step if that snapshot is missing; do not substitute an empty directory. A missing step is a gap in that series' line and is left out of its trend coefficient.
 
 Paths in the manifest resolve relative to the manifest file. See the [manifest reference](cli.md#manifest) for validation rules.
 

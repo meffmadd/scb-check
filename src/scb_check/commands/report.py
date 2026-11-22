@@ -66,7 +66,7 @@ def report(  # noqa: PLR0913
         ),
     ] = 0,
 ) -> None:
-    """Plot every snapshot value and adjacent signed change in offline HTML."""
+    """Plot every snapshot value with trend summaries in offline HTML."""
     configure_logging(verbosity)
     try:
         steps, sources = _load_inputs(tuple(paths or ()), manifest)
