@@ -57,7 +57,7 @@ def test_attributes_not_distinct_types_are_counted_once_each() -> None:
     }
     assert DAC().compute((module,)) == {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_attribute_sum": 2, "partial_attribute_mean": 1.0, "partial_attribute_max": 2,
+        "sum": 2, "mean": 1.0, "max": 2,
     }
 
 
@@ -91,7 +91,7 @@ def test_no_class_evidence_remains_partial_zero(case: str) -> None:
         symbols=(owner, target), attributes=(attribute,),
     )
     assert DAC().attribute_sets((module,))[owner.id] == frozenset()
-    assert DAC().compute((module,))["partial_attribute_sum"] == 0
+    assert DAC().compute((module,))["sum"] == 0
 
 
 def test_class_identity_and_canonical_field_identity_are_not_names_or_occurrences() -> None:
@@ -107,7 +107,7 @@ def test_class_identity_and_canonical_field_identity_are_not_names_or_occurrence
     assert DAC().attribute_sets((module,)) == {
         first.id: frozenset({first_field.id}), second.id: frozenset({second_field.id}),
     }
-    assert DAC().compute((module,))["partial_attribute_sum"] == 2
+    assert DAC().compute((module,))["sum"] == 2
 
 
 def test_known_class_type_does_not_require_target_attribute_extraction() -> None:
@@ -128,7 +128,7 @@ def test_known_class_type_does_not_require_target_attribute_extraction() -> None
     }
     assert DAC().compute((available, unsupported)) == {
         "measured_classes": 1, "unavailable_classes": 1,
-        "partial_attribute_sum": 1, "partial_attribute_mean": 1.0, "partial_attribute_max": 1,
+        "sum": 1, "mean": 1.0, "max": 1,
     }
 
 
@@ -147,15 +147,15 @@ def test_unavailable_extraction_and_empty_population_are_not_measured_zero() -> 
     assert DAC().attribute_sets((available, unsupported)) == {owner.id: frozenset(), unknown.id: None}
     assert DAC().compute((available, unsupported)) == {
         "measured_classes": 1, "unavailable_classes": 1,
-        "partial_attribute_sum": 0, "partial_attribute_mean": 0.0, "partial_attribute_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
     assert DAC().compute((unsupported,)) == {
         "measured_classes": 0, "unavailable_classes": 1,
-        "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
+        "sum": None, "mean": None, "max": None,
     }
     assert DAC().compute(()) == {
         "measured_classes": 0, "unavailable_classes": 0,
-        "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
+        "sum": None, "mean": None, "max": None,
     }
     diagnostics = DAC().attribute_sets((available,))
     with pytest.raises(TypeError):

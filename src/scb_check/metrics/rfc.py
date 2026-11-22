@@ -29,10 +29,11 @@ class RFC(Metric[[ProjectIR]]):
     units: ClassVar[dict[str, Unit]] = {
         "measured_classes": "classes",
         "unavailable_classes": "classes",
-        "partial_response_sum": "methods",
-        "partial_response_mean": "methods",
-        "partial_response_max": "methods",
+        "sum": "methods",
+        "mean": "methods",
+        "max": "methods",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("mean", "max")
 
     def compute(self, project: ProjectIR) -> MetricResult:
         """Summarize measured classes; these aggregates are an analyzer convention.
@@ -46,9 +47,9 @@ class RFC(Metric[[ProjectIR]]):
         return MappingProxyType({
             "measured_classes": len(counts),
             "unavailable_classes": len(responses) - len(counts),
-            "partial_response_sum": summary.total,
-            "partial_response_mean": summary.mean,
-            "partial_response_max": summary.maximum,
+            "sum": summary.total,
+            "mean": summary.mean,
+            "max": summary.maximum,
         })
 
     def response_sets(self, project: ProjectIR) -> Mapping[str, frozenset[str] | None]:

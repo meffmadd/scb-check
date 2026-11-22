@@ -15,7 +15,7 @@ To introduce or change a measurement, follow [Add or extend a metric](adding-a-m
 - `scb-check check PATH` reports human-readable flags or JSON scores.
 - `scb-check rule RULE_ID` prints bundled `ast-grep` YAML or structural rule metadata.
 - `scb-check diff TREE_A TREE_B` reports before/after/signed metric deltas between directories.
-- `scb-check report PATH...` creates offline HTML plots of every metric's values with trend summaries; see [CLI options and defaults](cli.md#plot-reports).
+- `scb-check report PATH...` creates offline HTML plots of each metric's headline values (every field with `--full`) with trend summaries; see [CLI options and defaults](cli.md#plot-reports).
 
 Implemented analysis paths:
 

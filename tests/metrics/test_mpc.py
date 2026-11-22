@@ -56,7 +56,7 @@ def test_repeated_sites_count_but_self_calls_do_not() -> None:
     assert MPC().class_counts((module,)) == {a.id: 2, b.id: 0}
     assert MPC().compute((module,)) == {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_call_site_sum": 2, "partial_call_site_mean": 1.0, "partial_call_site_max": 2,
+        "sum": 2, "mean": 1.0, "max": 2,
     }
 
 
@@ -137,11 +137,11 @@ def test_unsupported_classes_are_unavailable_not_measured_zero(missing: str) -> 
     assert MPC().class_counts((available, unavailable)) == {a.id: 0, b.id: None}
     assert MPC().compute((available, unavailable)) == {
         "measured_classes": 1, "unavailable_classes": 1,
-        "partial_call_site_sum": 0, "partial_call_site_mean": 0.0, "partial_call_site_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
     assert MPC().compute((unavailable,)) == {
         "measured_classes": 0, "unavailable_classes": 1,
-        "partial_call_site_sum": None, "partial_call_site_mean": None, "partial_call_site_max": None,
+        "sum": None, "mean": None, "max": None,
     }
 
 
@@ -151,7 +151,7 @@ def test_empty_population_and_read_only_results() -> None:
     result = metric.compute(())
     assert result == {
         "measured_classes": 0, "unavailable_classes": 0,
-        "partial_call_site_sum": None, "partial_call_site_mean": None, "partial_call_site_max": None,
+        "sum": None, "mean": None, "max": None,
     }
     with pytest.raises(TypeError):
         cast("MutableMapping[str, object]", result)["measured_classes"] = 1

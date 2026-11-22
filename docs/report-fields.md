@@ -4,24 +4,26 @@
 
 `scb-check check PATH --output-format json` returns a report object with fourteen metric groups. Each group is a flat object of numerical values or `null`, with no `data` wrapper or flat compatibility aliases.
 
-| Metric group | Result fields |
-| --- | --- |
-| `verbosity` | `score`, `files_scanned`, `total_loc`, `flagged_loc`, `clone_loc`, `ast_grep_flagged_loc`, `structural_rule_loc`, `structural_rule_findings` |
-| `erosion` | `score`, `total_functions`, `high_cc_functions`, `total_mass`, `high_cc_mass` |
-| `cog_erosion` | `score`, `total_functions`, `high_cog_functions`, `total_cog_mass`, `high_cog_mass` |
-| `syntax` | `tree_count`, `node_count`, plus `<language>.tree_count` and `<language>.node_count` |
-| `cbo` | `measured_classes`, `unavailable_classes`, `partial_partner_sum`, `partial_partner_mean`, `partial_partner_max` |
-| `rfc` | `measured_classes`, `unavailable_classes`, `partial_response_sum`, `partial_response_mean`, `partial_response_max` |
-| `mpc` | `measured_classes`, `unavailable_classes`, `partial_call_site_sum`, `partial_call_site_mean`, `partial_call_site_max` |
-| `callers` | `measured_callables`, `unavailable_callables`, `partial_caller_sum`, `partial_caller_mean`, `partial_caller_max`, `partial_same_module_sum`, `partial_cross_module_sum` |
-| `dac` | `measured_classes`, `unavailable_classes`, `partial_attribute_sum`, `partial_attribute_mean`, `partial_attribute_max` |
-| `cic` | `measured_classes`, `unavailable_classes`, `partial_occurrence_sum`, `partial_occurrence_mean`, `partial_occurrence_max` |
-| `ric` | `measured_pairs`, `unavailable_pairs`, `partial_ratio_mean`, `partial_ratio_max` |
-| `ca` | `measured_categories`, `unavailable_categories`, `partial_client_sum`, `partial_client_mean`, `partial_client_max` |
-| `ce` | `measured_categories`, `unavailable_categories`, `partial_source_sum`, `partial_source_mean`, `partial_source_max` |
-| `module_call_dependencies` | `measured_modules`, `unavailable_modules`, `partial_incoming_sum`, `partial_incoming_mean`, `partial_incoming_max`, `partial_outgoing_sum`, `partial_outgoing_mean`, `partial_outgoing_max` |
+| Metric group | Result fields | Headline fields |
+| --- | --- | --- |
+| `verbosity` | `score`, `files_scanned`, `total_loc`, `flagged_loc`, `clone_loc`, `ast_grep_flagged_loc`, `structural_rule_loc`, `structural_rule_findings` | `score` |
+| `erosion` | `score`, `total_functions`, `high_cc_functions`, `total_mass`, `high_cc_mass` | `score` |
+| `cog_erosion` | `score`, `total_functions`, `high_cog_functions`, `total_cog_mass`, `high_cog_mass` | `score` |
+| `syntax` | `tree_count`, `node_count`, plus `<language>.tree_count` and `<language>.node_count` | None |
+| `cbo` | `measured_classes`, `unavailable_classes`, `sum`, `mean`, `max` | `mean`, `max` |
+| `rfc` | `measured_classes`, `unavailable_classes`, `sum`, `mean`, `max` | `mean`, `max` |
+| `mpc` | `measured_classes`, `unavailable_classes`, `sum`, `mean`, `max` | `mean`, `max` |
+| `callers` | `measured_callables`, `unavailable_callables`, `sum`, `mean`, `max`, `same_module_sum`, `cross_module_sum` | `mean`, `max` |
+| `dac` | `measured_classes`, `unavailable_classes`, `sum`, `mean`, `max` | `mean`, `max` |
+| `cic` | `measured_classes`, `unavailable_classes`, `sum`, `mean`, `max` | `mean`, `max` |
+| `ric` | `measured_pairs`, `unavailable_pairs`, `mean`, `max` | `mean`, `max` |
+| `ca` | `measured_categories`, `unavailable_categories`, `sum`, `mean`, `max` | `mean`, `max` |
+| `ce` | `measured_categories`, `unavailable_categories`, `sum`, `mean`, `max` | `mean`, `max` |
+| `module_call_dependencies` | `measured_modules`, `unavailable_modules`, `incoming_sum`, `incoming_mean`, `incoming_max`, `outgoing_sum`, `outgoing_mean`, `outgoing_max` | `incoming_mean`, `incoming_max`, `outgoing_mean`, `outgoing_max` |
 
 Syntax counts cover parsed Tree-sitter trees and their nodes. Dotted per-language names such as `python.node_count` are single flat keys, not nested objects. Only languages present in that snapshot appear. Group, field, and language ordering is deterministic.
+
+Each metric class declares its headline fields in the order shown; every other field is a supporting measurement. Headlines only select what [HTML reports](cli.md#plot-reports) plot by default. Check and diff JSON always contain every field. Headlines are existing measurements, not a combined score, a quality judgment, or a guarantee of growth neutrality; see [interpreting headlines](metrics.md#interpreting-headlines).
 
 Scores use fractional units. Counts and complexity masses retain their numerical units. Values are finite numbers or `null`; `null` means unavailable or undefined, not zero. Existing zero-denominator scores remain zero, including zero-SLOC verbosity and zero-mass erosion. Human check output remains location-level findings with source context.
 
@@ -29,7 +31,9 @@ Scores use fractional units. Counts and complexity masses retain their numerical
 
 Population fields count measured and unavailable entities separately. Summary fields include measured zero values and exclude unavailable entities. With no measured population, every summary is `null`.
 
-Except for RIC, `partial_*_sum` adds per-entity counts, `partial_*_mean` divides that sum by the measured population, and `partial_*_max` selects the largest per-entity count. Directional module fields apply this separately to incoming and outgoing counts.
+Except for RIC, `sum` adds per-entity counts, `mean` divides that sum by the measured population, and `max` selects the largest per-entity count. Directional module fields apply this separately to incoming and outgoing counts, as `incoming_*` and `outgoing_*`.
+
+These summaries are partial even though their keys carry no `partial` prefix: they count supported static evidence and may omit unknown relationships, so an observed zero does not establish absence.
 
 | Group | Population unit | Per-entity summary unit | Aggregation details |
 | --- | --- | --- | --- |

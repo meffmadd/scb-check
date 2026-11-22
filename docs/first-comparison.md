@@ -63,9 +63,11 @@ The `before` and `after` objects contain the measurements you just inspected. `e
 Create an HTML report:
 
 ```bash
-uv run scb-check report docs/examples/snapshots/before docs/examples/snapshots/after --disable-sg --output "$output/changes.html"
+uv run scb-check report docs/examples/snapshots/before docs/examples/snapshots/after --disable-sg --full --output "$output/changes.html"
 printf 'Open this file in your browser: %s/changes.html\n' "$output"
 ```
+
+By default, a report plots only each metric's headline fields, such as `erosion.score`. `--full` also plots supporting measurements such as `verbosity.total_loc`.
 
 Open the printed file path in a browser with JavaScript enabled. Expand `verbosity` and find `total_loc`: its values are `2` and `7`, and its heading shows `τ: 1.00` for the increase. Expand `erosion` and find `score`: both values are zero, so its trend is `τ: N/A`.
 

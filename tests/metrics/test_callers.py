@@ -66,8 +66,8 @@ def test_distinct_callers_include_recursion_and_measured_zero() -> None:
     }
     assert DistinctCallers().compute((retained,)) == {
         "measured_callables": 3, "unavailable_callables": 0,
-        "partial_caller_sum": 3, "partial_caller_mean": 1.0, "partial_caller_max": 3,
-        "partial_same_module_sum": 3, "partial_cross_module_sum": 0,
+        "sum": 3, "mean": 1.0, "max": 3,
+        "same_module_sum": 3, "cross_module_sum": 0,
     }
 
 
@@ -90,8 +90,8 @@ def test_static_selection_partitions_modules_without_runtime_expansion() -> None
     }
     assert DistinctCallers().compute(modules) == {
         "measured_callables": 3, "unavailable_callables": 0,
-        "partial_caller_sum": 1, "partial_caller_mean": 1 / 3, "partial_caller_max": 1,
-        "partial_same_module_sum": 0, "partial_cross_module_sum": 1,
+        "sum": 1, "mean": 1 / 3, "max": 1,
+        "same_module_sum": 0, "cross_module_sum": 1,
     }
 
 
@@ -110,7 +110,7 @@ def test_nonproject_calls_do_not_create_known_incoming_edges(status: str) -> Non
     })
     result = DistinctCallers().compute((module((target, source), (use,)),))
     assert result["measured_callables"] == 2
-    assert result["partial_caller_sum"] == 0
+    assert result["sum"] == 0
 
 
 @pytest.mark.parametrize("execution_kind", ["module", "class", "unsupported"])
@@ -121,7 +121,7 @@ def test_nonfunction_execution_never_invents_a_caller(execution_kind: str) -> No
     use = SourceUseIR.model_validate({
         **call(outer, target).model_dump(), "execution_kind": execution_kind,
     })
-    assert DistinctCallers().compute((module((target, outer), (use,)),))["partial_caller_sum"] == 0
+    assert DistinctCallers().compute((module((target, outer), (use,)),))["sum"] == 0
 
 
 @pytest.mark.parametrize("owner_id", [None, "unknown-owner"])
@@ -129,7 +129,7 @@ def test_missing_callable_owners_are_not_inferred(owner_id: str | None) -> None:
     """A resolved destination alone does not establish a callable caller."""
     target = callable_symbol("target", 1)
     use = call(target, target).model_copy(update={"owner_id": owner_id})
-    assert DistinctCallers().compute((module((target,), (use,)),))["partial_caller_sum"] == 0
+    assert DistinctCallers().compute((module((target,), (use,)),))["sum"] == 0
 
 
 @pytest.mark.parametrize("missing", ["callable_facts", "source_uses"])
@@ -148,13 +148,13 @@ def test_unavailable_population_is_not_a_measured_zero(missing: str) -> None:
     }
     assert DistinctCallers().compute(modules) == {
         "measured_callables": 1, "unavailable_callables": 1,
-        "partial_caller_sum": 0, "partial_caller_mean": 0.0, "partial_caller_max": 0,
-        "partial_same_module_sum": 0, "partial_cross_module_sum": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
+        "same_module_sum": 0, "cross_module_sum": 0,
     }
     assert DistinctCallers().compute((unavailable,)) == {
         "measured_callables": 0, "unavailable_callables": 1,
-        "partial_caller_sum": None, "partial_caller_mean": None, "partial_caller_max": None,
-        "partial_same_module_sum": None, "partial_cross_module_sum": None,
+        "sum": None, "mean": None, "max": None,
+        "same_module_sum": None, "cross_module_sum": None,
     }
 
 
@@ -162,8 +162,8 @@ def test_empty_population_has_unavailable_summaries() -> None:
     """No callable population has no measured aggregate, rather than zero use."""
     assert DistinctCallers().compute(()) == {
         "measured_callables": 0, "unavailable_callables": 0,
-        "partial_caller_sum": None, "partial_caller_mean": None, "partial_caller_max": None,
-        "partial_same_module_sum": None, "partial_cross_module_sum": None,
+        "sum": None, "mean": None, "max": None,
+        "same_module_sum": None, "cross_module_sum": None,
     }
 
 
@@ -180,4 +180,4 @@ def test_diagnostics_and_report_are_read_only(field_name: str) -> None:
     with pytest.raises(FrozenInstanceError):
         setattr(value, field_name, frozenset())
     with pytest.raises(TypeError):
-        cast("MutableMapping[str, int | float | None]", DistinctCallers().compute(modules))["partial_caller_sum"] = 9
+        cast("MutableMapping[str, int | float | None]", DistinctCallers().compute(modules))["sum"] = 9

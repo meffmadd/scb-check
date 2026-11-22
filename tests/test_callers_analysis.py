@@ -43,8 +43,8 @@ def test_source_callers_reconcile_same_and_cross_module_counts(
     }
     assert DistinctCallers().compute(project.modules) == {
         "measured_callables": 10, "unavailable_callables": 0,
-        "partial_caller_sum": 7, "partial_caller_mean": 0.7, "partial_caller_max": 4,
-        "partial_same_module_sum": 3, "partial_cross_module_sum": 4,
+        "sum": 7, "mean": 0.7, "max": 4,
+        "same_module_sum": 3, "cross_module_sum": 4,
     }
 
 
@@ -82,6 +82,6 @@ def test_placeholder_and_decorated_source_declarations_remain_eligible(
     }
     assert DistinctCallers().compute(project.modules) == {
         "measured_callables": 6, "unavailable_callables": 0,
-        "partial_caller_sum": 4, "partial_caller_mean": 2 / 3, "partial_caller_max": 3,
-        "partial_same_module_sum": 4, "partial_cross_module_sum": 0,
+        "sum": 4, "mean": 2 / 3, "max": 3,
+        "same_module_sum": 4, "cross_module_sum": 0,
     }

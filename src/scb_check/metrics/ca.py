@@ -28,10 +28,11 @@ class AfferentCoupling(Metric[[CategoryDependencies]]):
     units: ClassVar[dict[str, Unit]] = {
         "measured_categories": "categories",
         "unavailable_categories": "categories",
-        "partial_client_sum": "client classes",
-        "partial_client_mean": "client classes",
-        "partial_client_max": "client classes",
+        "sum": "client classes",
+        "mean": "client classes",
+        "max": "client classes",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("mean", "max")
 
     def compute(self, dependencies: CategoryDependencies) -> MetricResult:
         """Summarize measured categories only; aggregation is an analyzer convention."""
@@ -41,9 +42,9 @@ class AfferentCoupling(Metric[[CategoryDependencies]]):
         return MappingProxyType({
             "measured_categories": len(counts),
             "unavailable_categories": len(clients) - len(counts),
-            "partial_client_sum": summary.total,
-            "partial_client_mean": summary.mean,
-            "partial_client_max": summary.maximum,
+            "sum": summary.total,
+            "mean": summary.mean,
+            "max": summary.maximum,
         })
 
     def client_sets(self, dependencies: CategoryDependencies) -> Mapping[str, frozenset[str] | None]:

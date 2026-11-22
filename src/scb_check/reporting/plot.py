@@ -4,6 +4,7 @@ import math
 import re
 from dataclasses import asdict
 from dataclasses import dataclass
+from dataclasses import replace
 from importlib import resources
 from statistics import median
 
@@ -16,6 +17,7 @@ from scipy.stats import kendalltau
 from scb_check.models import AlignedTrend
 from scb_check.models import Trend
 from scb_check.models import TrendSeries
+from scb_check.reporting.score import REPORT_HEADLINES
 from scb_check.reporting.score import REPORT_UNITS
 from scb_check.reporting.score import serialize_report
 
@@ -54,8 +56,12 @@ class _Group:
     sections: tuple[_Section, ...]
 
 
-def render_trend_html(trend: Trend | AlignedTrend) -> str:
-    """Produce self-contained HTML; user data is escaped in markup and JSON."""
+def render_trend_html(trend: Trend | AlignedTrend, *, full: bool = False) -> str:
+    """Produce self-contained HTML; user data is escaped in markup and JSON.
+
+    By default only metric-declared headline fields are plotted; `full` plots
+    every field. Embedded snapshots and comparisons stay complete either way.
+    """
     environment = Environment(
         loader=PackageLoader("scb_check.reporting", "templates"),
         autoescape=True,
@@ -67,6 +73,8 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
             for index, path in enumerate(trend.paths)
         )
         trend = AlignedTrend(labels, (trend,))
+    if not full:
+        trend = _headlines(trend)
     series_trends = tuple(
         tuple(_series_trend(series) for series in run.series)
         for run in trend.trends
@@ -80,6 +88,7 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
     return environment.get_template("report.html.jinja").render(
         title="Snapshot metrics",
         groups=groups,
+        full=full,
         metric_count=len(trend.trends[0].series),
         payload=payload,
         plotly_js=_bundled_script("vendor/plotly-basic.min.js"),
@@ -88,6 +97,21 @@ def render_trend_html(trend: Trend | AlignedTrend) -> str:
         .joinpath("static/vendor/LICENSE.plotly.txt")
         .read_text("utf-8"),
     )
+
+
+def _headlines(trend: AlignedTrend) -> AlignedTrend:
+    """Select declared headline series in metric order, keeping complete reports."""
+    metrics = tuple(
+        f"{group}.{field}"
+        for group, fields in REPORT_HEADLINES.items()
+        for field in fields
+    )
+    runs = []
+    for run in trend.trends:
+        series = {item.metric: item for item in run.series}
+        # Indexing, not filtering: a missing headline is an error, never omitted.
+        runs.append(replace(run, series=tuple(series[metric] for metric in metrics)))
+    return AlignedTrend(trend.steps, tuple(runs))
 
 
 def _payload(

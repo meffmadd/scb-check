@@ -23,8 +23,8 @@ def test_proper_ancestors_repeated_sites_overrides_and_source_ownership(
     }
     assert CIC().compute(project.modules) == {
         "measured_classes": 6, "unavailable_classes": 0,
-        "partial_occurrence_sum": 8, "partial_occurrence_mean": 8 / 6,
-        "partial_occurrence_max": 4,
+        "sum": 8, "mean": 8 / 6,
+        "max": 4,
     }
 
 
@@ -52,7 +52,7 @@ def test_parenthesized_ancestor_call_counts_one_physical_occurrence(
     }
     assert CIC().compute(project.modules) == {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_occurrence_sum": 1, "partial_occurrence_mean": 0.5, "partial_occurrence_max": 1,
+        "sum": 1, "mean": 0.5, "max": 1,
     }
 
 
@@ -110,7 +110,7 @@ def test_unresolved_ancestry_is_unavailable_but_unknown_members_are_partial(tmp_
     }
     assert CIC().compute(project.modules) == {
         "measured_classes": 2, "unavailable_classes": 4,
-        "partial_occurrence_sum": 0, "partial_occurrence_mean": 0.0, "partial_occurrence_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
 
 

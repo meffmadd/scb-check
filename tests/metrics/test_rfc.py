@@ -82,7 +82,7 @@ def test_isolated_class_keeps_its_own_method_population() -> None:
     assert RFC().response_sets(project) == {isolated.id: frozenset({first.id, second.id})}
     assert RFC().compute(project) == {
         "measured_classes": 1, "unavailable_classes": 0,
-        "partial_response_sum": 2, "partial_response_mean": 2.0, "partial_response_max": 2,
+        "sum": 2, "mean": 2.0, "max": 2,
     }
 
 
@@ -102,7 +102,7 @@ def test_direct_response_deduplicates_recursion_and_excludes_second_hop() -> Non
     }
     assert RFC().compute(project) == {
         "measured_classes": 3, "unavailable_classes": 0,
-        "partial_response_sum": 5, "partial_response_mean": 5 / 3, "partial_response_max": 2,
+        "sum": 5, "mean": 5 / 3, "max": 2,
     }
 
 
@@ -153,11 +153,11 @@ def test_unsupported_population_is_not_a_measured_zero(missing: str) -> None:
     assert RFC().response_sets(combined) == {unavailable.id: None, empty.id: frozenset()}
     assert RFC().compute(combined) == {
         "measured_classes": 1, "unavailable_classes": 1,
-        "partial_response_sum": 0, "partial_response_mean": 0.0, "partial_response_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
     assert RFC().compute(project) == {
         "measured_classes": 0, "unavailable_classes": 1,
-        "partial_response_sum": None, "partial_response_mean": None, "partial_response_max": None,
+        "sum": None, "mean": None, "max": None,
     }
 
 
@@ -219,7 +219,7 @@ def test_empty_project_and_diagnostics_are_read_only() -> None:
     """No population is unavailable, and callers cannot modify retained measurements."""
     assert RFC().compute(ProjectIR()) == {
         "measured_classes": 0, "unavailable_classes": 0,
-        "partial_response_sum": None, "partial_response_mean": None, "partial_response_max": None,
+        "sum": None, "mean": None, "max": None,
     }
     empty = declaration("Empty", 1)
     project = project_with((empty,))

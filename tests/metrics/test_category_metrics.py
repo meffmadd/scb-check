@@ -17,10 +17,10 @@ from scb_check.models import ReportValue
     ("metric", "expected"),
     [
         (AfferentCoupling(), {
-            "partial_client_sum": 4, "partial_client_mean": 4 / 3, "partial_client_max": 3,
+            "sum": 4, "mean": 4 / 3, "max": 3,
         }),
         (EfferentCoupling(), {
-            "partial_source_sum": 1, "partial_source_mean": 1 / 3, "partial_source_max": 1,
+            "sum": 1, "mean": 1 / 3, "max": 1,
         }),
     ],
 )
@@ -49,10 +49,9 @@ def test_empty_or_wholly_unavailable_population_has_null_summaries(
         frozenset({"U"}) if unsupported else frozenset(), frozenset(),
     )
     result = metric.compute(facts)
-    prefix = "partial_client" if isinstance(metric, AfferentCoupling) else "partial_source"
     assert result == {
         "measured_categories": 0, "unavailable_categories": int(unsupported),
-        f"{prefix}_sum": None, f"{prefix}_mean": None, f"{prefix}_max": None,
+        "sum": None, "mean": None, "max": None,
     }
     assert metric.units.keys() == result.keys()
 

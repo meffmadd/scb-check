@@ -40,7 +40,7 @@ Keep source IO, parser traversal, and complexity extraction outside `metrics/`. 
 
 Put a small class in its own `src/scb_check/metrics/` module, subclassing [`Metric`](../src/scb_check/metrics/base.py) with its `compute()` input types. For example, [`Syntax`](../src/scb_check/metrics/syntax.py) uses `Metric[[tuple[LanguageSyntaxSummary, ...]]]`.
 
-Implement instance `compute()` and declare class-level `units`. Return a read-only flat `MetricResult` of `int | float | None`; keep structured diagnostics and metadata separate. Own field names, population selection, and units in the metric, including dynamic fields. Return defined-but-unavailable values as `None`, preserve defined zero-denominator behavior, and let calculation errors surface.
+Implement instance `compute()` and declare class-level `units` and an ordered `headline_fields` tuple. Headlines must be declared result fields; choose existing measurements a reader should follow by default, such as a score or per-entity mean and maximum, and leave populations, totals, and size counts as supporting fields. Use `()` when no field is a headline. Headline membership is not a quality or direction judgment. Return a read-only flat `MetricResult` of `int | float | None`; keep structured diagnostics and metadata separate. Own field names, population selection, and units in the metric, including dynamic fields. Return defined-but-unavailable values as `None`, preserve defined zero-denominator behavior, and let calculation errors surface.
 
 Reuse private `metrics/_mass.py` arithmetic for erosion variants and `metrics/_counts.py`'s `summarize_counts` for measured-count aggregates. Keep constructors for real configuration needs; use explicit composition rather than a registry or automatic dispatcher.
 
@@ -48,13 +48,13 @@ Document the definition, provenance, counting variant, population, dispatch/type
 
 ## 4. Compose and validate the report
 
-Explicitly compose the metric in [`reporting.score.compute_report`](../src/scb_check/reporting/score.py) and associate its group with metric-owned units. Keep both mapping levels read-only. Use `serialize_report` for contract validation and fresh plain dictionaries; metadata stays outside numerical results.
+Explicitly compose the metric in [`reporting.score.compute_report`](../src/scb_check/reporting/score.py) and associate its group with the metric class, from which reporting reads its units and headline fields. Keep both mapping levels read-only. Use `serialize_report` for contract validation and fresh plain dictionaries; metadata stays outside numerical results.
 
 Update required-field/group validation and comparison coverage for the schema. Keep fields flat and numerical; preserve explicit nulls through independent-snapshot subtraction. Metric code stays independent of reporting and source IO. See the [report-comparison interface](architecture.md#report-comparison-interface) for ownership.
 
 ## 5. Update documentation
 
-Update the [JSON reference](report-fields.md) for fields, units, and aggregation. Add or adjust the implementation link in the [metric index](metrics.md). Update CLI/configuration reference only if those interfaces change.
+Update the [JSON reference](report-fields.md) for fields, headline fields, units, and aggregation. Add or adjust the implementation link in the [metric index](metrics.md). Update CLI/configuration reference only if those interfaces change.
 
 Keep formulas, counting policies, and citations in implementation docstrings. Describe measurements without introducing unsupported quality judgments or thresholds.
 

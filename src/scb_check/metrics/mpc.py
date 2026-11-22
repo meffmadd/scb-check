@@ -28,10 +28,11 @@ class MPC(Metric[[tuple[ModuleIR, ...]]]):
     units: ClassVar[dict[str, Unit]] = {
         "measured_classes": "classes",
         "unavailable_classes": "classes",
-        "partial_call_site_sum": "call sites",
-        "partial_call_site_mean": "call sites",
-        "partial_call_site_max": "call sites",
+        "sum": "call sites",
+        "mean": "call sites",
+        "max": "call sites",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("mean", "max")
 
     def compute(self, modules: tuple[ModuleIR, ...]) -> MetricResult:
         """Summarize measured classes; project aggregation is an analyzer convention.
@@ -45,9 +46,9 @@ class MPC(Metric[[tuple[ModuleIR, ...]]]):
         return MappingProxyType({
             "measured_classes": len(counts),
             "unavailable_classes": len(counts_by_class) - len(counts),
-            "partial_call_site_sum": summary.total,
-            "partial_call_site_mean": summary.mean,
-            "partial_call_site_max": summary.maximum,
+            "sum": summary.total,
+            "mean": summary.mean,
+            "max": summary.maximum,
         })
 
     def class_counts(self, modules: tuple[ModuleIR, ...]) -> Mapping[str, int | None]:

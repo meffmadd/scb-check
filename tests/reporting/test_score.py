@@ -30,7 +30,7 @@ def test_report_unit_supports_declared_and_language_fields() -> None:
     """Renderers share metric-owned units without treating ratios as percentages."""
     assert report_unit("verbosity", "score") == "fraction"
     assert report_unit("syntax", "python.node_count") == "nodes"
-    assert report_unit("ric", "partial_ratio_mean") == "ratio"
+    assert report_unit("ric", "mean") == "ratio"
 
 
 def test_reports_are_read_only_and_serialization_is_independent(
@@ -75,24 +75,24 @@ def test_reports_are_read_only_and_serialization_is_independent(
         ("verbosity", "score"),
         ("erosion", "total_mass"),
         ("syntax", "python.node_count"),
-        ("cbo", "partial_partner_sum"),
-        ("rfc", "partial_response_sum"),
-        ("mpc", "partial_call_site_sum"),
-        ("callers", "partial_caller_sum"),
-        ("callers", "partial_same_module_sum"),
-        ("callers", "partial_cross_module_sum"),
-        ("dac", "partial_attribute_sum"),
-        ("cic", "partial_occurrence_sum"),
-        ("ric", "partial_ratio_mean"),
-        ("ric", "partial_ratio_max"),
-        ("ca", "partial_client_sum"),
-        ("ca", "partial_client_mean"),
-        ("ca", "partial_client_max"),
-        ("ce", "partial_source_sum"),
-        ("ce", "partial_source_mean"),
-        ("ce", "partial_source_max"),
-        ("module_call_dependencies", "partial_incoming_sum"),
-        ("module_call_dependencies", "partial_outgoing_sum"),
+        ("cbo", "sum"),
+        ("rfc", "sum"),
+        ("mpc", "sum"),
+        ("callers", "sum"),
+        ("callers", "same_module_sum"),
+        ("callers", "cross_module_sum"),
+        ("dac", "sum"),
+        ("cic", "sum"),
+        ("ric", "mean"),
+        ("ric", "max"),
+        ("ca", "sum"),
+        ("ca", "mean"),
+        ("ca", "max"),
+        ("ce", "sum"),
+        ("ce", "mean"),
+        ("ce", "max"),
+        ("module_call_dependencies", "incoming_sum"),
+        ("module_call_dependencies", "outgoing_sum"),
     ],
 )
 def test_unknown_measurements_propagate_without_mutating_snapshots(

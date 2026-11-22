@@ -47,10 +47,11 @@ class DAC(Metric[[tuple[ModuleIR, ...]]]):
     units: ClassVar[dict[str, Unit]] = {
         "measured_classes": "classes",
         "unavailable_classes": "classes",
-        "partial_attribute_sum": "attributes",
-        "partial_attribute_mean": "attributes",
-        "partial_attribute_max": "attributes",
+        "sum": "attributes",
+        "mean": "attributes",
+        "max": "attributes",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("mean", "max")
 
     def compute(self, modules: tuple[ModuleIR, ...]) -> MetricResult:
         """Summarize supported classes using analyzer conventions, not a paper formula.
@@ -66,9 +67,9 @@ class DAC(Metric[[tuple[ModuleIR, ...]]]):
         return MappingProxyType({
             "measured_classes": len(counts),
             "unavailable_classes": len(attributes) - len(counts),
-            "partial_attribute_sum": summary.total,
-            "partial_attribute_mean": summary.mean,
-            "partial_attribute_max": summary.maximum,
+            "sum": summary.total,
+            "mean": summary.mean,
+            "max": summary.maximum,
         })
 
     def attribute_sets(

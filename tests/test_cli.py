@@ -147,45 +147,45 @@ def test_check_output_format_json(
         },
         "cbo": {
             "measured_classes": 0, "unavailable_classes": 0,
-            "partial_partner_sum": None, "partial_partner_mean": None, "partial_partner_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "rfc": {
             "measured_classes": 0, "unavailable_classes": 0,
-            "partial_response_sum": None, "partial_response_mean": None, "partial_response_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "mpc": {
             "measured_classes": 0, "unavailable_classes": 0,
-            "partial_call_site_sum": None, "partial_call_site_mean": None, "partial_call_site_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "callers": {
             "measured_callables": 0, "unavailable_callables": 0,
-            "partial_caller_sum": None, "partial_caller_mean": None, "partial_caller_max": None,
-            "partial_same_module_sum": None, "partial_cross_module_sum": None,
+            "sum": None, "mean": None, "max": None,
+            "same_module_sum": None, "cross_module_sum": None,
         },
         "dac": {
             "measured_classes": 0, "unavailable_classes": 0,
-            "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "cic": {
             "measured_classes": 0, "unavailable_classes": 0,
-            "partial_occurrence_sum": None, "partial_occurrence_mean": None, "partial_occurrence_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "ric": {
             "measured_pairs": 0, "unavailable_pairs": 0,
-            "partial_ratio_mean": None, "partial_ratio_max": None,
+            "mean": None, "max": None,
         },
         "ca": {
             "measured_categories": 0, "unavailable_categories": 0,
-            "partial_client_sum": None, "partial_client_mean": None, "partial_client_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "ce": {
             "measured_categories": 0, "unavailable_categories": 0,
-            "partial_source_sum": None, "partial_source_mean": None, "partial_source_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "module_call_dependencies": {
             "measured_modules": 1, "unavailable_modules": 0,
-            "partial_incoming_sum": 0, "partial_incoming_mean": 0.0, "partial_incoming_max": 0,
-            "partial_outgoing_sum": 0, "partial_outgoing_mean": 0.0, "partial_outgoing_max": 0,
+            "incoming_sum": 0, "incoming_mean": 0.0, "incoming_max": 0,
+            "outgoing_sum": 0, "outgoing_mean": 0.0, "outgoing_max": 0,
         },
     }
 

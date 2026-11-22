@@ -30,10 +30,11 @@ class CBO(Metric[[tuple[ModuleIR, ...]]]):
     units: ClassVar[dict[str, Unit]] = {
         "measured_classes": "classes",
         "unavailable_classes": "classes",
-        "partial_partner_sum": "partners",
-        "partial_partner_mean": "partners",
-        "partial_partner_max": "partners",
+        "sum": "partners",
+        "mean": "partners",
+        "max": "partners",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("mean", "max")
 
     def compute(self, modules: tuple[ModuleIR, ...]) -> MetricResult:
         """Summarize available partial class counts; an empty population is unavailable."""
@@ -43,9 +44,9 @@ class CBO(Metric[[tuple[ModuleIR, ...]]]):
         return MappingProxyType({
             "measured_classes": len(counts),
             "unavailable_classes": len(partners) - len(counts),
-            "partial_partner_sum": summary.total,
-            "partial_partner_mean": summary.mean,
-            "partial_partner_max": summary.maximum,
+            "sum": summary.total,
+            "mean": summary.mean,
+            "max": summary.maximum,
         })
 
     def partner_sets(

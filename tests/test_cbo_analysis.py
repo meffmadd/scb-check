@@ -28,7 +28,7 @@ def test_member_use_ancestor_and_polymorphic_partners(monkeypatch: pytest.Monkey
     }
     assert CBO().compute(project.modules) == {
         "measured_classes": 8, "unavailable_classes": 0,
-        "partial_partner_sum": 8, "partial_partner_mean": 1.0, "partial_partner_max": 3,
+        "sum": 8, "mean": 1.0, "max": 3,
     }
 
 
@@ -42,7 +42,7 @@ def test_placeholder_declarations_do_not_count_as_implemented_member_use(
         "class Client:\n    def run(self, value: Contract):\n        value.work()\n"
     )
     project = analyze_files((source,), disable_sg=True).project
-    assert CBO().compute(project.modules)["partial_partner_sum"] == 0
+    assert CBO().compute(project.modules)["sum"] == 0
 
 
 def test_unknown_library_and_incoming_uses_remain_explicitly_partial(
@@ -63,6 +63,6 @@ def test_unknown_library_and_incoming_uses_remain_explicitly_partial(
     result = compute_report(analysis)["cbo"]
     assert result == {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_partner_sum": 0, "partial_partner_mean": 0.0, "partial_partner_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
     assert "score" not in result

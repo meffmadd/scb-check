@@ -21,6 +21,35 @@ if TYPE_CHECKING:
     from click.testing import Result
 
 
+HEADLINES = [
+    "verbosity.score",
+    "erosion.score",
+    "cog_erosion.score",
+    "cbo.mean",
+    "cbo.max",
+    "rfc.mean",
+    "rfc.max",
+    "mpc.mean",
+    "mpc.max",
+    "callers.mean",
+    "callers.max",
+    "dac.mean",
+    "dac.max",
+    "cic.mean",
+    "cic.max",
+    "ric.mean",
+    "ric.max",
+    "ca.mean",
+    "ca.max",
+    "ce.mean",
+    "ce.max",
+    "module_call_dependencies.incoming_mean",
+    "module_call_dependencies.incoming_max",
+    "module_call_dependencies.outgoing_mean",
+    "module_call_dependencies.outgoing_max",
+]
+
+
 def _invoke(paths: tuple[Path, ...], *options: str) -> Result:
     return CliRunner().invoke(
         main, ["report", *(str(path) for path in paths), *options]
@@ -55,12 +84,28 @@ def roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, ...]:
     return paths
 
 
+@pytest.fixture
+def flagged_roots(
+    roots: tuple[Path, ...], monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, ...]:
+    """Flag each snapshot's first SLOC line, so verbosity is 1/1, 1/3, then 1/2."""
+    monkeypatch.setattr(
+        "scb_check.pipeline.run_sg",
+        lambda files, _rules: tuple(
+            AstGrepHit(file, 1, 1, 0, 1, "list-dict-keys", "value")
+            for file in files
+        ),
+    )
+    return roots
+
+
+@pytest.mark.parametrize("full", [False, True])
 def test_complete_snapshot_and_adjacent_diff_parity(
-    roots: tuple[Path, ...],
+    roots: tuple[Path, ...], *, full: bool
 ) -> None:
-    """Every report field matches standalone check/diff with known signed SLOC deltas."""
+    """Plotted fields match standalone check/diff; embedded reports stay complete."""
     output = Path("report.html")
-    result = _invoke(roots)
+    result = _invoke(roots, *(["--full"] if full else []))
     assert result.exit_code == 0, result.output
     assert str(output.resolve()) in result.stdout
     payload = _payload(output)
@@ -86,7 +131,19 @@ def test_complete_snapshot_and_adjacent_diff_parity(
             assert (
                 payload["comparisons"][index] == json.loads(diff.stdout)["diff"]
             )
+    for item in payload["series"]:
+        group, _, field = item["metric"].partition(".")
+        assert item["values"] == [
+            snapshot[group][field] for snapshot in payload["snapshots"]
+        ]
+        assert item["differences"] == [
+            None,
+            *(change[group][field] for change in payload["comparisons"][1:]),
+        ]
     series = {series["metric"]: series for series in payload["series"]}
+    if not full:
+        assert list(series) == HEADLINES
+        return
     assert series["verbosity.total_loc"]["values"] == [1, 3, 2]
     assert series["verbosity.total_loc"]["differences"] == [None, 2, -1]
     assert set(series) == {
@@ -95,14 +152,46 @@ def test_complete_snapshot_and_adjacent_diff_parity(
         for group, fields in report.items()
         for field in fields
     }
+    assert "syntax.python.node_count" in series
 
 
+def test_default_headlines_match_full_series_and_keep_unavailable_gaps(
+    flagged_roots: tuple[Path, ...],
+) -> None:
+    """Selection hides supporting fields without changing values, changes or nulls."""
+    assert _invoke(flagged_roots).exit_code == 0
+    assert _invoke(flagged_roots, "--full", "--output", "full.html").exit_code == 0
+    headline, full = _payload(Path("report.html")), _payload(Path("full.html"))
+    series = {item["metric"]: item for item in headline["series"]}
+
+    assert list(series) == HEADLINES
+    assert not {"verbosity.total_loc", "cbo.measured_classes", "syntax.node_count"} & set(series)
+    assert series["verbosity.score"]["values"] == pytest.approx([1, 1 / 3, 1 / 2])
+    assert series["verbosity.score"]["differences"] == [
+        None,
+        pytest.approx(-2 / 3),
+        pytest.approx(1 / 6),
+    ]
+    assert series["cbo.mean"]["values"] == [None, None, None]
+    assert series["cbo.mean"]["differences"] == [None, None, None]
+    assert series == {
+        item["metric"]: item for item in full["series"] if item["metric"] in series
+    }
+    assert headline["snapshots"] == full["snapshots"]
+    assert headline["comparisons"] == full["comparisons"]
+
+
+@pytest.mark.parametrize("full", [False, True])
 def test_manifest_relative_paths_alignment_and_positional_parity(
-    roots: tuple[Path, ...],
+    flagged_roots: tuple[Path, ...],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    full: bool,
 ) -> None:
-    """Both input forms produce identical metrics, with manifest-relative sparse peers."""
+    """Both input forms select identical fields, with manifest-relative sparse peers."""
+    roots = flagged_roots
+    options = ("--full",) if full else ()
     manifest = tmp_path / "comparison.toml"
     manifest.write_text(
         'steps = ["3", "1", "2"]\n[series.problem]\n"3" = "first"\n"1" = "second"\n"2" = "third"\n[series.sparse]\n"3" = "third"\n"2" = "first"\n',
@@ -118,19 +207,28 @@ def test_manifest_relative_paths_alignment_and_positional_parity(
         str(manifest),
         "--output",
         str(output),
+        *options,
     )
     assert result.exit_code == 0, result.output
     document = _document(output)
     assert document["labels"] == ["3", "1", "2"]
     assert document["runs"][0]["paths"] == [str(path) for path in roots]
+    problem, sparse = (
+        [item["metric"] for item in run["series"]] for run in document["runs"]
+    )
+    assert problem == sparse
+    if full:
+        assert {*HEADLINES, "syntax.python.node_count"} <= set(problem)
+    else:
+        assert problem == HEADLINES
     metric = next(
         item
         for item in document["runs"][1]["series"]
-        if item["metric"] == "verbosity.total_loc"
+        if item["metric"] == "verbosity.score"
     )
-    assert metric["values"] == [2, None, 1]
+    assert metric["values"] == [0.5, None, 1.0]
     assert metric["differences"] == [None, None, None]
-    positional = _invoke(roots)
+    positional = _invoke(roots, *options)
     assert positional.exit_code == 0, positional.output
     assert (
         document["runs"][0]["series"] == _payload(Path("report.html"))["series"]
@@ -216,7 +314,9 @@ def test_unreadable_manifest_is_a_usage_error(manifest: str) -> None:
 def test_custom_output_reversal_and_repetition(roots: tuple[Path, ...]) -> None:
     """Repeated roots are separate points, and changes follow input order."""
     output = Path("changes.html")
-    result = _invoke((roots[2], roots[0], roots[0]), "--output", str(output))
+    result = _invoke(
+        (roots[2], roots[0], roots[0]), "--output", str(output), "--full"
+    )
     assert result.exit_code == 0, result.output
     series = next(
         series

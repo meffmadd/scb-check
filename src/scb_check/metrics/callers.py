@@ -55,12 +55,13 @@ class DistinctCallers(Metric[[tuple[ModuleIR, ...]]]):
     units: ClassVar[dict[str, Unit]] = {
         "measured_callables": "functions",
         "unavailable_callables": "functions",
-        "partial_caller_sum": "callers",
-        "partial_caller_mean": "callers",
-        "partial_caller_max": "callers",
-        "partial_same_module_sum": "callers",
-        "partial_cross_module_sum": "callers",
+        "sum": "callers",
+        "mean": "callers",
+        "max": "callers",
+        "same_module_sum": "callers",
+        "cross_module_sum": "callers",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("mean", "max")
 
     def compute(self, modules: tuple[ModuleIR, ...]) -> MetricResult:
         """Summarize measured destinations without treating unavailable counts as zero."""
@@ -71,11 +72,11 @@ class DistinctCallers(Metric[[tuple[ModuleIR, ...]]]):
         return MappingProxyType({
             "measured_callables": len(measured),
             "unavailable_callables": len(diagnostics) - len(measured),
-            "partial_caller_sum": summary.total,
-            "partial_caller_mean": summary.mean,
-            "partial_caller_max": summary.maximum,
-            "partial_same_module_sum": sum(len(value.same_module) for value in measured) if measured else None,
-            "partial_cross_module_sum": sum(len(value.cross_module) for value in measured) if measured else None,
+            "sum": summary.total,
+            "mean": summary.mean,
+            "max": summary.maximum,
+            "same_module_sum": sum(len(value.same_module) for value in measured) if measured else None,
+            "cross_module_sum": sum(len(value.cross_module) for value in measured) if measured else None,
         })
 
     def caller_sets(self, modules: tuple[ModuleIR, ...]) -> Mapping[str, CallerSets | None]:

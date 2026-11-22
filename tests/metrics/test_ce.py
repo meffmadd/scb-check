@@ -12,7 +12,7 @@ def test_ce_saturates_per_internal_source_class(category_facts: CategoryDependen
     }
     assert EfferentCoupling().compute(category_facts) == {
         "measured_categories": 4, "unavailable_categories": 0,
-        "partial_source_sum": 3, "partial_source_mean": 0.75, "partial_source_max": 2,
+        "sum": 3, "mean": 0.75, "max": 2,
     }
 
 
@@ -28,5 +28,5 @@ def test_twenty_external_targets_still_contribute_one_source() -> None:
     }
     assert EfferentCoupling().compute(facts) == {
         "measured_categories": 2, "unavailable_categories": 0,
-        "partial_source_sum": 1, "partial_source_mean": 0.5, "partial_source_max": 1,
+        "sum": 1, "mean": 0.5, "max": 1,
     }

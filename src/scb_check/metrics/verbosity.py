@@ -25,6 +25,7 @@ class Verbosity(Metric[[LineGroups, tuple[RuleFinding, ...]]]):
         "structural_rule_loc": "lines",
         "structural_rule_findings": "findings",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("score",)
 
     def compute(
         self, lines: LineGroups, structural_findings: tuple[RuleFinding, ...]

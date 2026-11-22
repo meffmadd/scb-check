@@ -54,8 +54,8 @@ def test_directional_neighbors_deduplicate_preserve_cycles_and_exclude_self() ->
     }
     assert metric.compute(modules) == {
         "measured_modules": 4, "unavailable_modules": 0,
-        "partial_incoming_sum": 3, "partial_incoming_mean": 0.75, "partial_incoming_max": 1,
-        "partial_outgoing_sum": 3, "partial_outgoing_mean": 0.75, "partial_outgoing_max": 2,
+        "incoming_sum": 3, "incoming_mean": 0.75, "incoming_max": 1,
+        "outgoing_sum": 3, "outgoing_mean": 0.75, "outgoing_max": 2,
     }
 
 
@@ -70,8 +70,8 @@ def test_unknown_static_targets_do_not_become_neighbors(status: ResolutionStatus
         ),
     })
     result = ModuleCallDependencies().compute((a.model_copy(update={"source_uses": (use,)}), b))
-    assert result["partial_incoming_sum"] == 0
-    assert result["partial_outgoing_sum"] == 0
+    assert result["incoming_sum"] == 0
+    assert result["outgoing_sum"] == 0
 
 
 @pytest.mark.parametrize("change", [
@@ -84,7 +84,7 @@ def test_other_relations_and_unretained_targets_add_no_edge(change: dict[str, ob
     use = call(a, b).model_copy(update=change)
     assert ModuleCallDependencies().compute((
         a.model_copy(update={"source_uses": (use,)}), b,
-    ))["partial_outgoing_sum"] == 0
+    ))["outgoing_sum"] == 0
 
 
 def test_static_project_selection_does_not_expand_runtime_alternatives() -> None:
@@ -114,14 +114,14 @@ def test_unavailable_targets_remain_neighbors_without_becoming_measured() -> Non
     }
     assert metric.compute((a, b)) == {
         "measured_modules": 1, "unavailable_modules": 1,
-        "partial_incoming_sum": 0, "partial_incoming_mean": 0.0, "partial_incoming_max": 0,
-        "partial_outgoing_sum": 1, "partial_outgoing_mean": 1.0, "partial_outgoing_max": 1,
+        "incoming_sum": 0, "incoming_mean": 0.0, "incoming_max": 0,
+        "outgoing_sum": 1, "outgoing_mean": 1.0, "outgoing_max": 1,
     }
     for modules, unavailable in (((), 0), ((b,), 1)):
         assert metric.compute(modules) == {
             "measured_modules": 0, "unavailable_modules": unavailable,
-            "partial_incoming_sum": None, "partial_incoming_mean": None, "partial_incoming_max": None,
-            "partial_outgoing_sum": None, "partial_outgoing_mean": None, "partial_outgoing_max": None,
+            "incoming_sum": None, "incoming_mean": None, "incoming_max": None,
+            "outgoing_sum": None, "outgoing_mean": None, "outgoing_max": None,
         }
 
 
@@ -140,8 +140,8 @@ def test_known_source_graph_counts_calls_not_imports_or_accesses(monkeypatch: py
     }
     assert ModuleCallDependencies().compute(project.modules) == {
         "measured_modules": 4, "unavailable_modules": 0,
-        "partial_incoming_sum": 3, "partial_incoming_mean": 0.75, "partial_incoming_max": 1,
-        "partial_outgoing_sum": 3, "partial_outgoing_mean": 0.75, "partial_outgoing_max": 2,
+        "incoming_sum": 3, "incoming_mean": 0.75, "incoming_max": 1,
+        "outgoing_sum": 3, "outgoing_mean": 0.75, "outgoing_max": 2,
     }
 
 
@@ -152,7 +152,7 @@ def test_supported_initialization_and_function_calls_count(tmp_path: Path, execu
     destination.write_text("def target():\n    return 1\n")
     source.write_text(f"from destination import target\n{execution}\n")
     project = analyze_files((source, destination), disable_sg=True).project
-    assert ModuleCallDependencies().compute(project.modules)["partial_outgoing_sum"] == 1
+    assert ModuleCallDependencies().compute(project.modules)["outgoing_sum"] == 1
 
 
 def test_package_files_stay_distinct_and_inherited_calls_target_declaring_module(tmp_path: Path) -> None:

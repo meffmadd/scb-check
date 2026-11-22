@@ -20,6 +20,7 @@ class CognitiveErosion(Metric[[tuple[SymbolIR, ...], tuple[SymbolIR, ...]]]):
         "total_cog_mass": "mass",
         "high_cog_mass": "mass",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("score",)
 
     def compute(
         self,

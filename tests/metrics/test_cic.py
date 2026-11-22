@@ -135,7 +135,7 @@ def test_parenthesized_call_and_its_target_access_are_one_occurrence() -> None:
     assert CIC().class_counts((evidence,)) == {root.id: 0, child.id: 1}
     assert CIC().compute((evidence,)) == {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_occurrence_sum": 1, "partial_occurrence_mean": 0.5, "partial_occurrence_max": 1,
+        "sum": 1, "mean": 0.5, "max": 1,
     }
 
 
@@ -156,7 +156,7 @@ def test_missing_extraction_is_unavailable_not_partial_zero(missing: str) -> Non
     assert CIC().class_counts((supported, unsupported)) == {root.id: 0, child.id: None}
     assert CIC().compute((supported, unsupported)) == {
         "measured_classes": 1, "unavailable_classes": 1,
-        "partial_occurrence_sum": 0, "partial_occurrence_mean": 0.0, "partial_occurrence_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
 
 
@@ -171,7 +171,7 @@ def test_incomplete_transitive_ancestry_is_unavailable(status: str) -> None:
     assert CIC().class_counts((module((root, child)),)) == {root.id: None, child.id: None}
     assert CIC().compute((module((root, child)),)) == {
         "measured_classes": 0, "unavailable_classes": 2,
-        "partial_occurrence_sum": None, "partial_occurrence_mean": None, "partial_occurrence_max": None,
+        "sum": None, "mean": None, "max": None,
     }
 
 
@@ -194,7 +194,7 @@ def test_empty_population_and_read_only_outputs() -> None:
     result = CIC().compute(())
     assert result == {
         "measured_classes": 0, "unavailable_classes": 0,
-        "partial_occurrence_sum": None, "partial_occurrence_mean": None, "partial_occurrence_max": None,
+        "sum": None, "mean": None, "max": None,
     }
     with pytest.raises(TypeError):
         cast("MutableMapping[str, object]", result)["measured_classes"] = 1

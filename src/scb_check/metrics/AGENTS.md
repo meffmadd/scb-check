@@ -1,8 +1,8 @@
 # `metrics/` — extracted facts → measurements
 
-Metric classes own calculations, flat result-field names, and units. Reporting composes their results into reports and handles serialization, comparison, and presentation.
+Metric classes own calculations, flat result-field names, units, and headline selection. Reporting composes their results into reports and handles serialization, comparison, and presentation.
 
-- Subclass `Metric` from `base.py` and implement instance `compute()`. Its parameter specification preserves each metric's narrow extracted-fact inputs; declare result units on the class.
+- Subclass `Metric` from `base.py` and implement instance `compute()`. Its parameter specification preserves each metric's narrow extracted-fact inputs; declare result `units` and an ordered `headline_fields` tuple of declared fields (`()` for none) on the class. Headlines pick existing measurements a reader follows by default; they carry no quality or direction meaning. Name summary fields by aggregation (`sum`, `mean`, `max`; `incoming_*`/`outgoing_*` for directions) without a metric-name or `partial_` prefix.
 - Return a read-only flat `MetricResult` (`int | float | None`). Keep metadata separate from result values.
 - Keep each conceptual metric in its own module. Share erosion arithmetic privately in `_mass.py` and measured-count sum/mean/max arithmetic in `_counts.py`. Concrete metrics still own populations, fields, and units; preserve the union, mass, threshold, and zero-denominator semantics in the implementations. Metric docstrings own definitions, counting policies, limitations, and sources; the [metric index](../../../docs/metrics.md) links to them. Follow [Add or extend a metric](../../../docs/adding-a-metric.md) for the contributor workflow.
 - Use extracted facts only: source IO, parser traversal, and analysis orchestration stay outside this package. Keep this package independent of `reporting/`.

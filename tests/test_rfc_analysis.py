@@ -28,7 +28,7 @@ def test_known_direct_response_counts_include_inherited_selected_methods() -> No
     }
     assert RFC().compute(project) == {
         "measured_classes": 7, "unavailable_classes": 0,
-        "partial_response_sum": 13, "partial_response_mean": 13 / 7, "partial_response_max": 3,
+        "sum": 13, "mean": 13 / 7, "max": 3,
     }
 
 
@@ -61,7 +61,7 @@ def test_polymorphic_bodies_and_bodyless_declarations_have_distinct_roles(tmp_pa
         "polymorphic.Second": {"polymorphic.Second.work"},
         "polymorphic.Client": {"polymorphic.Client.run", "polymorphic.First.work", "polymorphic.Second.work"},
     }
-    assert RFC().compute(project)["partial_response_sum"] == 6
+    assert RFC().compute(project)["sum"] == 6
 
 
 def test_nonmethod_unknown_generated_and_nondirect_calls_do_not_expand_response(tmp_path: Path) -> None:
@@ -100,5 +100,5 @@ def test_nonmethod_unknown_generated_and_nondirect_calls_do_not_expand_response(
     }
     assert RFC().compute(project) == {
         "measured_classes": 3, "unavailable_classes": 0,
-        "partial_response_sum": 2, "partial_response_mean": 2 / 3, "partial_response_max": 1,
+        "sum": 2, "mean": 2 / 3, "max": 1,
     }
