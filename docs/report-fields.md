@@ -9,7 +9,7 @@
 | `verbosity` | `score`, `files_scanned`, `total_loc`, `flagged_loc`, `clone_loc`, `ast_grep_flagged_loc`, `structural_rule_loc`, `structural_rule_findings` | `score` |
 | `erosion` | `score`, `total_functions`, `high_cc_functions`, `total_mass`, `high_cc_mass` | `score` |
 | `cog_erosion` | `score`, `total_functions`, `high_cog_functions`, `total_cog_mass`, `high_cog_mass` | `score` |
-| `syntax` | `tree_count`, `node_count`, plus `<language>.tree_count` and `<language>.node_count` | None |
+| `syntax` | `tree_count`, `node_count`, plus `<language>.tree_count` and `<language>.node_count` | (none) |
 | `cbo` | `measured_classes`, `unavailable_classes`, `sum`, `mean`, `max` | `mean`, `max` |
 | `rfc` | `measured_classes`, `unavailable_classes`, `sum`, `mean`, `max` | `mean`, `max` |
 | `mpc` | `measured_classes`, `unavailable_classes`, `sum`, `mean`, `max` | `mean`, `max` |
@@ -23,7 +23,7 @@
 
 Syntax counts cover parsed Tree-sitter trees and their nodes. Dotted per-language names such as `python.node_count` are single flat keys, not nested objects. Only languages present in that snapshot appear. Group, field, and language ordering is deterministic.
 
-Each metric class declares its headline fields in the order shown; every other field is a supporting measurement. Headlines only select what [HTML reports](cli.md#plot-reports) plot by default. Check and diff JSON always contain every field. Headlines are existing measurements, not a combined score, a quality judgment, or a guarantee of growth neutrality; see [interpreting headlines](metrics.md#interpreting-headlines).
+Each metric class declares its headline fields in the order shown; every other field is a supporting measurement. Headlines only select what [HTML reports](cli.md#plot-reports) plot by default. Check and diff JSON always contain every field. See [interpreting headlines](metrics.md#interpreting-headlines) for what headlines do and do not mean.
 
 Scores use fractional units. Counts and complexity masses retain their numerical units. Values are finite numbers or `null`; `null` means unavailable or undefined, not zero. Existing zero-denominator scores remain zero, including zero-SLOC verbosity and zero-mass erosion. Human check output remains location-level findings with source context.
 
