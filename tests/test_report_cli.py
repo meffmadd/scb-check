@@ -135,7 +135,7 @@ def test_manifest_relative_paths_alignment_and_positional_parity(
     assert (
         document["runs"][0]["series"] == _payload(Path("report.html"))["series"]
     )
-    assert set(document) == {"labels", "runs", "units"}
+    assert set(document) == {"labels", "runs", "summaries", "units"}
 
 
 @pytest.mark.parametrize(

@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from scb_check.models import AlignedTrend
 from scb_check.models import AnalysisResult
 from scb_check.models import Flags
 from scb_check.models import SnapshotSeries
@@ -102,7 +103,7 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
     assert page.payload["labels"] == ["1: same", "2: same"]
     assert page.payload["runs"][0]["snapshots"] == [report, report]
     assert page.payload["runs"][0]["comparisons"][0] is None
-    assert len(page.plot_ids) == len(trend.series) * 2
+    assert len(page.plot_ids) == len(trend.series)
     assert page.tables == 0
     assert page.inputs == []
     assert page.source_details is not None
@@ -115,12 +116,12 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
         "unit": "fraction",
         "values": [0.125, 0.125],
         "differences": [None, 0.0],
+        "tau": None,
     }
     assert "Values (percent)" in text
-    assert "Changes from previous (percentage points)" in text
+    assert "Changes from previous" not in text
     assert "Values (mass)" in text
     assert "Values (ratio)" in text
-    assert "no previous snapshot" in text
     assert "unavailable" in text
     assert "All measurements unavailable" in text
     assert len(page.scripts) == 3
@@ -141,10 +142,9 @@ def test_metric_groups_are_native_collapsed_disclosures_in_report_order() -> (
     assert tuple(page.groups) == tuple(report)
     assert all("open" not in attrs for attrs in page.groups.values())
     assert page.group_plots["syntax"] == [
-        f"plot-{index}-{difference}"
+        f"plot-{index}"
         for index, series in enumerate(trend.series)
         if series.metric.startswith("syntax.")
-        for difference in (0, 1)
     ]
     assert [
         plot for plots in page.group_plots.values() for plot in plots
@@ -169,10 +169,110 @@ def test_multiseries_payload_keeps_steps_and_gaps() -> None:
         "other",
     ]
     assert page.payload["runs"][0]["paths"] == ["a", None, "a"]
-    assert set(page.payload) == {"labels", "runs", "units"}
+    assert set(page.payload) == {"labels", "runs", "summaries", "units"}
     assert page.payload["runs"][0]["series"][0]["values"] == [0, None, 0]
     assert page.inputs == []
-    assert len(page.plot_ids) == len(trend.trends[0].series) * 2
+    assert len(page.plot_ids) == len(trend.trends[0].series)
+
+
+def _loc_trend(observations: dict[str, tuple[int | None, ...]]) -> AlignedTrend:
+    """Build one named series per entry, varying only `verbosity.total_loc`."""
+    reports = {}
+    runs = []
+    for name, values in observations.items():
+        paths = []
+        for index, value in enumerate(values):
+            path = Path(f"{name}-{index}")
+            report = serialize_report(
+                compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
+            )
+            report["verbosity"]["total_loc"] = value
+            reports[path] = report
+            paths.append(path)
+        runs.append(SnapshotSeries(name, tuple(paths)))
+    steps = tuple(str(index) for index in range(len(runs[0].paths)))
+    return build_aligned_trend(steps, tuple(runs), reports.__getitem__)
+
+
+def _loc_coefficients(page: ReportPage) -> list[float | None]:
+    return [
+        series["tau"]
+        for run in page.payload["runs"]
+        for series in run["series"]
+        if series["metric"] == "verbosity.total_loc"
+    ]
+
+
+def test_kendall_coefficients_and_summaries_weight_series_equally() -> None:
+    """Sparse and tied series contribute equally; only flat series adjust the mean."""
+    trend = _loc_trend(
+        {
+            "up": (1, 2, 3, 4),
+            "down": (4, None, None, 1),
+            "tied": (1, 1, 2, None),
+            "constant": (2, 2, 2, 2),
+            "short": (None, None, 1, None),
+        }
+    )
+    page = ReportPage(render_trend_html(trend))
+    tied = 0.8164965809
+    assert _loc_coefficients(page) == [
+        pytest.approx(1),
+        pytest.approx(-1),
+        pytest.approx(tied),
+        None,
+        None,
+    ]
+    assert page.payload["summaries"]["verbosity.total_loc"] == {
+        "series": 5,
+        "contributors": 3,
+        "mean": pytest.approx(tied / 3),
+        "median": pytest.approx(tied),
+        "flat_adjusted_contributors": 4,
+        "flat_adjusted_mean": pytest.approx(tied / 4),
+        "flat_adjusted_median": pytest.approx(tied / 2),
+    }
+    opposing = ReportPage(
+        render_trend_html(AlignedTrend(trend.steps, trend.trends[:2]))
+    )
+    summary = opposing.payload["summaries"]["verbosity.total_loc"]
+    assert summary["contributors"] == 2
+    assert summary["mean"] == pytest.approx(0)
+    assert summary["median"] == pytest.approx(0)
+
+
+def test_single_series_shows_its_coefficient_instead_of_a_mean() -> None:
+    """One series is labelled τ, whether its coefficient is defined or not."""
+    rising = ReportPage(render_trend_html(_loc_trend({"": (1, 2, 3)})))
+    assert _loc_coefficients(rising) == [pytest.approx(1)]
+    assert "Values (lines) · τ: 1.00" in " ".join(rising.cells)
+    constant = ReportPage(render_trend_html(_loc_trend({"": (2, 2, 2)})))
+    assert _loc_coefficients(constant) == [None]
+    assert "Values (lines) · τ: N/A" in " ".join(constant.cells)
+
+
+def test_summaries_without_defined_coefficients_report_no_mean() -> None:
+    """Undefined series never count as zero unless they are flat."""
+    flat_and_short = ReportPage(
+        render_trend_html(_loc_trend({"flat": (2, 2), "short": (None, 1)}))
+    )
+    assert flat_and_short.payload["summaries"]["verbosity.total_loc"] == {
+        "series": 2,
+        "contributors": 0,
+        "mean": None,
+        "median": None,
+        "flat_adjusted_contributors": 1,
+        "flat_adjusted_mean": 0,
+        "flat_adjusted_median": 0,
+    }
+    assert "τ (0/2 series): mean N/A" in " ".join(flat_and_short.cells)
+    short = ReportPage(
+        render_trend_html(_loc_trend({"a": (None, 1), "b": (None, 1)}))
+    )
+    summary = short.payload["summaries"]["verbosity.total_loc"]
+    assert summary["flat_adjusted_contributors"] == 0
+    assert summary["flat_adjusted_mean"] is None
+    assert summary["flat_adjusted_median"] is None
 
 
 def test_untrusted_paths_round_trip_without_script_or_markup_injection() -> (
