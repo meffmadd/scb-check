@@ -181,6 +181,32 @@ def test_default_headlines_match_full_series_and_keep_unavailable_gaps(
     assert headline["comparisons"] == full["comparisons"]
 
 
+def test_default_headlines_plot_coupling_values_beside_unsupported_extraction(
+    roots: tuple[Path, ...],
+) -> None:
+    """Measured means and maxima keep their values; unsupported classes stay gaps."""
+    unsupported, low, high = roots
+    (unsupported / "sample.py").unlink()
+    (unsupported / "sample.ts").write_text("class Empty {}\n", encoding="utf-8")
+    calls_inherited = (
+        "class Root:\n    def work(self): return 1\n"
+        "class Child(Root):\n    def run(self):\n        self.work()\n"
+    )
+    (low / "sample.py").write_text(calls_inherited, encoding="utf-8")
+    (high / "sample.py").write_text(
+        calls_inherited + "        return self.work\n", encoding="utf-8"
+    )
+    assert _invoke(roots).exit_code == 0
+    payload = _payload(Path("report.html"))
+    series = {item["metric"]: item for item in payload["series"]}
+
+    assert payload["snapshots"][0]["cic"]["unavailable_classes"] == 1
+    assert series["cic.mean"]["values"] == [None, 0.5, 1.0]
+    assert series["cic.mean"]["differences"] == [None, None, 0.5]
+    assert series["cic.max"]["values"] == [None, 1, 2]
+    assert series["cic.max"]["differences"] == [None, None, 1]
+
+
 @pytest.mark.parametrize("full", [False, True])
 def test_manifest_relative_paths_alignment_and_positional_parity(
     flagged_roots: tuple[Path, ...],

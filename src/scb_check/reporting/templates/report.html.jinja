@@ -46,7 +46,7 @@
       <p>Each plot shows Kendall τ-b against step order. Missing observations are omitted; constant series and series with fewer than two observations have unavailable τ. The signed mean and median weight the available coefficients equally. The flat-adjusted mean and median also count constant series with at least two observations as zero; shorter series remain excluded. These summaries are descriptive, not significance tests.</p>
       <p>{% if full %}Every report field is plotted, including supporting measurements.{% else %}Only each metric's declared headline fields are plotted. Supporting measurements such as populations, totals, sums, and syntax counts are omitted; generate the report with <code>--full</code> to plot them.{% endif %}
         Headlines are selected measurements, not a combined quality score, and are not guaranteed to be unaffected by codebase growth:
-        means weight each measured entity equally, and maxima can rise as a population grows. The embedded report data always contain every field.</p>
+        means weight each measured entity equally, and maxima can rise as a population grows. The embedded snapshots and comparisons always contain every field.</p>
       <p>Coupling sums, means, and maxima count supported static evidence and may omit unknown relationships, so an observed zero does not establish absence.
         Entities lacking the required extraction support are unavailable and excluded from these summaries rather than counted as zero.</p>
       <p>Trends are not churn or quality judgments. Population and coverage changes can affect values.</p>
