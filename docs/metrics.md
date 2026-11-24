@@ -29,9 +29,21 @@ Snapshot differences are not code churn. Literal edits or renames that preserve 
 
 SlopCodeBench runs provide an experimental setting with ordered source checkpoints. Those checkpoints approximate an evolving development process; benchmark observations do not by themselves establish what happens in other projects.
 
+## Interpreting headlines
+
+HTML reports plot each metric's [headline fields](report-fields.md#check-json-report-fields) by default: the verbosity and erosion scores, and the existing per-entity means and maxima of the structural measurements. They are selected measurements, not new arithmetic, a universal slop score, or a guarantee of growth neutrality.
+
+- Scores are already shares of flagged SLOC or complexity mass.
+- Means weight every measured entity equally. Maxima expose an extreme entity, but can rise simply because a measured population grows.
+- Ca and Ce summarize module categories, so adding classes inside existing categories can change their means.
+- RIC includes zero-use method/class pairs, so adding unrelated classes can dilute its mean without improving existing relationships.
+- Incoming and outgoing module dependencies stay separate headlines, so neither direction hides the other.
+
+Syntax counts are size measurements and have no headlines. Use `scb-check report --full` to plot supporting populations, totals, sums, and syntax counts alongside the headlines.
+
 ## Partial metric interpretation
 
-The coupling measurements describe retained project source, not verified whole-program behavior. Their Python-first resolution can miss unresolved uses, unknown types, and unscanned libraries. A measured partial zero is not proof of absence.
+The coupling measurements describe retained project source, not verified whole-program behavior. Their Python-first resolution can miss unresolved uses, unknown types, and unscanned libraries. A measured partial zero is not proof of absence. Concise keys such as `cbo.mean` carry no `partial` prefix, but every coupling summary remains partial.
 
 Unavailable entities lack required extraction support and are excluded from summary denominators rather than treated as zero. Measured and unavailable populations remain separate; summaries are `null` when no population is measured. Each snapshot models its own population, so differences may reflect coverage changes as well as changed relationships.
 

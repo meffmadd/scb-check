@@ -42,8 +42,8 @@ def test_ordered_values_and_adjacent_changes_cover_complete_reports() -> None:
     assert series["syntax.rust.node_count"].values == (None, None, 7)
     assert series["syntax.rust.node_count"].differences == (None, None, 7)
     assert series["syntax.rust.node_count"].unit == "nodes"
-    assert series["ric.partial_ratio_mean"].unit == "ratio"
-    assert series["cbo.partial_partner_sum"].differences == (None, None, None)
+    assert series["ric.mean"].unit == "ratio"
+    assert series["cbo.sum"].differences == (None, None, None)
     assert len(series) == len(trend.series)
     assert set(series) == {
         *(
@@ -105,7 +105,7 @@ def test_aligned_series_preserve_gaps_and_adjacent_deltas() -> None:
     assert trend.steps == ("third", "first", "last", "empty")
     assert (a.name, b.name) == ("problem-a", "problem-b")
     unavailable = next(
-        s for s in b.series if s.metric == "rfc.partial_response_sum"
+        s for s in b.series if s.metric == "rfc.sum"
     )
     assert unavailable.values == (None,) * 4
     assert unavailable.differences == (None,) * 4

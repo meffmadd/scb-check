@@ -31,10 +31,11 @@ class EfferentCoupling(Metric[[CategoryDependencies]]):
     units: ClassVar[dict[str, Unit]] = {
         "measured_categories": "categories",
         "unavailable_categories": "categories",
-        "partial_source_sum": "source classes",
-        "partial_source_mean": "source classes",
-        "partial_source_max": "source classes",
+        "sum": "source classes",
+        "mean": "source classes",
+        "max": "source classes",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("mean", "max")
 
     def compute(self, dependencies: CategoryDependencies) -> MetricResult:
         """Summarize measured categories only; aggregation is an analyzer convention."""
@@ -44,9 +45,9 @@ class EfferentCoupling(Metric[[CategoryDependencies]]):
         return MappingProxyType({
             "measured_categories": len(counts),
             "unavailable_categories": len(sources) - len(counts),
-            "partial_source_sum": summary.total,
-            "partial_source_mean": summary.mean,
-            "partial_source_max": summary.maximum,
+            "sum": summary.total,
+            "mean": summary.mean,
+            "max": summary.maximum,
         })
 
     def source_sets(self, dependencies: CategoryDependencies) -> Mapping[str, frozenset[str] | None]:

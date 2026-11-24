@@ -64,8 +64,8 @@ def assert_aggregates_match_diagnostics(modules: tuple[ModuleIR, ...]) -> None:
     ratios = [pair.ratio for pair in diagnostics.values() if pair is not None]
     assert RIC().compute(modules) == {
         "measured_pairs": len(ratios), "unavailable_pairs": len(diagnostics) - len(ratios),
-        "partial_ratio_mean": sum(ratios) / len(ratios) if ratios else None,
-        "partial_ratio_max": max(ratios) if ratios else None,
+        "mean": sum(ratios) / len(ratios) if ratios else None,
+        "max": max(ratios) if ratios else None,
     }
 
 
@@ -86,7 +86,7 @@ def test_zero_call_aggregate_has_linear_resource_budget() -> None:
         tracemalloc.stop()
     assert result == {
         "measured_pairs": 119400, "unavailable_pairs": 0,
-        "partial_ratio_mean": 0.0, "partial_ratio_max": 0.0,
+        "mean": 0.0, "max": 0.0,
     }
     # Generous linear budgets: the previous full-pair path used over 22 MiB.
     assert peak < class_count * 8192
@@ -123,7 +123,7 @@ def test_all_pairs_deduplicate_users_and_preserve_zero_owner_use() -> None:
     assert pairs[first.id, a.id] == RICPair(0, 0, 1, 0.0)
     assert RIC().compute(modules) == {
         "measured_pairs": 8, "unavailable_pairs": 0,
-        "partial_ratio_mean": 0.375, "partial_ratio_max": 2.0,
+        "mean": 0.375, "max": 2.0,
     }
 
 
@@ -159,13 +159,13 @@ def test_unavailable_class_or_method_extraction_is_not_measured_zero(missing: st
     }
     assert RIC().compute(modules) == {
         "measured_pairs": 1, "unavailable_pairs": 3,
-        "partial_ratio_mean": 0.0, "partial_ratio_max": 0.0,
+        "mean": 0.0, "max": 0.0,
     }
     assert_aggregates_match_diagnostics(modules)
     assert_aggregates_match_diagnostics((module((a, target)), unavailable))
     assert RIC().compute((module((a, target)), unavailable)) == {
         "measured_pairs": 0, "unavailable_pairs": 2,
-        "partial_ratio_mean": None, "partial_ratio_max": None,
+        "mean": None, "max": None,
     }
 
 
@@ -225,7 +225,7 @@ def test_no_pairs_has_null_summaries_and_diagnostics_are_read_only() -> None:
     """Empty populations remain null; both diagnostic layers and reports are frozen."""
     a, b = declaration("A", 1), declaration("B", 2)
     target = declaration("target", 3, a)
-    empty = {"measured_pairs": 0, "unavailable_pairs": 0, "partial_ratio_mean": None, "partial_ratio_max": None}
+    empty = {"measured_pairs": 0, "unavailable_pairs": 0, "mean": None, "max": None}
     assert RIC().compute(()) == empty
     assert RIC().compute((module((a, target)),)) == empty
     modules = (module((a, b, target)),)
@@ -238,7 +238,7 @@ def test_no_pairs_has_null_summaries_and_diagnostics_are_read_only() -> None:
     with pytest.raises(FrozenInstanceError):
         setattr(value, field_name, 9)
     with pytest.raises(TypeError):
-        cast("MutableMapping[str, int | float | None]", RIC().compute(modules))["partial_ratio_mean"] = 9
+        cast("MutableMapping[str, int | float | None]", RIC().compute(modules))["mean"] = 9
 
 
 @pytest.mark.parametrize(("scenario", "measured", "unavailable"), [

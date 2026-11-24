@@ -29,7 +29,7 @@ def test_declared_attribute_volume_not_type_breadth(monkeypatch: pytest.MonkeyPa
     }
     assert DAC().compute(project.modules) == {
         "measured_classes": 6, "unavailable_classes": 0,
-        "partial_attribute_sum": 9, "partial_attribute_mean": 1.5, "partial_attribute_max": 7,
+        "sum": 9, "mean": 1.5, "max": 7,
     }
 
 
@@ -46,11 +46,11 @@ def test_library_classes_count_only_when_their_source_is_retained(tmp_path: Path
 
     assert DAC().compute(outside_project.modules) == {
         "measured_classes": 1, "unavailable_classes": 0,
-        "partial_attribute_sum": 0, "partial_attribute_mean": 0.0, "partial_attribute_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
     assert DAC().compute(included.modules) == {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_attribute_sum": 1, "partial_attribute_mean": 0.5, "partial_attribute_max": 1,
+        "sum": 1, "mean": 0.5, "max": 1,
     }
 
 
@@ -67,6 +67,6 @@ def test_unresolved_types_and_incoming_writes_do_not_claim_complete_zero(tmp_pat
     project = analyze_files((source,), disable_sg=True).project
     assert DAC().compute(project.modules) == {
         "measured_classes": 1, "unavailable_classes": 0,
-        "partial_attribute_sum": 0, "partial_attribute_mean": 0.0, "partial_attribute_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
     assert {attribute.name for attribute in project.attributes_by_id.values()} == {"unknown", "unannotated"}

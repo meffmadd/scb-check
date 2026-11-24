@@ -41,13 +41,19 @@ class ModuleCallDependencies(Metric[[tuple[ModuleIR, ...]]]):
     units: ClassVar[dict[str, Unit]] = {
         "measured_modules": "modules",
         "unavailable_modules": "modules",
-        "partial_incoming_sum": "module-neighbor incidences",
-        "partial_incoming_mean": "neighbors per module",
-        "partial_incoming_max": "neighbors per module",
-        "partial_outgoing_sum": "module-neighbor incidences",
-        "partial_outgoing_mean": "neighbors per module",
-        "partial_outgoing_max": "neighbors per module",
+        "incoming_sum": "module-neighbor incidences",
+        "incoming_mean": "neighbors per module",
+        "incoming_max": "neighbors per module",
+        "outgoing_sum": "module-neighbor incidences",
+        "outgoing_mean": "neighbors per module",
+        "outgoing_max": "neighbors per module",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = (
+        "incoming_mean",
+        "incoming_max",
+        "outgoing_mean",
+        "outgoing_max",
+    )
 
     def compute(self, modules: tuple[ModuleIR, ...]) -> MetricResult:
         """Summarize each direction over measured modules, including partial zeros."""
@@ -58,12 +64,12 @@ class ModuleCallDependencies(Metric[[tuple[ModuleIR, ...]]]):
         return MappingProxyType({
             "measured_modules": len(measured),
             "unavailable_modules": len(diagnostics) - len(measured),
-            "partial_incoming_sum": incoming.total,
-            "partial_incoming_mean": incoming.mean,
-            "partial_incoming_max": incoming.maximum,
-            "partial_outgoing_sum": outgoing.total,
-            "partial_outgoing_mean": outgoing.mean,
-            "partial_outgoing_max": outgoing.maximum,
+            "incoming_sum": incoming.total,
+            "incoming_mean": incoming.mean,
+            "incoming_max": incoming.maximum,
+            "outgoing_sum": outgoing.total,
+            "outgoing_mean": outgoing.mean,
+            "outgoing_max": outgoing.maximum,
         })
 
     def neighbor_sets(self, modules: tuple[ModuleIR, ...]) -> Mapping[str, ModuleNeighbors | None]:

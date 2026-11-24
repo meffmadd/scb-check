@@ -56,6 +56,13 @@ def report(  # noqa: PLR0913
             "--disable-sg", help="Disable ast-grep analysis in every input."
         ),
     ] = False,
+    full: Annotated[
+        bool,
+        typer.Option(
+            "--full",
+            help="Plot every report field, not only each metric's headline fields.",
+        ),
+    ] = False,
     verbosity: Annotated[
         int,
         typer.Option(
@@ -66,7 +73,7 @@ def report(  # noqa: PLR0913
         ),
     ] = 0,
 ) -> None:
-    """Plot every snapshot value with trend summaries in offline HTML."""
+    """Plot headline snapshot values with trend summaries in offline HTML."""
     configure_logging(verbosity)
     try:
         steps, sources = _load_inputs(tuple(paths or ()), manifest)
@@ -81,7 +88,7 @@ def report(  # noqa: PLR0913
             return compute_report(result)
 
         trend = build_aligned_trend(steps, sources, load_snapshot)
-        html = render_trend_html(trend)
+        html = render_trend_html(trend, full=full)
         _write_html(output, html)
     except (OSError, ValueError) as exc:
         typer.echo(str(exc), err=True)

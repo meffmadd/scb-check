@@ -29,10 +29,11 @@ class CIC(Metric[[tuple[ModuleIR, ...]]]):
     units: ClassVar[dict[str, Unit]] = {
         "measured_classes": "classes",
         "unavailable_classes": "classes",
-        "partial_occurrence_sum": "occurrences",
-        "partial_occurrence_mean": "occurrences",
-        "partial_occurrence_max": "occurrences",
+        "sum": "occurrences",
+        "mean": "occurrences",
+        "max": "occurrences",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("mean", "max")
 
     def compute(self, modules: tuple[ModuleIR, ...]) -> MetricResult:
         """Summarize measured classes only; no measured population gives `None`."""
@@ -42,9 +43,9 @@ class CIC(Metric[[tuple[ModuleIR, ...]]]):
         return MappingProxyType({
             "measured_classes": len(counts),
             "unavailable_classes": len(diagnostics) - len(counts),
-            "partial_occurrence_sum": summary.total,
-            "partial_occurrence_mean": summary.mean,
-            "partial_occurrence_max": summary.maximum,
+            "sum": summary.total,
+            "mean": summary.mean,
+            "max": summary.maximum,
         })
 
     def class_counts(self, modules: tuple[ModuleIR, ...]) -> Mapping[str, int | None]:

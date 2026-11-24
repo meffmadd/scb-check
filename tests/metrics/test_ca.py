@@ -12,5 +12,5 @@ def test_ca_deduplicates_clients_per_category(category_facts: CategoryDependenci
     }
     assert AfferentCoupling().compute(category_facts) == {
         "measured_categories": 4, "unavailable_categories": 0,
-        "partial_client_sum": 4, "partial_client_mean": 1.0, "partial_client_max": 3,
+        "sum": 4, "mean": 1.0, "max": 3,
     }

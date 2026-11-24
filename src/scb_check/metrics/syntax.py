@@ -15,6 +15,8 @@ class Syntax(Metric[[tuple[LanguageSyntaxSummary, ...]]]):
 
     # Dotted language fields have the same unit as their count suffix.
     units: ClassVar[dict[str, Unit]] = {"tree_count": "trees", "node_count": "nodes"}
+    # Size counts only support other measurements; no field is a headline.
+    headline_fields: ClassVar[tuple[str, ...]] = ()
 
     def compute(
         self, summaries: tuple[LanguageSyntaxSummary, ...]

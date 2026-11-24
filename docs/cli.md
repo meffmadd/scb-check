@@ -16,6 +16,7 @@ scb-check diff TREE_A TREE_B               # before / after / signed differences
 scb-check diff TREE_A TREE_B --output-format json
 scb-check report TREE_A TREE_B TREE_C      # offline report.html
 scb-check report TREE_A TREE_B TREE_C --output changes.html
+scb-check report TREE_A TREE_B TREE_C --full  # plot every field, not only headlines
 ```
 
 Every command accepts `--help`. See [comparing snapshots](comparing-snapshots.md) for a task-oriented guide, [configuration](configuration.md) for settings and source directives, and the [JSON reference](report-fields.md) for numerical output.
@@ -71,6 +72,7 @@ See [diff JSON fields](report-fields.md#diff-json-fields) for the output contrac
 | `--config FILE` | Shared settings file; otherwise discover settings from the current directory. |
 | `--include-all` | Include gitignored files and normally suppressed findings for every input. |
 | `--disable-sg` | Skip ast-grep checks for every input. |
+| `--full` | Plot every report field, including supporting measurements; by default only headline fields are plotted. |
 | `-v` / `--verbosity` | Info logging; repeat as `-vv` for debug logging. |
 | `--help` | Show usage. |
 
@@ -110,9 +112,9 @@ Missing snapshots interrupt plotted lines and are omitted from trend coefficient
 
 One configuration and equal analysis flags apply to every snapshot, with ordinary `check`/`diff` semantics. Tree-local configs are not loaded separately. By default, exclusions and suppressions apply and ast-grep runs normally. `--include-all` includes ignored, informational, and boundary-suppressed findings, but configured excludes and default excluded directories still apply.
 
-Every field in the full [check report](report-fields.md#check-json-report-fields), including counts and per-language fields, gets one line plot of its values. The x-axis is evenly spaced, not elapsed time. Positional labels include index and directory basename; manifest labels are the declared steps. Hover shows the series, input label, plotted value with its unit, and the series' Kendall τ-b. Full resolved paths appear once in a collapsed **Source directories** list; there are no per-plot tables.
+By default, each metric's declared [headline fields](report-fields.md#check-json-report-fields) get one line plot of their values; syntax has none. With `--full`, every field in the full check report, including populations, totals, sums, and per-language fields, gets a plot. Both modes apply the same selection to every series, and the embedded report data always contain complete snapshots and comparisons. The x-axis is evenly spaced, not elapsed time. Positional labels include index and directory basename; manifest labels are the declared steps. Hover shows the series, input label, plotted value with its unit, and the series' Kendall τ-b. Full resolved paths appear once in a collapsed **Source directories** list; there are no per-plot tables.
 
-Metrics are organized into collapsible groups such as `syntax`, containing fields such as `syntax.python.node_count`. Groups start collapsed; click the group heading (or use the keyboard) to expand or collapse the whole group. These native disclosures work without JavaScript; charts still require it. Each metric plots one line per series without a legend.
+Metrics are organized into collapsible groups such as `cbo`, containing fields such as `cbo.mean`; with `--full`, the `syntax` group contains fields such as `syntax.python.node_count`. Groups start collapsed; click the group heading (or use the keyboard) to expand or collapse the whole group. These native disclosures work without JavaScript; charts still require it. Each metric plots one line per series without a legend.
 
 #### Trend summaries
 
@@ -125,7 +127,7 @@ These summaries are descriptive, not significance tests. The embedded report dat
 
 Unavailable values are gaps, not zeros or interpolated lines; isolated observations remain dots. Language fields cover the union of inputs, but absent snapshot language counts remain unavailable. Explicit `null` propagates. Fractions display as percentages; counts, masses, and dimensionless ratios retain metric-owned units.
 
-Plotly.js is embedded once, with no CDN or network requirement. Plots and hover require JavaScript; without it, the page explains this requirement and source directories remain accessible. Output is always HTML, with all metrics: there is no metric selection, mode switch, `--output-format`, `--report` alias, `--min-duplicate-lines`, threshold gate, Git traversal, or browser launch.
+Plotly.js is embedded once, with no CDN or network requirement. Plots and hover require JavaScript; without it, the page explains this requirement and source directories remain accessible. Output is always HTML. `--full` is the only plot-selection option: there is no per-metric selection, `--output-format`, `--report` alias, `--min-duplicate-lines`, threshold gate, Git traversal, or browser launch.
 
 Every input needs successfully parsed eligible source; parsed zero-SLOC files are valid. Individual read/parse failures warn and skip normally, but an unusable snapshot is never silently dropped. Only complete HTML is published, atomically; failure preserves any existing artifact. The output parent must already exist. See [ordered plot reports](architecture.md#ordered-plot-reports) for reporting internals and partial-coverage limits.
 

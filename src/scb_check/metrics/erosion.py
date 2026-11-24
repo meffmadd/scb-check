@@ -20,6 +20,7 @@ class Erosion(Metric[[tuple[SymbolIR, ...], tuple[SymbolIR, ...]]]):
         "total_mass": "mass",
         "high_cc_mass": "mass",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("score",)
 
     def compute(
         self,

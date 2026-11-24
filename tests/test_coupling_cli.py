@@ -58,22 +58,22 @@ def test_cic_signed_and_zero_deltas_with_standalone_parity(
     payload = _diff(earlier, later)
     low = {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_occurrence_sum": 0, "partial_occurrence_mean": 0.0, "partial_occurrence_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
     high = {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_occurrence_sum": 2, "partial_occurrence_mean": 1.0, "partial_occurrence_max": 2,
+        "sum": 2, "mean": 1.0, "max": 2,
     }
     assert payload["before"]["cic"] == (low if direction == 1 else high)
     assert payload["after"]["cic"] == (low if direction == -1 else high)
     assert payload["diff"]["cic"] == {
         "measured_classes": 0, "unavailable_classes": 0,
-        "partial_occurrence_sum": 2 * direction,
-        "partial_occurrence_mean": float(direction), "partial_occurrence_max": 2 * direction,
+        "sum": 2 * direction,
+        "mean": float(direction), "max": 2 * direction,
     }
     human = CliRunner().invoke(main, ["diff", str(earlier), str(later)])
     assert human.exit_code == 0, human.output
-    assert any("cic.partial_occurrence_sum" in line and "occurrences" in line
+    assert any("cic.sum" in line and "occurrences" in line
                for line in human.stdout.splitlines())
 
 
@@ -95,11 +95,11 @@ def test_cic_parenthesized_call_has_zero_metric_delta_and_standalone_parity(
     for snapshot in ("before", "after"):
         assert payload[snapshot]["cic"] == {
             "measured_classes": 2, "unavailable_classes": 0,
-            "partial_occurrence_sum": 1, "partial_occurrence_mean": 0.5, "partial_occurrence_max": 1,
+            "sum": 1, "mean": 0.5, "max": 1,
         }
     assert payload["diff"]["cic"] == {
         "measured_classes": 0, "unavailable_classes": 0,
-        "partial_occurrence_sum": 0, "partial_occurrence_mean": 0.0, "partial_occurrence_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
 
 
@@ -122,15 +122,15 @@ def test_cic_null_deltas_preserve_unavailability_and_standalone_parity(
         assert payload[snapshot]["cic"] == {
             "measured_classes": 0 if unavailable else 1,
             "unavailable_classes": 1 if unavailable else 0,
-            "partial_occurrence_sum": None if unavailable else 0,
-            "partial_occurrence_mean": None if unavailable else 0.0,
-            "partial_occurrence_max": None if unavailable else 0,
+            "sum": None if unavailable else 0,
+            "mean": None if unavailable else 0.0,
+            "max": None if unavailable else 0,
         }
-    for field in ("partial_occurrence_sum", "partial_occurrence_mean", "partial_occurrence_max"):
+    for field in ("sum", "mean", "max"):
         assert payload["diff"]["cic"][field] is None
     human = CliRunner().invoke(main, ["diff", *(str(tree) for tree in coupling_trees)])
     assert human.exit_code == 0, human.output
-    assert any("cic.partial_occurrence_sum" in line and "unavailable" in line
+    assert any("cic.sum" in line and "unavailable" in line
                for line in human.stdout.splitlines())
 
 
@@ -149,15 +149,15 @@ def test_rfc_check_and_diff_include_own_method_population(
     payload = _diff(earlier, later)
     assert payload["before"]["rfc"] == {
         "measured_classes": 1, "unavailable_classes": 0,
-        "partial_response_sum": 1, "partial_response_mean": 1.0, "partial_response_max": 1,
+        "sum": 1, "mean": 1.0, "max": 1,
     }
     assert payload["after"]["rfc"] == {
         "measured_classes": 1, "unavailable_classes": 0,
-        "partial_response_sum": 2, "partial_response_mean": 2.0, "partial_response_max": 2,
+        "sum": 2, "mean": 2.0, "max": 2,
     }
     assert payload["diff"]["rfc"] == {
         "measured_classes": 0, "unavailable_classes": 0,
-        "partial_response_sum": 1, "partial_response_mean": 1.0, "partial_response_max": 1,
+        "sum": 1, "mean": 1.0, "max": 1,
     }
 
 
@@ -182,19 +182,19 @@ def test_coupling_deltas_preserve_units_and_standalone_check_parity(
         earlier = later
     payload = _diff(earlier, later)
     expected = {
-        "rfc": ({"partial_response_sum": 2, "partial_response_mean": 1.0, "partial_response_max": 1},
-                {"partial_response_sum": 3, "partial_response_mean": 1.5, "partial_response_max": 2},
+        "rfc": ({"sum": 2, "mean": 1.0, "max": 1},
+                {"sum": 3, "mean": 1.5, "max": 2},
                 "methods"),
-        "mpc": ({"partial_call_site_sum": 0, "partial_call_site_mean": 0.0, "partial_call_site_max": 0},
-                {"partial_call_site_sum": 2, "partial_call_site_mean": 1.0, "partial_call_site_max": 2},
+        "mpc": ({"sum": 0, "mean": 0.0, "max": 0},
+                {"sum": 2, "mean": 1.0, "max": 2},
                 "call sites"),
-        "callers": ({"partial_caller_sum": 0, "partial_caller_mean": 0.0, "partial_caller_max": 0,
-                     "partial_same_module_sum": 0, "partial_cross_module_sum": 0},
-                    {"partial_caller_sum": 1, "partial_caller_mean": 0.5, "partial_caller_max": 1,
-                     "partial_same_module_sum": 1, "partial_cross_module_sum": 0},
+        "callers": ({"sum": 0, "mean": 0.0, "max": 0,
+                     "same_module_sum": 0, "cross_module_sum": 0},
+                    {"sum": 1, "mean": 0.5, "max": 1,
+                     "same_module_sum": 1, "cross_module_sum": 0},
                     "callers"),
-        "dac": ({"partial_attribute_sum": 0, "partial_attribute_mean": 0.0, "partial_attribute_max": 0},
-                {"partial_attribute_sum": 2, "partial_attribute_mean": 1.0, "partial_attribute_max": 2},
+        "dac": ({"sum": 0, "mean": 0.0, "max": 0},
+                {"sum": 2, "mean": 1.0, "max": 2},
                 "attributes"),
     }
     human = CliRunner().invoke(main, ["diff", str(earlier), str(later)])
@@ -237,11 +237,11 @@ def test_unsupported_coupling_is_null_not_zero(
     human = CliRunner().invoke(main, ["diff", *(str(tree) for tree in coupling_trees)])
     assert human.exit_code == 0, human.output
     summaries = {
-        "rfc": {"partial_response_sum": 1, "partial_response_mean": 1.0, "partial_response_max": 1},
-        "mpc": {"partial_call_site_sum": 0, "partial_call_site_mean": 0.0, "partial_call_site_max": 0},
-        "callers": {"partial_caller_sum": 0, "partial_caller_mean": 0.0, "partial_caller_max": 0,
-                    "partial_same_module_sum": 0, "partial_cross_module_sum": 0},
-        "dac": {"partial_attribute_sum": 0, "partial_attribute_mean": 0.0, "partial_attribute_max": 0},
+        "rfc": {"sum": 1, "mean": 1.0, "max": 1},
+        "mpc": {"sum": 0, "mean": 0.0, "max": 0},
+        "callers": {"sum": 0, "mean": 0.0, "max": 0,
+                    "same_module_sum": 0, "cross_module_sum": 0},
+        "dac": {"sum": 0, "mean": 0.0, "max": 0},
     }
     for group, supported in summaries.items():
         population = "callables" if group == "callers" else "classes"
@@ -276,13 +276,13 @@ def test_mpc_subclass_override_does_not_change_static_call_volume(
     for snapshot in ("before", "after"):
         assert payload[snapshot]["mpc"] == {
             "measured_classes": 2, "unavailable_classes": 0,
-            "partial_call_site_sum": 0, "partial_call_site_mean": 0.0,
-            "partial_call_site_max": 0,
+            "sum": 0, "mean": 0.0,
+            "max": 0,
         }
     assert payload["diff"]["mpc"] == {
         "measured_classes": 0, "unavailable_classes": 0,
-        "partial_call_site_sum": 0, "partial_call_site_mean": 0.0,
-        "partial_call_site_max": 0,
+        "sum": 0, "mean": 0.0,
+        "max": 0,
     }
 
 
@@ -308,18 +308,18 @@ def test_callers_keep_recursion_and_module_partitions_in_cli_reports(
     payload = _diff(earlier, later)
     assert payload["before"]["callers"] == {
         "measured_callables": 3, "unavailable_callables": 0,
-        "partial_caller_sum": 0, "partial_caller_mean": 0.0, "partial_caller_max": 0,
-        "partial_same_module_sum": 0, "partial_cross_module_sum": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
+        "same_module_sum": 0, "cross_module_sum": 0,
     }
     assert payload["after"]["callers"] == {
         "measured_callables": 3, "unavailable_callables": 0,
-        "partial_caller_sum": 3, "partial_caller_mean": 1.0, "partial_caller_max": 3,
-        "partial_same_module_sum": 2, "partial_cross_module_sum": 1,
+        "sum": 3, "mean": 1.0, "max": 3,
+        "same_module_sum": 2, "cross_module_sum": 1,
     }
     assert payload["diff"]["callers"] == {
         "measured_callables": 0, "unavailable_callables": 0,
-        "partial_caller_sum": 3, "partial_caller_mean": 1.0, "partial_caller_max": 3,
-        "partial_same_module_sum": 2, "partial_cross_module_sum": 1,
+        "sum": 3, "mean": 1.0, "max": 3,
+        "same_module_sum": 2, "cross_module_sum": 1,
     }
 
 
@@ -337,15 +337,15 @@ def test_rfc_cli_uses_retained_inherited_method_selections(
     payload = _diff(earlier, later)
     assert payload["before"]["rfc"] == {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_response_sum": 2, "partial_response_mean": 1.0, "partial_response_max": 1,
+        "sum": 2, "mean": 1.0, "max": 1,
     }
     assert payload["after"]["rfc"] == {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_response_sum": 4, "partial_response_mean": 2.0, "partial_response_max": 2,
+        "sum": 4, "mean": 2.0, "max": 2,
     }
     assert payload["diff"]["rfc"] == {
         "measured_classes": 0, "unavailable_classes": 0,
-        "partial_response_sum": 2, "partial_response_mean": 1.0, "partial_response_max": 1,
+        "sum": 2, "mean": 1.0, "max": 1,
     }
 
 
@@ -363,17 +363,17 @@ def test_ric_signed_and_zero_deltas_match_standalone_checks(
     elif direction == 0:
         before = after
     payload = _diff(before, after)
-    low = {"measured_pairs": 2, "unavailable_pairs": 0, "partial_ratio_mean": 0.0, "partial_ratio_max": 0.0}
-    high = {"measured_pairs": 2, "unavailable_pairs": 0, "partial_ratio_mean": 0.5, "partial_ratio_max": 1.0}
+    low = {"measured_pairs": 2, "unavailable_pairs": 0, "mean": 0.0, "max": 0.0}
+    high = {"measured_pairs": 2, "unavailable_pairs": 0, "mean": 0.5, "max": 1.0}
     assert payload["before"]["ric"] == (high if direction <= 0 else low)
     assert payload["after"]["ric"] == (low if direction < 0 else high)
     assert payload["diff"]["ric"] == {
         "measured_pairs": 0, "unavailable_pairs": 0,
-        "partial_ratio_mean": direction * 0.5, "partial_ratio_max": direction * 1.0,
+        "mean": direction * 0.5, "max": direction * 1.0,
     }
     human = CliRunner().invoke(main, ["diff", str(before), str(after)])
     assert human.exit_code == 0, human.output
-    assert any("ric.partial_ratio_mean" in line and "ratio" in line and "%" not in line
+    assert any("ric.mean" in line and "ratio" in line and "%" not in line
                for line in human.stdout.splitlines())
 
 
@@ -393,17 +393,17 @@ def test_ric_unavailable_pairs_propagate_null_not_zero(
     for snapshot, unsupported in zip(("before", "after"), unsupported_sides, strict=True):
         assert payload[snapshot]["ric"] == {
             "measured_pairs": 0 if unsupported else 2, "unavailable_pairs": 2 if unsupported else 0,
-            "partial_ratio_mean": None if unsupported else 0.0,
-            "partial_ratio_max": None if unsupported else 0.0,
+            "mean": None if unsupported else 0.0,
+            "max": None if unsupported else 0.0,
         }
     assert payload["diff"]["ric"] == {
         "measured_pairs": (0 if unsupported_sides[1] else 2) - (0 if unsupported_sides[0] else 2),
         "unavailable_pairs": (2 if unsupported_sides[1] else 0) - (2 if unsupported_sides[0] else 0),
-        "partial_ratio_mean": None, "partial_ratio_max": None,
+        "mean": None, "max": None,
     }
     human = CliRunner().invoke(main, ["diff", *(str(tree) for tree in coupling_trees)])
     assert human.exit_code == 0, human.output
-    assert any("ric.partial_ratio_max" in line and "unavailable" in line for line in human.stdout.splitlines())
+    assert any("ric.max" in line and "unavailable" in line for line in human.stdout.splitlines())
 
 
 def test_ric_sparse_cli_counts_unused_and_unavailable_comparisons(
@@ -421,13 +421,13 @@ def test_ric_sparse_cli_counts_unused_and_unavailable_comparisons(
     payload = _diff(before, after)
     assert payload["before"]["ric"] == {
         "measured_pairs": 2, "unavailable_pairs": 4,
-        "partial_ratio_mean": 0.0, "partial_ratio_max": 0.0,
+        "mean": 0.0, "max": 0.0,
     }
     assert payload["after"]["ric"] == {
         "measured_pairs": 4, "unavailable_pairs": 5,
-        "partial_ratio_mean": 0.25, "partial_ratio_max": 1.0,
+        "mean": 0.25, "max": 1.0,
     }
     assert payload["diff"]["ric"] == {
         "measured_pairs": 2, "unavailable_pairs": 1,
-        "partial_ratio_mean": 0.25, "partial_ratio_max": 1.0,
+        "mean": 0.25, "max": 1.0,
     }

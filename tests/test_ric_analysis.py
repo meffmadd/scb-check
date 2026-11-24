@@ -29,7 +29,7 @@ def test_known_ratios_keep_canonical_ownership_and_static_dispatch() -> None:
     assert {method for method, _ in pairs if method.startswith("direct.Child.")} == {"direct.Child.run"}
     assert RIC().compute(project.modules) == {
         "measured_pairs": 48, "unavailable_pairs": 0,
-        "partial_ratio_mean": 0.09375, "partial_ratio_max": 1.5,
+        "mean": 0.09375, "max": 1.5,
     }
 
 
@@ -45,5 +45,5 @@ def test_retained_facts_are_sufficient_after_source_is_removed(tmp_path: Path) -
     source.unlink()
     assert RIC().compute(project.modules) == {
         "measured_pairs": 2, "unavailable_pairs": 0,
-        "partial_ratio_mean": 0.5, "partial_ratio_max": 1.0,
+        "mean": 0.5, "max": 1.0,
     }

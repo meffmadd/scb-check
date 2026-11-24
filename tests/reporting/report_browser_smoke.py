@@ -58,7 +58,7 @@ def representative_trend() -> Trend:
         report["erosion"]["total_mass"] = (2.5, 1.25, 1.25, 1.25, 1.25)[index]
         report["erosion"]["score"] = (0.25, 0.125, 0.125, 0.125, 0.125)[index]
         report["ric"].update(
-            partial_ratio_mean=0.5, measured_pairs=2, unavailable_pairs=1
+            mean=0.5, measured_pairs=2, unavailable_pairs=1
         )
         report["rfc"]["unavailable_classes"] = 3
         # A late language introduces snapshot gaps.
@@ -161,7 +161,7 @@ def check_hover(page: Any, trend: Trend) -> None:  # noqa: ANN401
 
     for metric, expected in (
         ("erosion.total_mass", "2.5 mass"),
-        ("ric.partial_ratio_mean", "0.5 ratio"),
+        ("ric.mean", "0.5 ratio"),
     ):
         text = hover(page, plot_id(trend, metric), 0)
         assert expected in text, text
@@ -205,7 +205,7 @@ def check_gaps_and_units(page: Any, trend: Trend) -> None:  # noqa: ANN401
     unchanged = page.locator(f"#{plot_id(trend, 'verbosity.total_loc')}")
     assert unchanged.evaluate("p => p.data[0].y") == [3, 5, 2, 2, 2]
     assert unchanged.locator(".scatterlayer .point").count() == 5
-    null = page.locator(f"#{plot_id(trend, 'rfc.partial_response_sum')}")
+    null = page.locator(f"#{plot_id(trend, 'rfc.sum')}")
     assert null.locator(".scatterlayer .point").count() == 0
     assert null.evaluate("p => p.data[0].y") == [None] * 5
     late = page.locator(f"#{plot_id(trend, 'syntax.python.node_count')}")
@@ -356,7 +356,7 @@ def check_aligned_series(page: Any, trend: AlignedTrend) -> None:  # noqa: ANN40
         "last",
     ]
     assert hover(page, chart_id, 0) == "problem-athirdValue: 10%τ: 0.33"
-    unknown = page.locator(f"#{plot_id(first, 'rfc.partial_response_sum')}")
+    unknown = page.locator(f"#{plot_id(first, 'rfc.sum')}")
     assert unknown.evaluate("p => p.data.map(t => t.y)") == [[None] * 3] * 2
     check_all_metrics_shown(page, trend)
     group = page.locator("#metric-group-verbosity")
@@ -387,7 +387,7 @@ def main() -> None:
         sync_playwright() as playwright,
     ):
         artifact = Path(temporary) / "report.html"
-        artifact.write_text(render_trend_html(trend), encoding="utf-8")
+        artifact.write_text(render_trend_html(trend, full=True), encoding="utf-8")
         browser = playwright.chromium.launch()
         for javascript in (True, False):
             context = browser.new_context(
@@ -447,7 +447,7 @@ def main() -> None:
             if javascript:
                 aligned = representative_aligned_trend()
                 artifact.write_text(
-                    render_trend_html(aligned), encoding="utf-8"
+                    render_trend_html(aligned, full=True), encoding="utf-8"
                 )
                 page.goto(artifact.as_uri(), wait_until="load", timeout=120_000)
                 try:
@@ -457,7 +457,7 @@ def main() -> None:
                     stdout.write(f"FAIL {failures[-1]}\n")
                 else:
                     stdout.write("PASS check_aligned_series\n")
-                artifact.write_text(render_trend_html(trend), encoding="utf-8")
+                artifact.write_text(render_trend_html(trend, full=True), encoding="utf-8")
             context.close()
         browser.close()
     assert not attempts, f"Attempted HTTP(S): {attempts}"

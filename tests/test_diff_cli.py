@@ -69,19 +69,19 @@ def test_module_call_dependency_signed_and_zero_deltas_with_check_parity(
     assert payload["after"] == _json_check(ordered[1])
     assert _json_check(trees[0])["module_call_dependencies"] == {
         "measured_modules": 2, "unavailable_modules": 0,
-        "partial_incoming_sum": 0, "partial_incoming_mean": 0.0, "partial_incoming_max": 0,
-        "partial_outgoing_sum": 0, "partial_outgoing_mean": 0.0, "partial_outgoing_max": 0,
+        "incoming_sum": 0, "incoming_mean": 0.0, "incoming_max": 0,
+        "outgoing_sum": 0, "outgoing_mean": 0.0, "outgoing_max": 0,
     }
     sign = -1 if reverse else 1
     assert payload["diff"]["module_call_dependencies"] == {
         "measured_modules": 0, "unavailable_modules": 0,
-        "partial_incoming_sum": sign, "partial_incoming_mean": sign * 0.5, "partial_incoming_max": sign,
-        "partial_outgoing_sum": sign, "partial_outgoing_mean": sign * 0.5, "partial_outgoing_max": sign,
+        "incoming_sum": sign, "incoming_mean": sign * 0.5, "incoming_max": sign,
+        "outgoing_sum": sign, "outgoing_mean": sign * 0.5, "outgoing_max": sign,
     }
     assert set(_json_diff((trees[1], trees[1]))["diff"]["module_call_dependencies"].values()) == {0}
     rendered = _invoke_diff(ordered)
     assert rendered.exit_code == 0
-    assert "module_call_dependencies.partial_outgoing_sum" in rendered.stdout
+    assert "module_call_dependencies.outgoing_sum" in rendered.stdout
     assert f"{sign:+} module-neighbor incidences" in rendered.stdout
 
 
@@ -102,16 +102,16 @@ def test_module_call_dependency_unavailable_deltas_preserve_check_parity(
         measured = supported in (side, "mixed")
         assert group == {
             "measured_modules": int(measured), "unavailable_modules": 1,
-            "partial_incoming_sum": 0 if measured else None,
-            "partial_incoming_mean": 0.0 if measured else None,
-            "partial_incoming_max": 0 if measured else None,
-            "partial_outgoing_sum": 0 if measured else None,
-            "partial_outgoing_mean": 0.0 if measured else None,
-            "partial_outgoing_max": 0 if measured else None,
+            "incoming_sum": 0 if measured else None,
+            "incoming_mean": 0.0 if measured else None,
+            "incoming_max": 0 if measured else None,
+            "outgoing_sum": 0 if measured else None,
+            "outgoing_mean": 0.0 if measured else None,
+            "outgoing_max": 0 if measured else None,
         }
     difference = payload["diff"]["module_call_dependencies"]
-    assert difference["partial_incoming_sum"] == (0 if supported == "mixed" else None)
-    assert difference["partial_outgoing_sum"] == (0 if supported == "mixed" else None)
+    assert difference["incoming_sum"] == (0 if supported == "mixed" else None)
+    assert difference["outgoing_sum"] == (0 if supported == "mixed" else None)
 
 
 def test_diff_compares_full_check_reports(trees: tuple[Path, Path]) -> None:
@@ -162,45 +162,45 @@ def test_diff_compares_full_check_reports(trees: tuple[Path, Path]) -> None:
         },
         "cbo": {
             "measured_classes": 0, "unavailable_classes": 0,
-            "partial_partner_sum": None, "partial_partner_mean": None, "partial_partner_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "rfc": {
             "measured_classes": 0, "unavailable_classes": 0,
-            "partial_response_sum": None, "partial_response_mean": None, "partial_response_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "mpc": {
             "measured_classes": 0, "unavailable_classes": 0,
-            "partial_call_site_sum": None, "partial_call_site_mean": None, "partial_call_site_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "callers": {
             "measured_callables": 0, "unavailable_callables": 0,
-            "partial_caller_sum": None, "partial_caller_mean": None, "partial_caller_max": None,
-            "partial_same_module_sum": None, "partial_cross_module_sum": None,
+            "sum": None, "mean": None, "max": None,
+            "same_module_sum": None, "cross_module_sum": None,
         },
         "dac": {
             "measured_classes": 0, "unavailable_classes": 0,
-            "partial_attribute_sum": None, "partial_attribute_mean": None, "partial_attribute_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "cic": {
             "measured_classes": 0, "unavailable_classes": 0,
-            "partial_occurrence_sum": None, "partial_occurrence_mean": None, "partial_occurrence_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "ric": {
             "measured_pairs": 0, "unavailable_pairs": 0,
-            "partial_ratio_mean": None, "partial_ratio_max": None,
+            "mean": None, "max": None,
         },
         "ca": {
             "measured_categories": 0, "unavailable_categories": 0,
-            "partial_client_sum": None, "partial_client_mean": None, "partial_client_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "ce": {
             "measured_categories": 0, "unavailable_categories": 0,
-            "partial_source_sum": None, "partial_source_mean": None, "partial_source_max": None,
+            "sum": None, "mean": None, "max": None,
         },
         "module_call_dependencies": {
             "measured_modules": 0, "unavailable_modules": 0,
-            "partial_incoming_sum": 0, "partial_incoming_mean": 0.0, "partial_incoming_max": 0,
-            "partial_outgoing_sum": 0, "partial_outgoing_mean": 0.0, "partial_outgoing_max": 0,
+            "incoming_sum": 0, "incoming_mean": 0.0, "incoming_max": 0,
+            "outgoing_sum": 0, "outgoing_mean": 0.0, "outgoing_max": 0,
         },
     }
     reverse = _json_diff((tree_b, tree_a))
@@ -228,11 +228,11 @@ def test_cbo_diff_counts_partners_with_standalone_parity(
     assert payload["after"] == _json_check(trees[1])
     assert payload["diff"]["cbo"] == {
         "measured_classes": 0, "unavailable_classes": 0,
-        "partial_partner_sum": -2 if reverse else 2,
-        "partial_partner_mean": -1.0 if reverse else 1.0,
-        "partial_partner_max": -1 if reverse else 1,
+        "sum": -2 if reverse else 2,
+        "mean": -1.0 if reverse else 1.0,
+        "max": -1 if reverse else 1,
     }
-    assert _json_diff((tree_b, tree_b))["diff"]["cbo"]["partial_partner_sum"] == 0
+    assert _json_diff((tree_b, tree_b))["diff"]["cbo"]["sum"] == 0
 
 
 @pytest.mark.parametrize("direction", [-1, 0, 1])
@@ -257,12 +257,12 @@ def test_category_coupling_known_deltas_and_standalone_check_parity(
     assert payload["after"] == _json_check(later)
     human = _invoke_diff((earlier, later))
     assert human.exit_code == 0, human.output
-    for group, prefix, total, mean, maximum, unit in (
-        ("ca", "partial_client", 4, 1.0, 3, "client classes"),
-        ("ce", "partial_source", 3, 0.75, 2, "source classes"),
+    for group, total, mean, maximum, unit in (
+        ("ca", 4, 1.0, 3, "client classes"),
+        ("ce", 3, 0.75, 2, "source classes"),
     ):
-        high = {f"{prefix}_sum": total, f"{prefix}_mean": mean, f"{prefix}_max": maximum}
-        low = {f"{prefix}_sum": 0, f"{prefix}_mean": 0.0, f"{prefix}_max": 0}
+        high = {"sum": total, "mean": mean, "max": maximum}
+        low = {"sum": 0, "mean": 0.0, "max": 0}
         first, second = (high, low) if direction == -1 else (low, high)
         if direction == 0:
             first = second = high
@@ -274,9 +274,9 @@ def test_category_coupling_known_deltas_and_standalone_check_parity(
         }
         assert payload["diff"][group] == {
             "measured_categories": 0, "unavailable_categories": 0,
-            f"{prefix}_sum": total * direction,
-            f"{prefix}_mean": mean * direction,
-            f"{prefix}_max": maximum * direction,
+            "sum": total * direction,
+            "mean": mean * direction,
+            "max": maximum * direction,
         }
         for field in high:
             assert any(line.startswith(f"{group}.{field} |") and unit in line and "%" not in line
@@ -296,22 +296,22 @@ def test_category_coupling_null_deltas_do_not_zero_fill(
     assert payload["after"] == _json_check(trees[1])
     human = _invoke_diff(trees)
     assert human.exit_code == 0, human.output
-    for group, prefix in (("ca", "partial_client"), ("ce", "partial_source")):
+    for group in ("ca", "ce"):
         for snapshot, unsupported in zip(("before", "after"), unsupported_sides, strict=True):
             assert payload[snapshot][group] == {
                 "measured_categories": 0 if unsupported else 1,
                 "unavailable_categories": 1 if unsupported else 0,
-                f"{prefix}_sum": None if unsupported else 0,
-                f"{prefix}_mean": None if unsupported else 0.0,
-                f"{prefix}_max": None if unsupported else 0,
+                "sum": None if unsupported else 0,
+                "mean": None if unsupported else 0.0,
+                "max": None if unsupported else 0,
             }
         first, second = unsupported_sides
         assert payload["diff"][group] == {
             "measured_categories": int(first) - int(second),
             "unavailable_categories": int(second) - int(first),
-            f"{prefix}_sum": None, f"{prefix}_mean": None, f"{prefix}_max": None,
+            "sum": None, "mean": None, "max": None,
         }
-        assert any(line.startswith(f"{group}.{prefix}_sum |") and line.endswith("unavailable")
+        assert any(line.startswith(f"{group}.sum |") and line.endswith("unavailable")
                    for line in human.stdout.splitlines())
 
 
@@ -328,18 +328,18 @@ def test_category_coupling_classless_and_mixed_coverage_snapshots(
     payload = _json_diff(trees)
     assert payload["before"] == _json_check(trees[0])
     assert payload["after"] == _json_check(trees[1])
-    for group, prefix in (("ca", "partial_client"), ("ce", "partial_source")):
+    for group in ("ca", "ce"):
         assert payload["before"][group] == payload["after"][group] == {
             "measured_categories": int(mixed), "unavailable_categories": int(mixed),
-            f"{prefix}_sum": 0 if mixed else None,
-            f"{prefix}_mean": 0.0 if mixed else None,
-            f"{prefix}_max": 0 if mixed else None,
+            "sum": 0 if mixed else None,
+            "mean": 0.0 if mixed else None,
+            "max": 0 if mixed else None,
         }
         assert payload["diff"][group] == {
             "measured_categories": 0, "unavailable_categories": 0,
-            f"{prefix}_sum": 0 if mixed else None,
-            f"{prefix}_mean": 0.0 if mixed else None,
-            f"{prefix}_max": 0 if mixed else None,
+            "sum": 0 if mixed else None,
+            "mean": 0.0 if mixed else None,
+            "max": 0 if mixed else None,
         }
 
 
@@ -352,12 +352,12 @@ def test_cbo_unavailable_diff_does_not_zero_fill(trees: tuple[Path, Path]) -> No
     assert payload["after"] == _json_check(trees[1])
     assert payload["before"]["cbo"] == {
         "measured_classes": 0, "unavailable_classes": 1,
-        "partial_partner_sum": None, "partial_partner_mean": None, "partial_partner_max": None,
+        "sum": None, "mean": None, "max": None,
     }
-    assert payload["diff"]["cbo"]["partial_partner_sum"] is None
+    assert payload["diff"]["cbo"]["sum"] is None
     rendered = _invoke_diff(trees)
     assert rendered.exit_code == 0
-    assert "cbo.partial_partner_sum" in rendered.stdout
+    assert "cbo.sum" in rendered.stdout
     assert "unavailable" in rendered.stdout
 
 

@@ -52,8 +52,8 @@ def test_repeated_reverse_and_self_calls_count_distinct_other_partners() -> None
     assert CBO().partner_sets((module,)) == {a.id: frozenset({b.id}), b.id: frozenset({a.id}), c.id: frozenset()}
     assert CBO().compute((module,)) == {
         "measured_classes": 3, "unavailable_classes": 0,
-        "partial_partner_sum": 2, "partial_partner_mean": 2 / 3,
-        "partial_partner_max": 1,
+        "sum": 2, "mean": 2 / 3,
+        "max": 1,
     }
 
 
@@ -103,7 +103,7 @@ def test_unavailable_extraction_is_distinct_from_partial_zero(missing: str) -> N
         cast("MutableMapping[str, frozenset[str] | None]", partners)[a.id] = None
     assert CBO().compute((available, unavailable)) == {
         "measured_classes": 1, "unavailable_classes": 1,
-        "partial_partner_sum": 0, "partial_partner_mean": 0.0, "partial_partner_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
-    assert CBO().compute((unavailable,))["partial_partner_sum"] is None
-    assert CBO().compute(())["partial_partner_mean"] is None
+    assert CBO().compute((unavailable,))["sum"] is None
+    assert CBO().compute(())["mean"] is None

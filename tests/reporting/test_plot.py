@@ -91,11 +91,11 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
     )
     report["verbosity"]["score"] = 0.125
     report["erosion"]["total_mass"] = 2.5
-    report["ric"]["partial_ratio_mean"] = 0.5
+    report["ric"]["mean"] = 0.5
     paths = (Path("/a/same"), Path("/b/same"))
     trend = build_trend(paths, lambda _path: report)
     monkeypatch.chdir(tmp_path)
-    html = render_trend_html(trend)
+    html = render_trend_html(trend, full=True)
     page = ReportPage(html)
     text = " ".join(page.cells)
 
@@ -128,27 +128,40 @@ def test_offline_html_prioritizes_plots_with_paths_disclosed_once(
     assert all("src" not in script for script in page.scripts)
     assert "Plotly.js license" in text
     assert "Copyright" in text
-    assert render_trend_html(trend) == html
+    assert render_trend_html(trend, full=True) == html
 
 
-def test_metric_groups_are_native_collapsed_disclosures_in_report_order() -> (
-    None
-):
-    """Every plot belongs to exactly one collapsible top-level metric group."""
+@pytest.mark.parametrize("full", [False, True])
+def test_metric_groups_are_native_collapsed_disclosures_in_report_order(
+    *, full: bool
+) -> None:
+    """Every plot belongs to one collapsible group; headline-free syntax is full-only."""
     report = compute_report(AnalysisResult(Flags(), {}, ProjectIR()))
     trend = build_trend((Path("a"), Path("b")), lambda _path: report)
-    page = ReportPage(render_trend_html(trend))
+    page = ReportPage(render_trend_html(trend, full=full))
+    plotted = [series["metric"] for series in page.payload["runs"][0]["series"]]
 
-    assert tuple(page.groups) == tuple(report)
+    assert tuple(page.groups) == tuple(
+        group for group in report if full or group != "syntax"
+    )
     assert all("open" not in attrs for attrs in page.groups.values())
-    assert page.group_plots["syntax"] == [
-        f"plot-{index}"
-        for index, series in enumerate(trend.series)
-        if series.metric.startswith("syntax.")
-    ]
     assert [
         plot for plots in page.group_plots.values() for plot in plots
     ] == page.plot_ids
+    assert len(page.plot_ids) == len(plotted)
+    if full:
+        assert plotted == [series.metric for series in trend.series]
+        assert page.group_plots["syntax"] == [
+            f"plot-{index}"
+            for index, metric in enumerate(plotted)
+            if metric.startswith("syntax.")
+        ]
+    else:
+        assert page.group_plots["verbosity"] == ["plot-0"]
+        assert {"verbosity.total_loc", "cbo.sum"}.isdisjoint(plotted)
+        assert page.payload["runs"][0]["snapshots"] == [
+            serialize_report(report)
+        ] * 2
 
 
 def test_multiseries_payload_keeps_steps_and_gaps() -> None:
@@ -172,7 +185,12 @@ def test_multiseries_payload_keeps_steps_and_gaps() -> None:
     assert set(page.payload) == {"labels", "runs", "summaries", "units"}
     assert page.payload["runs"][0]["series"][0]["values"] == [0, None, 0]
     assert page.inputs == []
-    assert len(page.plot_ids) == len(trend.trends[0].series)
+    problem, other = (
+        [series["metric"] for series in run["series"]]
+        for run in page.payload["runs"]
+    )
+    assert problem == other
+    assert len(page.plot_ids) == len(problem)
 
 
 def _loc_trend(observations: dict[str, tuple[int | None, ...]]) -> AlignedTrend:
@@ -214,7 +232,7 @@ def test_kendall_coefficients_and_summaries_weight_series_equally() -> None:
             "short": (None, None, 1, None),
         }
     )
-    page = ReportPage(render_trend_html(trend))
+    page = ReportPage(render_trend_html(trend, full=True))
     tied = 0.8164965809
     assert _loc_coefficients(page) == [
         pytest.approx(1),
@@ -233,7 +251,9 @@ def test_kendall_coefficients_and_summaries_weight_series_equally() -> None:
         "flat_adjusted_median": pytest.approx(tied / 2),
     }
     opposing = ReportPage(
-        render_trend_html(AlignedTrend(trend.steps, trend.trends[:2]))
+        render_trend_html(
+            AlignedTrend(trend.steps, trend.trends[:2]), full=True
+        )
     )
     summary = opposing.payload["summaries"]["verbosity.total_loc"]
     assert summary["contributors"] == 2
@@ -243,10 +263,10 @@ def test_kendall_coefficients_and_summaries_weight_series_equally() -> None:
 
 def test_single_series_shows_its_coefficient_instead_of_a_mean() -> None:
     """One series is labelled τ, whether its coefficient is defined or not."""
-    rising = ReportPage(render_trend_html(_loc_trend({"": (1, 2, 3)})))
+    rising = ReportPage(render_trend_html(_loc_trend({"": (1, 2, 3)}), full=True))
     assert _loc_coefficients(rising) == [pytest.approx(1)]
     assert "Values (lines) · τ: 1.00" in " ".join(rising.cells)
-    constant = ReportPage(render_trend_html(_loc_trend({"": (2, 2, 2)})))
+    constant = ReportPage(render_trend_html(_loc_trend({"": (2, 2, 2)}), full=True))
     assert _loc_coefficients(constant) == [None]
     assert "Values (lines) · τ: N/A" in " ".join(constant.cells)
 
@@ -254,7 +274,7 @@ def test_single_series_shows_its_coefficient_instead_of_a_mean() -> None:
 def test_summaries_without_defined_coefficients_report_no_mean() -> None:
     """Undefined series never count as zero unless they are flat."""
     flat_and_short = ReportPage(
-        render_trend_html(_loc_trend({"flat": (2, 2), "short": (None, 1)}))
+        render_trend_html(_loc_trend({"flat": (2, 2), "short": (None, 1)}), full=True)
     )
     assert flat_and_short.payload["summaries"]["verbosity.total_loc"] == {
         "series": 2,
@@ -267,7 +287,7 @@ def test_summaries_without_defined_coefficients_report_no_mean() -> None:
     }
     assert "τ (0/2 series): mean N/A" in " ".join(flat_and_short.cells)
     short = ReportPage(
-        render_trend_html(_loc_trend({"a": (None, 1), "b": (None, 1)}))
+        render_trend_html(_loc_trend({"a": (None, 1), "b": (None, 1)}), full=True)
     )
     summary = short.payload["summaries"]["verbosity.total_loc"]
     assert summary["flat_adjusted_contributors"] == 0

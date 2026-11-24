@@ -38,7 +38,13 @@ List source directories in the order you want them plotted:
 uv run scb-check report snapshots/step-1 snapshots/step-2 snapshots/step-3 --output changes.html
 ```
 
-Open `changes.html` in a browser with JavaScript enabled. The report works offline. Expand a metric group to see each metric's values across checkpoints and its [trend summary](cli.md#trend-summaries). Its horizontal axis follows your supplied order, not elapsed time.
+Open `changes.html` in a browser with JavaScript enabled. The report works offline. Expand a metric group to see its headline values across checkpoints and each plot's [trend summary](cli.md#trend-summaries). Its horizontal axis follows your supplied order, not elapsed time.
+
+Headlines are the verbosity and erosion scores and the structural means and maxima. To also plot supporting measurements such as populations, totals, and syntax counts, add `--full`:
+
+```bash
+uv run scb-check report snapshots/step-1 snapshots/step-2 snapshots/step-3 --full --output changes.html
+```
 
 ## Compare multiple sequences
 
@@ -77,4 +83,4 @@ uv run scb-check report snapshots/step-1 snapshots/step-2 --config analysis.toml
 
 Use `--disable-sg` to skip ast-grep for every snapshot, or `--include-all` to include normally suppressed findings and gitignored supported files. Configured exclusions still apply. See [configuration](configuration.md) for discovery and suppression details.
 
-When reviewing the plots, consult [metric interpretation](metrics.md): a larger measurement is not automatically worse code, and missing measurements are not zeros.
+When reviewing the plots, consult [metric interpretation](metrics.md) and [interpreting headlines](metrics.md#interpreting-headlines): a larger measurement is not automatically worse code, and missing measurements are not zeros.

@@ -90,11 +90,11 @@ def test_category_reports_and_diagnostics_need_only_retained_facts(
     report = compute_report(analysis)
     assert report["ca"] == {
         "measured_categories": 4, "unavailable_categories": 0,
-        "partial_client_sum": 4, "partial_client_mean": 1.0, "partial_client_max": 3,
+        "sum": 4, "mean": 1.0, "max": 3,
     }
     assert report["ce"] == {
         "measured_categories": 4, "unavailable_categories": 0,
-        "partial_source_sum": 3, "partial_source_mean": 0.75, "partial_source_max": 2,
+        "sum": 3, "mean": 0.75, "max": 2,
     }
 
 
@@ -132,8 +132,8 @@ def test_each_declared_field_access_mode_can_supply_a_dependency(
     })
     assert _named_edges(project) == {("Client", "Target")}
     facts = category_dependencies(project)
-    assert AfferentCoupling().compute(facts)["partial_client_sum"] == 1
-    assert EfferentCoupling().compute(facts)["partial_source_sum"] == 1
+    assert AfferentCoupling().compute(facts)["sum"] == 1
+    assert EfferentCoupling().compute(facts)["sum"] == 1
 
 
 def test_inheritance_types_construction_and_bare_methods_do_not_add_edges(
@@ -152,8 +152,8 @@ def test_inheritance_types_construction_and_bare_methods_do_not_add_edges(
     })
     assert _named_edges(project) == set()
     facts = category_dependencies(project)
-    assert AfferentCoupling().compute(facts)["partial_client_sum"] == 0
-    assert EfferentCoupling().compute(facts)["partial_source_sum"] == 0
+    assert AfferentCoupling().compute(facts)["sum"] == 0
+    assert EfferentCoupling().compute(facts)["sum"] == 0
 
 
 def test_initialization_and_nested_functions_use_nearest_enclosing_class(
@@ -172,8 +172,8 @@ def test_initialization_and_nested_functions_use_nearest_enclosing_class(
     })
     assert _named_edges(project) == {("Outer", "Target"), ("Inner", "Target")}
     facts = category_dependencies(project)
-    assert AfferentCoupling().compute(facts)["partial_client_sum"] == 2
-    assert EfferentCoupling().compute(facts)["partial_source_sum"] == 2
+    assert AfferentCoupling().compute(facts)["sum"] == 2
+    assert EfferentCoupling().compute(facts)["sum"] == 2
 
 
 def test_module_categories_do_not_merge_packages_names_or_repeated_classes(
@@ -195,11 +195,11 @@ def test_module_categories_do_not_merge_packages_names_or_repeated_classes(
     assert _named_edges(project) == {("Client", "Target")}
     assert AfferentCoupling().compute(facts) == {
         "measured_categories": 4, "unavailable_categories": 0,
-        "partial_client_sum": 1, "partial_client_mean": 0.25, "partial_client_max": 1,
+        "sum": 1, "mean": 0.25, "max": 1,
     }
     assert EfferentCoupling().compute(facts) == {
         "measured_categories": 4, "unavailable_categories": 0,
-        "partial_source_sum": 1, "partial_source_mean": 0.25, "partial_source_max": 1,
+        "sum": 1, "mean": 0.25, "max": 1,
     }
 
 
@@ -215,13 +215,13 @@ def test_libraries_count_only_when_retained_and_unknown_references_stay_partial(
     outside = project_from_sources(sources)
     assert _named_edges(outside) == set()
     assert category_dependencies(outside).unavailable_categories == frozenset()
-    assert AfferentCoupling().compute(category_dependencies(outside))["partial_client_sum"] == 0
-    assert EfferentCoupling().compute(category_dependencies(outside))["partial_source_sum"] == 0
+    assert AfferentCoupling().compute(category_dependencies(outside))["sum"] == 0
+    assert EfferentCoupling().compute(category_dependencies(outside))["sum"] == 0
     sources["library.py"] = "class External:\n    def work(self): return 1\n"
     retained = project_from_sources(sources)
     assert _named_edges(retained) == {("Client", "External")}
-    assert AfferentCoupling().compute(category_dependencies(retained))["partial_client_sum"] == 1
-    assert EfferentCoupling().compute(category_dependencies(retained))["partial_source_sum"] == 1
+    assert AfferentCoupling().compute(category_dependencies(retained))["sum"] == 1
+    assert EfferentCoupling().compute(category_dependencies(retained))["sum"] == 1
     assert len([symbol for symbol in retained.symbols_by_id.values() if symbol.kind == SymbolKind.CLASS]) == 2
 
 
@@ -246,9 +246,9 @@ def test_unresolved_ambiguous_and_external_uses_cannot_establish_complete_incomi
     assert facts.unavailable_categories == frozenset()
     assert AfferentCoupling().compute(facts) == {
         "measured_categories": 2, "unavailable_categories": 0,
-        "partial_client_sum": 1, "partial_client_mean": 0.5, "partial_client_max": 1,
+        "sum": 1, "mean": 0.5, "max": 1,
     }
     assert EfferentCoupling().compute(facts) == {
         "measured_categories": 2, "unavailable_categories": 0,
-        "partial_source_sum": 1, "partial_source_mean": 0.5, "partial_source_max": 1,
+        "sum": 1, "mean": 0.5, "max": 1,
     }

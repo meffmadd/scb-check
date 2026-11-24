@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from math import isfinite
 from types import MappingProxyType
 
+from scb_check.metrics.base import Metric
 from scb_check.metrics.ca import AfferentCoupling
 from scb_check.metrics.callers import DistinctCallers
 from scb_check.metrics.categories import category_dependencies
@@ -25,23 +26,30 @@ from scb_check.models import Report
 from scb_check.models import ReportValue
 
 # Explicit presentation/schema composition, not a metric dispatcher.
-REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(
+_REPORT_METRICS: Mapping[str, type[Metric[...]]] = MappingProxyType(
     {
-        "verbosity": Verbosity.units,
-        "erosion": Erosion.units,
-        "cog_erosion": CognitiveErosion.units,
-        "syntax": Syntax.units,
-        "cbo": CBO.units,
-        "rfc": RFC.units,
-        "mpc": MPC.units,
-        "callers": DistinctCallers.units,
-        "dac": DAC.units,
-        "cic": CIC.units,
-        "ric": RIC.units,
-        "ca": AfferentCoupling.units,
-        "ce": EfferentCoupling.units,
-        "module_call_dependencies": ModuleCallDependencies.units,
+        "verbosity": Verbosity,
+        "erosion": Erosion,
+        "cog_erosion": CognitiveErosion,
+        "syntax": Syntax,
+        "cbo": CBO,
+        "rfc": RFC,
+        "mpc": MPC,
+        "callers": DistinctCallers,
+        "dac": DAC,
+        "cic": CIC,
+        "ric": RIC,
+        "ca": AfferentCoupling,
+        "ce": EfferentCoupling,
+        "module_call_dependencies": ModuleCallDependencies,
     }
+)
+REPORT_UNITS: Mapping[str, Mapping[str, Unit]] = MappingProxyType(
+    {group: metric.units for group, metric in _REPORT_METRICS.items()}
+)
+# Metric-declared default presentation; every other field is supporting.
+REPORT_HEADLINES: Mapping[str, tuple[str, ...]] = MappingProxyType(
+    {group: metric.headline_fields for group, metric in _REPORT_METRICS.items()}
 )
 
 

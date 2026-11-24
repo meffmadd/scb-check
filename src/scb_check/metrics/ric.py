@@ -123,9 +123,10 @@ class RIC(Metric[[tuple[ModuleIR, ...]]]):
     units: ClassVar[dict[str, Unit]] = {
         "measured_pairs": "pairs",
         "unavailable_pairs": "pairs",
-        "partial_ratio_mean": "ratio",
-        "partial_ratio_max": "ratio",
+        "mean": "ratio",
+        "max": "ratio",
     }
+    headline_fields: ClassVar[tuple[str, ...]] = ("mean", "max")
 
     def compute(self, modules: tuple[ModuleIR, ...]) -> MetricResult:
         """Count all pairs arithmetically and aggregate only sparse nonzero ratios."""
@@ -139,8 +140,8 @@ class RIC(Metric[[tuple[ModuleIR, ...]]]):
         return MappingProxyType({
             "measured_pairs": measured_pairs,
             "unavailable_pairs": total_pairs - measured_pairs,
-            "partial_ratio_mean": sum(ratios) / measured_pairs if measured_pairs else None,
-            "partial_ratio_max": max(ratios, default=0.0) if measured_pairs else None,
+            "mean": sum(ratios) / measured_pairs if measured_pairs else None,
+            "max": max(ratios, default=0.0) if measured_pairs else None,
         })
 
     def pair_diagnostics(self, modules: tuple[ModuleIR, ...]) -> Mapping[tuple[str, str], RICPair | None]:

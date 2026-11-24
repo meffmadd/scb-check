@@ -24,8 +24,8 @@ def test_repetition_loops_and_inherited_implementation_ownership(
     }
     assert MPC().compute(project.modules) == {
         "measured_classes": 11, "unavailable_classes": 0,
-        "partial_call_site_sum": 7, "partial_call_site_mean": 7 / 11,
-        "partial_call_site_max": 3,
+        "sum": 7, "mean": 7 / 11,
+        "max": 3,
     }
 
 
@@ -47,7 +47,7 @@ def test_unknown_library_and_free_function_calls_are_partial_not_method_calls(
     source.unlink()
     assert MPC().compute(project.modules) == {
         "measured_classes": 2, "unavailable_classes": 0,
-        "partial_call_site_sum": 0, "partial_call_site_mean": 0.0, "partial_call_site_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
 
 
@@ -64,5 +64,5 @@ def test_unsupported_source_classes_do_not_become_observed_zero(tmp_path: Path) 
     }
     assert MPC().compute(project.modules) == {
         "measured_classes": 1, "unavailable_classes": 1,
-        "partial_call_site_sum": 0, "partial_call_site_mean": 0.0, "partial_call_site_max": 0,
+        "sum": 0, "mean": 0.0, "max": 0,
     }
